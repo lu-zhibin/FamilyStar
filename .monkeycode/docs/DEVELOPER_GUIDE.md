@@ -201,7 +201,8 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 
 - 根路径控制器位于 `apps/web/components/auth-landing.tsx`，认证请求与错误映射位于 `apps/web/lib/auth.ts`。
 - 浏览器只请求同源 `/api/v1`；已有会话、家长登录注册、家庭码查询和孩子登录均使用统一响应信封。
-- 家庭码在浏览器输入时规范化为大写，服务端继续执行 10 位大写字母数字校验和家庭隔离校验。
+- 家庭码在浏览器和服务端始终按字符串处理；输入使用数字键盘提示，服务端执行严格 6 位数字校验并保留前导零。
+- `20260801130000_migrate_family_codes_to_six_digits` 在事务和独占表锁内为历史家庭换码，家庭数量超过 100 万时终止迁移；数据库字段、CHECK 和唯一索引提供最终格式与冲突保护。
 - 登录成功使用 `router.replace()` 进入角色门户，避免浏览器返回到登录入口；本地角色信息仅用于现有门户显示，API 授权继续以 HttpOnly 会话为准。
 - 聚焦验证命令为 `pnpm exec vitest run apps/web/components/auth-landing.test.tsx apps/web/lib/auth.test.ts apps/api/src/family-auth`。
 - 阶段 3 集成测试位于 `apps/api/src/phase-1-family-auth.integration.test.ts`，使用 copy-on-write 数据库状态和共享内存 Redis 命令端口组合真实领域服务。

@@ -69,7 +69,7 @@
 
 ### `POST /api/v1/auth/child/family`
 
-接收严格的 `{ "family_code": "<10 位大写字母数字>" }` 请求。成功返回家庭名称、家庭码和活动孩子公开档案；每个孩子只包含 `id`、`nickname`、`grade` 和 `avatar_media_id`。格式错误返回 `400 INVALID_REQUEST`，不可用家庭返回无差异的 `401 UNAUTHORIZED`。
+接收严格的 `{ "family_code": "<6 位数字>" }` 请求，家庭码按字符串处理并保留前导零。成功返回家庭名称、家庭码和活动孩子公开档案；每个孩子只包含 `id`、`nickname`、`grade` 和 `avatar_media_id`。格式错误返回 `400 INVALID_REQUEST`，不可用家庭返回无差异的 `401 UNAUTHORIZED`。
 
 ### `POST /api/v1/auth/child/login`
 
