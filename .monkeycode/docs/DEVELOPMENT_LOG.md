@@ -1,5 +1,32 @@
 # FamilyStar 开发记录
 
+## 2026-08-01：首次部署 Phase 1 正式容器
+
+- 记录 ID：`FS-DEPLOY-PROD-001`
+- 环境：正式环境，Docker Compose，公开端口 `8099`
+- 源分支与提交：`main` / `65ce519`
+
+### 发布结果
+
+- `dev` 经完整质量门禁和开发环境验收后 fast-forward 到 `main`，远端 `main` 与发布提交保持一致。
+- 从干净的 `65ce519` Git 快照构建并推送 `v0.1.0-65ce519-api`、`v0.1.0-65ce519-worker` 和 `v0.1.0-65ce519-web`。
+- 首次迁移因 Base64 数据库密码包含 URL 保留字符而触发 Prisma `P1013`；将生产数据库密码轮换为 URL 安全的随机十六进制值后，10 个迁移全部成功。
+- PostgreSQL 16、Redis 7、API、Worker 和 Web 在独立 `familystar-prod` Compose 项目、网络和 Volume 中运行，`prod-latest-*` 已指向当前健康镜像。
+
+### 镜像摘要
+
+- API：`sha256:c9ede7a5388493b3e028ff12d2057f328d53b389ba1d3c932a4feca7e145f784`
+- Worker：`sha256:e695be271bf86d285c73806ad62637647a9db40750badca546a058919f9c0e6e`
+- Web：`sha256:e73b16ffa30636a9eeaea03b47d6e29d14f1593393a3d4f1e6ebb1e8401f904a`
+
+### 验证与备份
+
+- 五个常驻容器均为 healthy，迁移容器以退出码 0 完成，Worker 健康端点返回 `status: ok`。
+- 服务器本地与公网 `8099` 的首页、家长端和孩子端返回 HTTP 200，同源 `/api/v1/health` 返回 HTTP 200 和 `status: ok`。
+- 首个 PostgreSQL custom-format 备份保存到 `/home/ubuntu/familystar-data/backups/prod/postgres/familystar-prod-20260801-65ce519.dump`，文件大小为 129156 字节，权限为 `600`，保留策略为 60 天。
+- 回滚点为不可变标签 `v0.1.0-65ce519-*`；后续正式版本发布时继续保留最近两个已验证版本。
+- `home.wenwuge.vip` 已解析到服务器；OpenResty 当前尚未配置该域名的 HTTP 路由和 HTTPS 证书，HTTP 返回 404，HTTPS 返回 TLS SNI 错误。正式域名入口验收等待入口层配置。
+
 ## 2026-08-01：首次部署 Phase 1 开发容器
 
 - 记录 ID：`FS-DEPLOY-DEV-001`
@@ -25,7 +52,7 @@
 - 五个常驻容器均为 healthy，迁移容器成功退出，Worker 健康端点返回 `status: ok`。
 - 服务器本地与公网 `8098` 首页返回 HTTP 200，同源 `/api/v1/health` 返回 HTTP 200 和 `status: ok`。
 - 首个 PostgreSQL custom-format 备份保存到 `/home/ubuntu/familystar-data/backups/dev/postgres/familystar-dev-20260801-80bd819.dump`，文件权限为 `600`，保留策略为 60 天。
-- 正式域名 `home.wenwuge.vip` 当前尚无 DNS 解析结果，生产部署等待域名解析和开发环境验收。
+- 正式域名 `home.wenwuge.vip` 的 DNS 随后已解析到服务器，正式容器部署记录见 `FS-DEPLOY-PROD-001`。
 
 ## 2026-08-01：完成阶段 12 核心闭环与自动化质量门禁
 

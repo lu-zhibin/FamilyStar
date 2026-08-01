@@ -26,4 +26,6 @@ Web 使用 Next.js standalone 产物，构建阶段将 rewrite 目标固定为 D
 
 ## 验证边界
 
-容器契约测试静态验证 Docker targets、锁文件安装、非 root 用户、三类健康检查、Compose 服务集合、迁移依赖、内部网络、公开端口和生产镜像变量。当前 Agent 环境缺少 Docker CLI，真实镜像构建、Compose 解析和 PostgreSQL 迁移执行需在具备 Docker 的 CI 或部署节点完成。
+容器契约测试静态验证 Docker targets、锁文件安装、非 root 用户、三类健康检查、Compose 服务集合、迁移依赖、内部网络、公开端口和生产镜像变量。部署节点已完成开发与正式镜像构建、腾讯云推送、Compose 解析、10 个 Prisma 迁移、开发种子、双环境健康检查和 PostgreSQL custom-format 备份验证。
+
+生产数据库密码必须使用 URL 安全字符，或在拼接 `DATABASE_URL` 前完成百分号编码。首次正式迁移曾因 Base64 密码中的 URL 保留字符触发 Prisma `P1013`，轮换为随机十六进制密码后恢复。
