@@ -1,5 +1,32 @@
 # FamilyStar 开发记录
 
+## 2026-08-01：首次部署 Phase 1 开发容器
+
+- 记录 ID：`FS-DEPLOY-DEV-001`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `80bd819`
+
+### 发布结果
+
+- 将 Phase 1 基线提交并推送到远端 `dev`，使用腾讯云单仓库和组件标签发布 Web、API 与 Worker 镜像。
+- 首次镜像 `dev-20260801-c7bdd4e-*` 完成构建和推送；运行验证发现 Next.js rewrite 在构建阶段回退到 `localhost:3001`。
+- 提交 `80bd819` 在 Docker 构建阶段固定内部 API 地址 `http://api:3001`，发布修复镜像 `dev-20260801-80bd819-*`。
+- PostgreSQL 16、Redis 7、迁移、API、Worker 和 Web 按健康依赖顺序启动；10 个 Prisma 迁移成功，开发种子执行成功。
+- `dev-latest-api`、`dev-latest-worker` 和 `dev-latest-web` 已指向当前健康镜像，上一版 `c7bdd4e` 保留为回滚点。
+
+### 镜像摘要
+
+- API：`sha256:c8f0d3c43ba693f04b93136adaec71a4f6ee899de664df687ab763febbd1a18e`
+- Worker：`sha256:d101a1861fed0142ce981a173e2f3b9f559df1c5e5feae65af191fd47e791adf`
+- Web：`sha256:37462c56b432fd0153eb238f880c58ec06b5a5cacc4457da88af78d74ee5dadc`
+
+### 验证与备份
+
+- 五个常驻容器均为 healthy，迁移容器成功退出，Worker 健康端点返回 `status: ok`。
+- 服务器本地与公网 `8098` 首页返回 HTTP 200，同源 `/api/v1/health` 返回 HTTP 200 和 `status: ok`。
+- 首个 PostgreSQL custom-format 备份保存到 `/home/ubuntu/familystar-data/backups/dev/postgres/familystar-dev-20260801-80bd819.dump`，文件权限为 `600`，保留策略为 60 天。
+- 正式域名 `home.wenwuge.vip` 当前尚无 DNS 解析结果，生产部署等待域名解析和开发环境验收。
+
 ## 2026-08-01：完成阶段 12 核心闭环与自动化质量门禁
 
 - 记录 ID：`FS-DEV-012`
@@ -24,7 +51,7 @@
 
 ### 已知边界
 
-当前 Agent 环境缺少 Docker CLI，本地 PostgreSQL 未运行，SMTP 与 COS 也未配置真实外部凭证。真实 PostgreSQL 行锁与唯一约束竞争、Redis 服务端并发、真实迁移、SMTP 和 COS 外连继续由具备对应基础设施的 CI 或部署节点验证；当前套件使用状态型事务适配器和安全浏览器路由模拟覆盖业务语义。
+开发服务器已完成真实 Docker 镜像、PostgreSQL 16、Redis 7、Prisma 迁移、开发种子和服务健康验证。SMTP 与 COS 继续由家长端后台配置；高竞争并发和外部服务连接仍需后续运行态验收。
 
 ### 预览状态
 
