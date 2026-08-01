@@ -1,0 +1,9 @@
+{
+  "name": "levels",
+  "version": "0.1.0",
+  "capabilities": ["levels.progress", "levels.benefits"],
+  "dependencies": ["points"],
+  "permissions": ["database:read", "database:write", "events:publish", "events:subscribe"],
+  "subscribes": ["points.balance.changed.v1"],
+  "publishes": ["levels.level.advanced.v1"]
+}

@@ -1,0 +1,67 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./app/**/*.{js,ts,jsx,tsx,mdx}', './components/**/*.{js,ts,jsx,tsx,mdx}'],
+  theme: {
+    screens: {
+      mobile: { max: '767px' },
+      md: '768px',
+      tablet: { min: '768px', max: '1024px' },
+      lg: '1025px',
+      desktop: '1025px',
+      xl: '1280px',
+      '2xl': '1536px',
+    },
+    extend: {
+      colors: {
+        cream: 'var(--color-cream)',
+        sand: 'var(--color-sand)',
+        wood: 'var(--color-wood)',
+        leaf: 'var(--color-leaf)',
+        'leaf-dark': 'var(--color-leaf-dark)',
+        'leaf-light': 'var(--color-leaf-light)',
+        sun: 'var(--color-sun)',
+        orange: 'var(--color-orange)',
+        coral: 'var(--color-coral)',
+        sky: 'var(--color-sky)',
+        blue: 'var(--color-blue)',
+        pink: 'var(--color-pink)',
+        'pink-dark': 'var(--color-pink-dark)',
+        red: 'var(--color-red)',
+        brown: 'var(--color-brown)',
+        'brown-light': 'var(--color-brown-light)',
+      },
+      borderRadius: {
+        card: 'var(--radius-card)',
+        'card-lg': 'var(--radius-card-lg)',
+        pill: 'var(--radius-pill)',
+        btn: 'var(--radius-btn)',
+        'btn-lg': 'var(--radius-btn-lg)',
+      },
+      boxShadow: {
+        warm: 'var(--shadow-warm)',
+        'warm-lg': 'var(--shadow-warm-lg)',
+        orange: 'var(--shadow-orange)',
+        'btn-press': 'var(--shadow-btn-press)',
+      },
+      fontFamily: {
+        sans: ['var(--font-nunito)', 'system-ui', 'sans-serif'],
+        display: ['var(--font-fredoka)', 'var(--font-nunito)', 'sans-serif'],
+      },
+      fontSize: {
+        label: ['0.75rem', { lineHeight: '1rem' }],
+        caption: ['0.8125rem', { lineHeight: '1.125rem' }],
+        body: ['0.875rem', { lineHeight: '1.375rem' }],
+        card: ['0.9375rem', { lineHeight: '1.375rem' }],
+        list: ['1rem', { lineHeight: '1.5rem' }],
+        section: ['1.125rem', { lineHeight: '1.625rem' }],
+        title: ['1.25rem', { lineHeight: '1.75rem' }],
+        page: ['1.5rem', { lineHeight: '2rem' }],
+        metric: ['1.75rem', { lineHeight: '2.125rem' }],
+      },
+      maxWidth: {
+        content: '1200px',
+      },
+    },
+  },
+  plugins: [],
+};

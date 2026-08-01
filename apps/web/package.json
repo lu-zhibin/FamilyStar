@@ -1,0 +1,28 @@
+{
+  "name": "@familystar/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "verify:design-system": "node scripts/verify-design-system.cjs"
+  },
+  "dependencies": {
+    "@familystar/shared": "workspace:*",
+    "lucide-react": "0.547.0",
+    "next": "14.2.35",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.11",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "autoprefixer": "10.4.21",
+    "postcss": "8.5.6",
+    "tailwindcss": "3.4.17",
+    "typescript": "5.9.3"
+  }
+}

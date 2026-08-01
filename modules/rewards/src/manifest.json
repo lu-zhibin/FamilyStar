@@ -1,0 +1,14 @@
+{
+  "name": "rewards",
+  "version": "0.1.0",
+  "capabilities": ["rewards.catalog", "rewards.redemption"],
+  "dependencies": ["points", "levels"],
+  "permissions": ["database:read", "database:write", "events:publish", "events:subscribe"],
+  "subscribes": ["points.balance.changed.v1", "levels.level.advanced.v1"],
+  "publishes": [
+    "rewards.redemption.requested.v1",
+    "rewards.redemption.approved.v1",
+    "rewards.redemption.rejected.v1",
+    "rewards.redemption.fulfilled.v1"
+  ]
+}

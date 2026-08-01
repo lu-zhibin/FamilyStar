@@ -1,0 +1,967 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PARENT @map("parent")
+  CHILD  @map("child")
+
+  @@map("user_role")
+}
+
+enum Gender {
+  MALE   @map("male")
+  FEMALE @map("female")
+
+  @@map("gender")
+}
+
+enum CredentialType {
+  PIN      @map("pin")
+  PASSWORD @map("password")
+
+  @@map("credential_type")
+}
+
+enum InvitationStatus {
+  PENDING  @map("pending")
+  ACCEPTED @map("accepted")
+  EXPIRED  @map("expired")
+
+  @@map("invitation_status")
+}
+
+enum VerifyMode {
+  AUTO   @map("auto")
+  MANUAL @map("manual")
+
+  @@map("verify_mode")
+}
+
+enum TaskCheckType {
+  TICK  @map("tick")
+  TEXT  @map("text")
+  PHOTO @map("photo")
+  VIDEO @map("video")
+  MIXED @map("mixed")
+
+  @@map("task_check_type")
+}
+
+enum CollaborationMode {
+  SOLO   @map("solo")
+  COLLAB @map("collab")
+
+  @@map("collaboration_mode")
+}
+
+enum TaskStatus {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+  ARCHIVED @map("archived")
+
+  @@map("task_status")
+}
+
+enum CollaborationRoundStatus {
+  PENDING   @map("pending")
+  ACTIVE    @map("active")
+  COMPLETED @map("completed")
+
+  @@map("collaboration_round_status")
+}
+
+enum CollaborationParticipantStatus {
+  ACTIVE  @map("active")
+  REMOVED @map("removed")
+
+  @@map("collaboration_participant_status")
+}
+
+enum SubmissionStatus {
+  PENDING  @map("pending")
+  APPROVED @map("approved")
+  REJECTED @map("rejected")
+
+  @@map("submission_status")
+}
+
+enum ReviewTargetType {
+  CHECK_IN                 @map("check_in")
+  COLLABORATION_SUBMISSION @map("collaboration_submission")
+
+  @@map("review_target_type")
+}
+
+enum ReviewDecision {
+  APPROVED @map("approved")
+  REJECTED @map("rejected")
+
+  @@map("review_decision")
+}
+
+enum ReviewSource {
+  PARENT  @map("parent")
+  TIMEOUT @map("timeout")
+
+  @@map("review_source")
+}
+
+enum MediaType {
+  IMAGE @map("image")
+  VIDEO @map("video")
+  AUDIO @map("audio")
+
+  @@map("media_type")
+}
+
+enum MediaUploadStatus {
+  PENDING   @map("pending")
+  UPLOADING @map("uploading")
+  READY     @map("ready")
+  FAILED    @map("failed")
+
+  @@map("media_upload_status")
+}
+
+enum MediaUploadPartStatus {
+  PENDING   @map("pending")
+  CONFIRMED @map("confirmed")
+
+  @@map("media_upload_part_status")
+}
+
+enum PointsLogType {
+  EARN   @map("earn")
+  REDEEM @map("redeem")
+  REFUND @map("refund")
+  MANUAL @map("manual")
+
+  @@map("points_log_type")
+}
+
+enum LevelRewardType {
+  APPEARANCE @map("appearance")
+  PRIVILEGE  @map("privilege")
+  HONOR      @map("honor")
+  FUNCTIONAL @map("functional")
+  PHYSICAL   @map("physical")
+
+  @@map("level_reward_type")
+}
+
+enum RewardType {
+  PHYSICAL   @map("physical")
+  PRIVILEGE  @map("privilege")
+  EXPERIENCE @map("experience")
+  CUSTOM     @map("custom")
+
+  @@map("reward_type")
+}
+
+enum RewardStatus {
+  ACTIVE   @map("active")
+  INACTIVE @map("inactive")
+
+  @@map("reward_status")
+}
+
+enum RedemptionStatus {
+  PENDING   @map("pending")
+  APPROVED  @map("approved")
+  FULFILLED @map("fulfilled")
+  REJECTED  @map("rejected")
+
+  @@map("redemption_status")
+}
+
+enum WishStatus {
+  ACTIVE    @map("active")
+  ADOPTED   @map("adopted")
+  CANCELLED @map("cancelled")
+
+  @@map("wish_status")
+}
+
+enum AuditOutcome {
+  SUCCESS @map("success")
+  FAILURE @map("failure")
+
+  @@map("audit_outcome")
+}
+
+enum IntegrationType {
+  EMAIL @map("email")
+  COS   @map("cos")
+
+  @@map("integration_type")
+}
+
+enum IntegrationStatus {
+  PENDING  @map("pending")
+  VERIFIED @map("verified")
+  INVALID  @map("invalid")
+
+  @@map("integration_status")
+}
+
+enum WorkerJobStatus {
+  RUNNING   @map("running")
+  SUCCEEDED @map("succeeded")
+  FAILED    @map("failed")
+
+  @@map("worker_job_status")
+}
+
+model Family {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String    @db.VarChar(120)
+  avatarUrl   String?   @map("avatar_url") @db.Text
+  settings    Json      @default("{}") @db.JsonB
+  createdById String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+
+  creator                         User?                            @relation("FamilyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  users                           User[]                           @relation("FamilyUsers")
+  invitations                     Invitation[]
+  taskTypes                       TaskType[]
+  tasks                           Task[]
+  taskAssignments                 TaskAssignment[]
+  collaborationRounds             CollaborationRound[]
+  roundParticipants               CollaborationRoundParticipant[]
+  collaborationSubmissions        CollaborationSubmission[]
+  collaborationSubmissionAttempts CollaborationSubmissionAttempt[]
+  submissionReviews               SubmissionReview[]
+  checkIns                        CheckIn[]
+  checkInSubmissionAttempts       CheckInSubmissionAttempt[]
+  mediaAssets                     MediaAsset[]
+  mediaUploadSessions             MediaUploadSession[]
+  mediaUploadParts                MediaUploadPart[]
+  checkInMedia                    CheckInMedia[]
+  submissionMedia                 CollaborationSubmissionMedia[]
+  pointsLogs                      PointsLog[]
+  levelConfigs                    LevelConfig[]
+  levelRewards                    LevelReward[]
+  rewards                         Reward[]
+  redemptions                     Redemption[]
+  wishes                          Wish[]
+  auditLogs                       AuditLog[]
+  outboxEvents                    OutboxEvent[]
+  integrationSettings             FamilyIntegrationSetting[]
+
+  @@index([deletedAt])
+  @@map("families")
+}
+
+model User {
+  id                  String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId            String          @map("family_id") @db.Uuid
+  role                UserRole
+  nickname            String          @db.VarChar(80)
+  email               String?         @db.VarChar(320)
+  passwordHash        String?         @map("password_hash") @db.Text
+  childCredentialHash String?         @map("child_credential_hash") @db.Text
+  credentialType      CredentialType? @map("credential_type")
+  gender              Gender?
+  birthday            DateTime?       @db.Date
+  grade               String?         @db.VarChar(40)
+  avatarMediaId       String?         @map("avatar_media_id") @db.Uuid
+  pointsBalance       Int             @default(0) @map("points_balance")
+  pointsEarnedTotal   Int             @default(0) @map("points_earned_total")
+  currentLevel        Int             @default(1) @map("current_level")
+  version             Int             @default(0)
+  failedLoginAttempts Int             @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?       @map("locked_until") @db.Timestamptz(3)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt           DateTime?       @map("deleted_at") @db.Timestamptz(3)
+
+  family                          Family                           @relation("FamilyUsers", fields: [familyId], references: [id], onDelete: Restrict)
+  createdFamilies                 Family[]                         @relation("FamilyCreator")
+  avatarMedia                     MediaAsset?                      @relation("UserAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
+  invitationsSent                 Invitation[]                     @relation("InvitationSender")
+  acceptedInvitations             Invitation[]                     @relation("InvitationRecipient")
+  taskAssignments                 TaskAssignment[]                 @relation("AssignedChild")
+  roundParticipations             CollaborationRoundParticipant[]  @relation("RoundParticipantChild")
+  collaborationSubmissions        CollaborationSubmission[]        @relation("SubmissionChild")
+  reviewedSubmissions             CollaborationSubmission[]        @relation("SubmissionReviewer")
+  priorReviewedSubmissionAttempts CollaborationSubmissionAttempt[] @relation("SubmissionAttemptPriorReviewer")
+  checkIns                        CheckIn[]                        @relation("CheckInChild")
+  reviewedCheckIns                CheckIn[]                        @relation("CheckInReviewer")
+  priorReviewedCheckInAttempts    CheckInSubmissionAttempt[]       @relation("CheckInAttemptPriorReviewer")
+  submissionReviews               SubmissionReview[]               @relation("SubmissionReviewerHistory")
+  pointsLogs                      PointsLog[]                      @relation("PointsLogUser")
+  redemptions                     Redemption[]                     @relation("RedemptionChild")
+  approvedRedemptions             Redemption[]                     @relation("RedemptionApprover")
+  rejectedRedemptions             Redemption[]                     @relation("RedemptionRejector")
+  fulfilledRedemptions            Redemption[]                     @relation("RedemptionFulfiller")
+  wishes                          Wish[]                           @relation("WishChild")
+  auditLogs                       AuditLog[]                       @relation("AuditActor")
+  emittedEvents                   OutboxEvent[]                    @relation("OutboxActor")
+  integrationSettingsCreated      FamilyIntegrationSetting[]       @relation("IntegrationSettingCreator")
+  integrationSettingsUpdated      FamilyIntegrationSetting[]       @relation("IntegrationSettingUpdater")
+
+  @@index([familyId, role, deletedAt])
+  @@index([familyId, currentLevel])
+  @@map("users")
+}
+
+model Invitation {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId      String           @map("family_id") @db.Uuid
+  invitedById   String           @map("invited_by") @db.Uuid
+  email         String           @db.VarChar(320)
+  tokenHash     String           @unique @map("token_hash") @db.VarChar(128)
+  status        InvitationStatus @default(PENDING)
+  invitedUserId String?          @map("invited_user_id") @db.Uuid
+  expiresAt     DateTime         @map("expires_at") @db.Timestamptz(3)
+  acceptedAt    DateTime?        @map("accepted_at") @db.Timestamptz(3)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family      Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  invitedBy   User   @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: Restrict)
+  invitedUser User?  @relation("InvitationRecipient", fields: [invitedUserId], references: [id], onDelete: SetNull)
+
+  @@index([familyId, status, expiresAt])
+  @@index([email, status])
+  @@map("invitations")
+}
+
+model TaskTypeTemplate {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String     @unique @db.VarChar(40)
+  name              String     @db.VarChar(80)
+  icon              String     @db.VarChar(80)
+  defaultVerifyMode VerifyMode @default(MANUAL) @map("default_verify_mode")
+  sortOrder         Int        @default(0) @map("sort_order")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  familyTaskTypes TaskType[]
+
+  @@map("task_type_templates")
+}
+
+model TaskType {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId          String     @map("family_id") @db.Uuid
+  templateCode      String?    @map("template_code") @db.VarChar(40)
+  name              String     @db.VarChar(80)
+  icon              String     @db.VarChar(80)
+  defaultVerifyMode VerifyMode @default(MANUAL) @map("default_verify_mode")
+  isEnabled         Boolean    @default(true) @map("is_enabled")
+  sortOrder         Int        @default(0) @map("sort_order")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime?  @map("deleted_at") @db.Timestamptz(3)
+
+  family   Family            @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  template TaskTypeTemplate? @relation(fields: [templateCode], references: [code], onDelete: Restrict)
+  tasks    Task[]
+
+  @@unique([familyId, templateCode])
+  @@index([familyId, deletedAt, sortOrder])
+  @@map("task_types")
+}
+
+model Task {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId          String            @map("family_id") @db.Uuid
+  taskTypeId        String            @map("task_type_id") @db.Uuid
+  name              String            @db.VarChar(120)
+  description       String?           @db.Text
+  submissionGuide   String?           @map("submission_guide") @db.Text
+  checkType         TaskCheckType     @map("check_type")
+  verifyMode        VerifyMode        @map("verify_mode")
+  collaborationMode CollaborationMode @default(SOLO) @map("collaboration_mode")
+  frequency         Json              @db.JsonB
+  basePoints        Int               @map("base_points")
+  streakBonus       Json?             @map("streak_bonus") @db.JsonB
+  autoLogToGrowth   Boolean           @default(false) @map("auto_log_to_growth")
+  allowSkipCard     Boolean           @default(true) @map("allow_skip_card")
+  status            TaskStatus        @default(ACTIVE)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt         DateTime?         @map("deleted_at") @db.Timestamptz(3)
+
+  family              Family               @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  taskType            TaskType             @relation(fields: [taskTypeId], references: [id], onDelete: Restrict)
+  assignments         TaskAssignment[]
+  collaborationRounds CollaborationRound[]
+  checkIns            CheckIn[]
+
+  @@index([familyId, status, deletedAt])
+  @@index([familyId, taskTypeId])
+  @@map("tasks")
+}
+
+model TaskAssignment {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId         String         @map("family_id") @db.Uuid
+  taskId           String         @map("task_id") @db.Uuid
+  childId          String         @map("child_id") @db.Uuid
+  customPoints     Int?           @map("custom_points")
+  customFrequency  Json?          @map("custom_frequency") @db.JsonB
+  customCheckType  TaskCheckType? @map("custom_check_type")
+  customVerifyMode VerifyMode?    @map("custom_verify_mode")
+  startDate        DateTime       @map("start_date") @db.Date
+  endDate          DateTime?      @map("end_date") @db.Date
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime?      @map("deleted_at") @db.Timestamptz(3)
+
+  family   Family    @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  task     Task      @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  child    User      @relation("AssignedChild", fields: [childId], references: [id], onDelete: Restrict)
+  checkIns CheckIn[]
+
+  @@unique([taskId, childId])
+  @@index([familyId, childId, deletedAt])
+  @@map("task_assignments")
+}
+
+model CollaborationRound {
+  id          String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId    String                   @map("family_id") @db.Uuid
+  taskId      String                   @map("task_id") @db.Uuid
+  roundNumber Int                      @map("round_number")
+  startDate   DateTime                 @map("start_date") @db.Date
+  endDate     DateTime                 @map("end_date") @db.Date
+  status      CollaborationRoundStatus @default(PENDING)
+  createdAt   DateTime                 @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family       Family                          @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  task         Task                            @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  participants CollaborationRoundParticipant[]
+  submissions  CollaborationSubmission[]
+
+  @@unique([taskId, roundNumber])
+  @@index([familyId, status, startDate, endDate])
+  @@map("collaboration_rounds")
+}
+
+model CollaborationRoundParticipant {
+  id                   String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId             String                         @map("family_id") @db.Uuid
+  roundId              String                         @map("round_id") @db.Uuid
+  childId              String                         @map("child_id") @db.Uuid
+  rewardPointsSnapshot Int                            @map("reward_points_snapshot")
+  pointsEarned         Int?                           @map("points_earned")
+  streakMultiplier     Decimal?                       @map("streak_multiplier") @db.Decimal(8, 4)
+  status               CollaborationParticipantStatus @default(ACTIVE)
+  createdAt            DateTime                       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family Family             @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  round  CollaborationRound @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  child  User               @relation("RoundParticipantChild", fields: [childId], references: [id], onDelete: Restrict)
+
+  @@unique([roundId, childId])
+  @@index([familyId, childId])
+  @@map("collaboration_round_participants")
+}
+
+model CollaborationSubmission {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId       String           @map("family_id") @db.Uuid
+  roundId        String           @map("round_id") @db.Uuid
+  childId        String           @map("child_id") @db.Uuid
+  idempotencyKey String           @map("idempotency_key") @db.VarChar(128)
+  contentText    String?          @map("content_text") @db.Text
+  status         SubmissionStatus @default(PENDING)
+  submittedAt    DateTime         @default(now()) @map("submitted_at") @db.Timestamptz(3)
+  reviewedById   String?          @map("reviewed_by") @db.Uuid
+  reviewedAt     DateTime?        @map("reviewed_at") @db.Timestamptz(3)
+  reviewComment  String?          @map("review_comment") @db.Text
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family     Family                           @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  round      CollaborationRound               @relation(fields: [roundId], references: [id], onDelete: Restrict)
+  child      User                             @relation("SubmissionChild", fields: [childId], references: [id], onDelete: Restrict)
+  reviewedBy User?                            @relation("SubmissionReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  media      CollaborationSubmissionMedia[]
+  attempts   CollaborationSubmissionAttempt[]
+
+  @@unique([roundId, childId])
+  @@unique([familyId, idempotencyKey])
+  @@index([familyId, status, submittedAt])
+  @@map("collaboration_submissions")
+}
+
+model CollaborationSubmissionAttempt {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId           String            @map("family_id") @db.Uuid
+  submissionId       String            @map("submission_id") @db.Uuid
+  attemptNumber      Int               @map("attempt_number")
+  idempotencyKey     String            @map("idempotency_key") @db.VarChar(128)
+  contentText        String?           @map("content_text") @db.Text
+  status             SubmissionStatus
+  submittedAt        DateTime          @map("submitted_at") @db.Timestamptz(3)
+  mediaIds           Json              @map("media_ids") @db.JsonB
+  priorStatus        SubmissionStatus? @map("prior_status")
+  priorReviewedById  String?           @map("prior_reviewed_by") @db.Uuid
+  priorReviewedAt    DateTime?         @map("prior_reviewed_at") @db.Timestamptz(3)
+  priorReviewComment String?           @map("prior_review_comment") @db.Text
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family          Family                  @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  submission      CollaborationSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+  priorReviewedBy User?                   @relation("SubmissionAttemptPriorReviewer", fields: [priorReviewedById], references: [id], onDelete: SetNull)
+  review          SubmissionReview?
+
+  @@unique([submissionId, attemptNumber])
+  @@unique([familyId, idempotencyKey])
+  @@index([familyId, submissionId, submittedAt])
+  @@map("collaboration_submission_attempts")
+}
+
+model CheckIn {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId         String           @map("family_id") @db.Uuid
+  taskId           String           @map("task_id") @db.Uuid
+  taskAssignmentId String           @map("task_assignment_id") @db.Uuid
+  childId          String           @map("child_id") @db.Uuid
+  idempotencyKey   String           @map("idempotency_key") @db.VarChar(128)
+  contentText      String?          @map("content_text") @db.Text
+  isMakeup         Boolean          @default(false) @map("is_makeup")
+  status           SubmissionStatus @default(PENDING)
+  reviewerId       String?          @map("reviewer_id") @db.Uuid
+  reviewComment    String?          @map("review_comment") @db.Text
+  reviewedAt       DateTime?        @map("reviewed_at") @db.Timestamptz(3)
+  pointsEarned     Int?             @map("points_earned")
+  streakMultiplier Decimal?         @map("streak_multiplier") @db.Decimal(8, 4)
+  checkDate        DateTime         @map("check_date") @db.Date
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt        DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  family         Family                     @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  task           Task                       @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  taskAssignment TaskAssignment             @relation(fields: [taskAssignmentId], references: [id], onDelete: Restrict)
+  child          User                       @relation("CheckInChild", fields: [childId], references: [id], onDelete: Restrict)
+  reviewer       User?                      @relation("CheckInReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  media          CheckInMedia[]
+  attempts       CheckInSubmissionAttempt[]
+
+  @@unique([familyId, idempotencyKey])
+  @@index([familyId, childId, checkDate])
+  @@index([familyId, status, createdAt])
+  @@map("check_ins")
+}
+
+model CheckInSubmissionAttempt {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId           String            @map("family_id") @db.Uuid
+  checkInId          String            @map("check_in_id") @db.Uuid
+  attemptNumber      Int               @map("attempt_number")
+  idempotencyKey     String            @map("idempotency_key") @db.VarChar(128)
+  contentText        String?           @map("content_text") @db.Text
+  status             SubmissionStatus
+  submittedAt        DateTime          @map("submitted_at") @db.Timestamptz(3)
+  mediaIds           Json              @map("media_ids") @db.JsonB
+  priorStatus        SubmissionStatus? @map("prior_status")
+  priorReviewerId    String?           @map("prior_reviewer_id") @db.Uuid
+  priorReviewedAt    DateTime?         @map("prior_reviewed_at") @db.Timestamptz(3)
+  priorReviewComment String?           @map("prior_review_comment") @db.Text
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family        Family            @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  checkIn       CheckIn           @relation(fields: [checkInId], references: [id], onDelete: Restrict)
+  priorReviewer User?             @relation("CheckInAttemptPriorReviewer", fields: [priorReviewerId], references: [id], onDelete: SetNull)
+  review        SubmissionReview?
+
+  @@unique([checkInId, attemptNumber])
+  @@unique([familyId, idempotencyKey])
+  @@index([familyId, checkInId, submittedAt])
+  @@map("check_in_submission_attempts")
+}
+
+model SubmissionReview {
+  id                     String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId               String           @map("family_id") @db.Uuid
+  targetType             ReviewTargetType @map("target_type")
+  checkInAttemptId       String?          @unique @map("check_in_attempt_id") @db.Uuid
+  collaborationAttemptId String?          @unique @map("collaboration_attempt_id") @db.Uuid
+  idempotencyKey         String           @map("idempotency_key") @db.VarChar(128)
+  decision               ReviewDecision
+  source                 ReviewSource
+  reason                 String?          @db.Text
+  reviewerId             String?          @map("reviewer_id") @db.Uuid
+  reviewedAt             DateTime         @map("reviewed_at") @db.Timestamptz(3)
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family               Family                          @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  checkInAttempt       CheckInSubmissionAttempt?       @relation(fields: [checkInAttemptId], references: [id], onDelete: Restrict)
+  collaborationAttempt CollaborationSubmissionAttempt? @relation(fields: [collaborationAttemptId], references: [id], onDelete: Restrict)
+  reviewer             User?                           @relation("SubmissionReviewerHistory", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@unique([familyId, idempotencyKey])
+  @@index([familyId, reviewedAt])
+  @@map("submission_reviews")
+}
+
+model MediaAsset {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId     String            @map("family_id") @db.Uuid
+  type         MediaType
+  objectKey    String            @map("object_key") @db.VarChar(1024)
+  mimeType     String            @map("mime_type") @db.VarChar(255)
+  checksum     String            @db.VarChar(128)
+  sizeBytes    BigInt            @map("size_bytes") @db.BigInt
+  width        Int?
+  height       Int?
+  duration     Int?
+  uploadStatus MediaUploadStatus @default(PENDING) @map("upload_status")
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime?         @map("deleted_at") @db.Timestamptz(3)
+
+  family           Family                         @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  userAvatars      User[]                         @relation("UserAvatar")
+  rewardImages     Reward[]                       @relation("RewardImage")
+  levelRewardIcons LevelReward[]                  @relation("LevelRewardIcon")
+  checkInLinks     CheckInMedia[]
+  submissionLinks  CollaborationSubmissionMedia[]
+  uploadSession    MediaUploadSession?
+
+  @@unique([familyId, objectKey])
+  @@index([familyId, uploadStatus, deletedAt])
+  @@map("media_assets")
+}
+
+model MediaUploadSession {
+  id             String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId       String            @map("family_id") @db.Uuid
+  mediaAssetId   String            @unique @map("media_asset_id") @db.Uuid
+  idempotencyKey String            @map("idempotency_key") @db.VarChar(128)
+  uploadId       String?           @map("upload_id") @db.Text
+  status         MediaUploadStatus @default(PENDING)
+  failureCode    String?           @map("failure_code") @db.VarChar(80)
+  completedAt    DateTime?         @map("completed_at") @db.Timestamptz(3)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family     Family            @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  mediaAsset MediaAsset        @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  parts      MediaUploadPart[]
+
+  @@unique([familyId, idempotencyKey])
+  @@index([familyId, status, createdAt])
+  @@map("media_upload_sessions")
+}
+
+model MediaUploadPart {
+  id          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId    String                @map("family_id") @db.Uuid
+  sessionId   String                @map("session_id") @db.Uuid
+  partNumber  Int                   @map("part_number")
+  status      MediaUploadPartStatus @default(PENDING)
+  etag        String?               @db.VarChar(255)
+  checksum    String?               @db.VarChar(128)
+  sizeBytes   BigInt?               @map("size_bytes") @db.BigInt
+  confirmedAt DateTime?             @map("confirmed_at") @db.Timestamptz(3)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family  Family             @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  session MediaUploadSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, partNumber])
+  @@index([familyId, sessionId, status])
+  @@map("media_upload_parts")
+}
+
+model CheckInMedia {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId     String   @map("family_id") @db.Uuid
+  checkInId    String   @map("check_in_id") @db.Uuid
+  mediaAssetId String   @map("media_asset_id") @db.Uuid
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family     Family     @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  checkIn    CheckIn    @relation(fields: [checkInId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([checkInId, mediaAssetId])
+  @@unique([checkInId, sortOrder])
+  @@index([familyId, mediaAssetId])
+  @@map("check_in_media")
+}
+
+model CollaborationSubmissionMedia {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId     String   @map("family_id") @db.Uuid
+  submissionId String   @map("submission_id") @db.Uuid
+  mediaAssetId String   @map("media_asset_id") @db.Uuid
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family     Family                  @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  submission CollaborationSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset              @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([submissionId, mediaAssetId])
+  @@unique([submissionId, sortOrder])
+  @@index([familyId, mediaAssetId])
+  @@map("collaboration_submission_media")
+}
+
+model PointsLog {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId         String        @map("family_id") @db.Uuid
+  userId           String        @map("user_id") @db.Uuid
+  type             PointsLogType
+  businessType     String        @map("business_type") @db.VarChar(40)
+  businessId       String        @map("business_id") @db.Uuid
+  delta            Int
+  balanceBefore    Int           @map("balance_before")
+  balanceAfter     Int           @map("balance_after")
+  earnedTotalAfter Int           @map("earned_total_after")
+  remark           String?       @db.Text
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  user   User   @relation("PointsLogUser", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([type, businessType, businessId, userId])
+  @@index([familyId, userId, createdAt])
+  @@index([familyId, businessType, businessId])
+  @@map("points_logs")
+}
+
+model LevelConfig {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId             String   @map("family_id") @db.Uuid
+  level                Int
+  name                 String   @db.VarChar(80)
+  icon                 String   @db.VarChar(80)
+  pointsRequired       Int      @map("points_required")
+  discount             Decimal  @default(1) @db.Decimal(5, 4)
+  autoApproveQuota     Int      @default(0) @map("auto_approve_quota")
+  wishSlots            Int      @default(1) @map("wish_slots")
+  doublePointsDays     Int      @default(0) @map("double_points_days")
+  skipCardsPerMonth    Int      @default(0) @map("skip_cards_per_month")
+  skipCardValidityDays Int      @default(60) @map("skip_card_validity_days")
+  extraDimensions      Json?    @map("extra_dimensions") @db.JsonB
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family  Family        @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  rewards LevelReward[]
+
+  @@unique([familyId, level])
+  @@index([familyId, pointsRequired])
+  @@map("level_configs")
+}
+
+model LevelReward {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId      String          @map("family_id") @db.Uuid
+  levelConfigId String          @map("level_config_id") @db.Uuid
+  type          LevelRewardType @map("reward_type")
+  name          String          @db.VarChar(120)
+  description   String?         @db.Text
+  iconMediaId   String?         @map("icon_media_id") @db.Uuid
+  autoGrant     Boolean         @default(true) @map("auto_grant")
+  isActive      Boolean         @default(true) @map("is_active")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family      Family      @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  levelConfig LevelConfig @relation(fields: [levelConfigId], references: [id], onDelete: Cascade)
+  iconMedia   MediaAsset? @relation("LevelRewardIcon", fields: [iconMediaId], references: [id], onDelete: SetNull)
+
+  @@index([familyId, levelConfigId, isActive])
+  @@map("level_rewards")
+}
+
+model Reward {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId      String       @map("family_id") @db.Uuid
+  name          String       @db.VarChar(120)
+  description   String?      @db.Text
+  imageMediaId  String?      @map("image_media_id") @db.Uuid
+  pointsCost    Int          @map("points_cost")
+  type          RewardType
+  stockTotal    Int?         @map("stock_total")
+  stockReserved Int          @default(0) @map("stock_reserved")
+  stockConsumed Int          @default(0) @map("stock_consumed")
+  prerequisites Json?        @db.JsonB
+  status        RewardStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime?    @map("deleted_at") @db.Timestamptz(3)
+
+  family        Family       @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  imageMedia    MediaAsset?  @relation("RewardImage", fields: [imageMediaId], references: [id], onDelete: SetNull)
+  redemptions   Redemption[]
+  adoptedWishes Wish[]       @relation("AdoptedReward")
+
+  @@index([familyId, status, deletedAt])
+  @@map("rewards")
+}
+
+model Redemption {
+  id                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId           String           @map("family_id") @db.Uuid
+  rewardId           String           @map("reward_id") @db.Uuid
+  childId            String           @map("child_id") @db.Uuid
+  idempotencyKey     String           @map("idempotency_key") @db.VarChar(128)
+  requestFingerprint String           @map("request_fingerprint") @db.VarChar(64)
+  listedPointsCost   Int              @map("listed_points_cost")
+  discount           Decimal          @default(1) @db.Decimal(5, 4)
+  pointsSpent        Int              @map("points_spent")
+  status             RedemptionStatus @default(PENDING)
+  isAutoApproved     Boolean          @default(false) @map("is_auto_approved")
+  approvedById       String?          @map("approved_by") @db.Uuid
+  approvedAt         DateTime?        @map("approved_at") @db.Timestamptz(3)
+  rejectedById       String?          @map("rejected_by") @db.Uuid
+  rejectedAt         DateTime?        @map("rejected_at") @db.Timestamptz(3)
+  rejectionReason    String?          @map("rejection_reason") @db.Text
+  fulfilledById      String?          @map("fulfilled_by") @db.Uuid
+  fulfilledAt        DateTime?        @map("fulfilled_at") @db.Timestamptz(3)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family      Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  reward      Reward @relation(fields: [rewardId], references: [id], onDelete: Restrict)
+  child       User   @relation("RedemptionChild", fields: [childId], references: [id], onDelete: Restrict)
+  approvedBy  User?  @relation("RedemptionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedBy  User?  @relation("RedemptionRejector", fields: [rejectedById], references: [id], onDelete: SetNull)
+  fulfilledBy User?  @relation("RedemptionFulfiller", fields: [fulfilledById], references: [id], onDelete: SetNull)
+
+  @@unique([familyId, idempotencyKey])
+  @@index([familyId, childId, status, createdAt])
+  @@index([familyId, rewardId])
+  @@index([familyId, rewardId, childId, status, createdAt])
+  @@map("redemptions")
+}
+
+model Wish {
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId        String     @map("family_id") @db.Uuid
+  childId         String     @map("child_id") @db.Uuid
+  title           String     @db.VarChar(120)
+  description     String?    @db.Text
+  targetPoints    Int        @map("target_points")
+  status          WishStatus @default(ACTIVE)
+  adoptedRewardId String?    @map("adopted_reward_id") @db.Uuid
+  cancelledAt     DateTime?  @map("cancelled_at") @db.Timestamptz(3)
+  adoptedAt       DateTime?  @map("adopted_at") @db.Timestamptz(3)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz(3)
+
+  family        Family  @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  child         User    @relation("WishChild", fields: [childId], references: [id], onDelete: Restrict)
+  adoptedReward Reward? @relation("AdoptedReward", fields: [adoptedRewardId], references: [id], onDelete: SetNull)
+
+  @@index([familyId, childId, status, deletedAt])
+  @@map("wishes")
+}
+
+model AuditLog {
+  id          String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId    String       @map("family_id") @db.Uuid
+  actorId     String?      @map("actor_id") @db.Uuid
+  action      String       @db.VarChar(120)
+  entityType  String       @map("entity_type") @db.VarChar(80)
+  entityId    String?      @map("entity_id") @db.Uuid
+  businessKey String?      @map("business_key") @db.VarChar(160)
+  requestId   String       @map("request_id") @db.VarChar(128)
+  outcome     AuditOutcome
+  metadata    Json?        @db.JsonB
+  occurredAt  DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  actor  User?  @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([familyId, occurredAt])
+  @@index([familyId, entityType, entityId])
+  @@index([requestId])
+  @@map("audit_logs")
+}
+
+model FamilyIntegrationSetting {
+  id                     String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId               String            @map("family_id") @db.Uuid
+  integrationType        IntegrationType   @map("integration_type")
+  configuration          Json              @default("{}") @db.JsonB
+  encryptedCredentials   Bytes             @map("encrypted_credentials") @db.ByteA
+  credentialNonce        Bytes             @map("credential_nonce") @db.ByteA
+  credentialAuthTag      Bytes             @map("credential_auth_tag") @db.ByteA
+  wrappedDataKey         Bytes             @map("wrapped_data_key") @db.ByteA
+  dataKeyNonce           Bytes             @map("data_key_nonce") @db.ByteA
+  dataKeyAuthTag         Bytes             @map("data_key_auth_tag") @db.ByteA
+  keyVersion             String            @map("key_version") @db.VarChar(40)
+  status                 IntegrationStatus @default(PENDING)
+  lastVerifiedAt         DateTime?         @map("last_verified_at") @db.Timestamptz(3)
+  lastVerificationResult Json?             @map("last_verification_result") @db.JsonB
+  createdById            String            @map("created_by") @db.Uuid
+  updatedById            String            @map("updated_by") @db.Uuid
+  createdAt              DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family    Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  createdBy User   @relation("IntegrationSettingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User   @relation("IntegrationSettingUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([familyId, integrationType])
+  @@index([familyId, status])
+  @@index([keyVersion])
+  @@map("family_integration_settings")
+}
+
+model OutboxEvent {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId      String    @map("family_id") @db.Uuid
+  actorId       String?   @map("actor_id") @db.Uuid
+  eventName     String    @map("event_name") @db.VarChar(160)
+  correlationId String    @map("correlation_id") @db.VarChar(128)
+  payload       Json      @db.JsonB
+  occurredAt    DateTime  @map("occurred_at") @db.Timestamptz(3)
+  availableAt   DateTime  @default(now()) @map("available_at") @db.Timestamptz(3)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(3)
+  attempts      Int       @default(0)
+  lockedAt      DateTime? @map("locked_at") @db.Timestamptz(3)
+  lockOwner     String?   @map("lock_owner") @db.VarChar(128)
+  lastError     String?   @map("last_error") @db.VarChar(80)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  actor  User?  @relation("OutboxActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([publishedAt, availableAt, createdAt])
+  @@index([familyId, occurredAt])
+  @@index([lockedAt])
+  @@map("outbox_events")
+}
+
+model WorkerJobRun {
+  id          String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  jobName     String          @map("job_name") @db.VarChar(80)
+  runKey      String          @map("run_key") @db.VarChar(128)
+  status      WorkerJobStatus @default(RUNNING)
+  attempts    Int             @default(1)
+  startedAt   DateTime        @default(now()) @map("started_at") @db.Timestamptz(3)
+  finishedAt  DateTime?       @map("finished_at") @db.Timestamptz(3)
+  nextRetryAt DateTime?       @map("next_retry_at") @db.Timestamptz(3)
+  errorCode   String?         @map("error_code") @db.VarChar(80)
+  result      Json?           @db.JsonB
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([jobName, runKey])
+  @@index([status, nextRetryAt])
+  @@map("worker_job_runs")
+}

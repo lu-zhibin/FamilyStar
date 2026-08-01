@@ -1,0 +1,14 @@
+{
+  "name": "check-in",
+  "version": "0.1.0",
+  "capabilities": ["check-in.submit", "check-in.review"],
+  "dependencies": ["tasks"],
+  "permissions": ["database:read", "database:write", "events:publish", "events:subscribe"],
+  "subscribes": ["tasks.task.archived.v1"],
+  "publishes": [
+    "check-in.entry.submitted.v1",
+    "check-in.entry.approved.v1",
+    "check-in.entry.rejected.v1",
+    "check-in.collaboration.completed.v1"
+  ]
+}

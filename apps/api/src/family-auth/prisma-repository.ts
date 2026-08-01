@@ -1,0 +1,258 @@
+import { Prisma, PrismaClient } from '@prisma/client';
+
+import {
+  DEFAULT_LEVEL_CONFIGS,
+  DEFAULT_TASK_TYPES,
+  MAX_ACTIVE_PARENTS_PER_FAMILY,
+} from './constants.js';
+import {
+  FamilyParentLimitError,
+  InvalidInvitationTokenError,
+  InvitationCreatorRequiredError,
+  InvitationExpiredError,
+  InvitationUnavailableError,
+} from './invitation-service.js';
+import { ParentEmailConflictError } from './service.js';
+import type {
+  AcceptInvitationInput,
+  CreateInvitationInput,
+  FamilyAuthRepository,
+  FamilyInitialization,
+  FamilyInvitationRepository,
+  InvitationCreation,
+  ParentIdentity,
+} from './types.js';
+
+function mapParent(user: {
+  id: string;
+  familyId: string;
+  nickname: string;
+  email: string | null;
+  passwordHash: string | null;
+}): ParentIdentity {
+  if (!user.email || !user.passwordHash) throw new Error('Parent credential record is incomplete.');
+  return { ...user, email: user.email, passwordHash: user.passwordHash };
+}
+
+type FamilyRow = { id: string; createdById: string | null };
+type InvitationIdRow = { id: string };
+type InvitationRow = {
+  id: string;
+  familyId: string;
+  invitedById: string;
+  email: string;
+  expiresAt: Date;
+};
+
+export class PrismaFamilyAuthRepository
+  implements FamilyAuthRepository, FamilyInvitationRepository<Prisma.TransactionClient>
+{
+  constructor(private readonly prisma: PrismaClient) {}
+
+  async findActiveParentByEmail(email: string): Promise<ParentIdentity | null> {
+    const users = await this.prisma.$queryRaw<ParentIdentity[]>(Prisma.sql`
+      SELECT "id", "family_id" AS "familyId", "nickname", "email", "password_hash" AS "passwordHash"
+      FROM "users"
+      WHERE "role" = 'parent'
+        AND "deleted_at" IS NULL
+        AND LOWER("email") = ${email}
+      LIMIT 1
+    `);
+    return users[0] ?? null;
+  }
+
+  async createFamilyWithParent(input: FamilyInitialization): Promise<ParentIdentity> {
+    try {
+      return await this.prisma.$transaction(async (transaction) => {
+        const family = await transaction.family.create({
+          data: {
+            name: input.familyName,
+            settings: input.settings as Prisma.InputJsonObject,
+          },
+        });
+        const parent = await transaction.user.create({
+          data: {
+            familyId: family.id,
+            role: 'PARENT',
+            nickname: input.nickname,
+            email: input.email,
+            passwordHash: input.passwordHash,
+          },
+        });
+        await transaction.family.update({
+          where: { id: family.id },
+          data: { createdById: parent.id },
+        });
+
+        for (const taskType of DEFAULT_TASK_TYPES) {
+          await transaction.taskTypeTemplate.upsert({
+            where: { code: taskType.code },
+            create: {
+              code: taskType.code,
+              name: taskType.name,
+              icon: taskType.icon,
+              sortOrder: taskType.sortOrder,
+            },
+            update: {},
+          });
+        }
+        await transaction.taskType.createMany({
+          data: DEFAULT_TASK_TYPES.map((taskType) => ({
+            familyId: family.id,
+            templateCode: taskType.code,
+            name: taskType.name,
+            icon: taskType.icon,
+            sortOrder: taskType.sortOrder,
+          })),
+        });
+        await transaction.levelConfig.createMany({
+          data: DEFAULT_LEVEL_CONFIGS.map((level) => ({ ...level, familyId: family.id })),
+        });
+        return mapParent(parent);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ParentEmailConflictError();
+      }
+      throw error;
+    }
+  }
+
+  async createOrRefresh(
+    transaction: Prisma.TransactionClient,
+    input: CreateInvitationInput,
+  ): Promise<InvitationCreation> {
+    const families = await transaction.$queryRaw<FamilyRow[]>(Prisma.sql`
+      SELECT "id", "created_by" AS "createdById"
+      FROM "families"
+      WHERE "id" = ${input.familyId}::uuid AND "deleted_at" IS NULL
+      FOR UPDATE
+    `);
+    const family = families[0];
+    if (!family || family.createdById !== input.actorId) {
+      throw new InvitationCreatorRequiredError();
+    }
+
+    const activeParents = await transaction.user.count({
+      where: { familyId: input.familyId, role: 'PARENT', deletedAt: null },
+    });
+    if (activeParents >= MAX_ACTIVE_PARENTS_PER_FAMILY) throw new FamilyParentLimitError();
+
+    const activeEmail = await transaction.$queryRaw<InvitationIdRow[]>(Prisma.sql`
+      SELECT "id"
+      FROM "users"
+      WHERE "deleted_at" IS NULL AND LOWER("email") = ${input.email}
+      LIMIT 1
+    `);
+    if (activeEmail.length > 0) throw new ParentEmailConflictError();
+
+    await transaction.$executeRaw(Prisma.sql`
+      UPDATE "invitations"
+      SET "status" = 'expired', "updated_at" = ${input.now}
+      WHERE "family_id" = ${input.familyId}::uuid
+        AND LOWER("email") = ${input.email}
+        AND "status" = 'pending'
+        AND "expires_at" <= ${input.now}
+    `);
+    const invitations = await transaction.$queryRaw<InvitationRow[]>(Prisma.sql`
+      INSERT INTO "invitations" (
+        "family_id", "invited_by", "email", "token_hash", "expires_at"
+      ) VALUES (
+        ${input.familyId}::uuid, ${input.actorId}::uuid, ${input.email},
+        ${input.tokenHash}, ${input.expiresAt}
+      )
+      ON CONFLICT ("family_id", (LOWER("email"))) WHERE "status" = 'pending'
+      DO UPDATE SET
+        "token_hash" = EXCLUDED."token_hash",
+        "updated_at" = ${input.now}
+      RETURNING "id", "family_id" AS "familyId", "invited_by" AS "invitedById",
+                "email", "expires_at" AS "expiresAt"
+    `);
+    const invitation = invitations[0];
+    if (!invitation) throw new Error('Invitation write did not return a record.');
+    const emailSetting = await transaction.familyIntegrationSetting.findUnique({
+      where: {
+        familyId_integrationType: {
+          familyId: input.familyId,
+          integrationType: 'EMAIL',
+        },
+      },
+      select: { status: true },
+    });
+    return {
+      invitation: {
+        id: invitation.id,
+        familyId: invitation.familyId,
+        invitedById: invitation.invitedById,
+        email: invitation.email,
+        expiresAt: invitation.expiresAt,
+      },
+      emailConfigured: emailSetting?.status === 'VERIFIED',
+    };
+  }
+
+  async accept(
+    transaction: Prisma.TransactionClient,
+    input: AcceptInvitationInput,
+  ): Promise<ParentIdentity> {
+    try {
+      const invitationRows = await transaction.$queryRaw<InvitationIdRow[]>(Prisma.sql`
+        SELECT "id"
+        FROM "invitations"
+        WHERE "token_hash" = ${input.tokenHash}
+        FOR UPDATE
+      `);
+      const invitationId = invitationRows[0]?.id;
+      if (!invitationId) throw new InvalidInvitationTokenError();
+      const invitation = await transaction.invitation.findUnique({ where: { id: invitationId } });
+      if (!invitation || invitation.status !== 'PENDING') throw new InvitationUnavailableError();
+      if (invitation.expiresAt.getTime() <= input.now.getTime()) {
+        throw new InvitationExpiredError();
+      }
+
+      const families = await transaction.$queryRaw<FamilyRow[]>(Prisma.sql`
+        SELECT "id", "created_by" AS "createdById"
+        FROM "families"
+        WHERE "id" = ${invitation.familyId}::uuid AND "deleted_at" IS NULL
+        FOR UPDATE
+      `);
+      if (families.length === 0) throw new InvitationUnavailableError();
+      const activeParents = await transaction.user.count({
+        where: { familyId: invitation.familyId, role: 'PARENT', deletedAt: null },
+      });
+      if (activeParents >= MAX_ACTIVE_PARENTS_PER_FAMILY) throw new FamilyParentLimitError();
+
+      const activeEmail = await transaction.$queryRaw<InvitationIdRow[]>(Prisma.sql`
+        SELECT "id"
+        FROM "users"
+        WHERE "deleted_at" IS NULL AND LOWER("email") = ${invitation.email}
+        LIMIT 1
+      `);
+      if (activeEmail.length > 0) throw new ParentEmailConflictError();
+
+      const parent = await transaction.user.create({
+        data: {
+          familyId: invitation.familyId,
+          role: 'PARENT',
+          nickname: input.nickname,
+          email: invitation.email,
+          passwordHash: input.passwordHash,
+        },
+      });
+      await transaction.invitation.update({
+        where: { id: invitation.id },
+        data: {
+          status: 'ACCEPTED',
+          invitedUserId: parent.id,
+          acceptedAt: input.now,
+        },
+      });
+      return mapParent(parent);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ParentEmailConflictError();
+      }
+      throw error;
+    }
+  }
+}

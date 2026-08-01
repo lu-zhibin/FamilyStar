@@ -1,0 +1,13 @@
+packages:
+  - apps/*
+  - packages/*
+  - modules
+  - modules/*
+overrides:
+  '@napi-rs/wasm-runtime': 1.1.6
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  unrs-resolver: true

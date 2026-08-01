@@ -1,0 +1,123 @@
+name: familystar-dev
+
+x-backend-environment: &backend-environment
+  DATABASE_URL: postgresql://${POSTGRES_USER:-familystar}:${POSTGRES_PASSWORD:-familystar}@postgres:5432/${POSTGRES_DB:-familystar}?schema=public
+  REDIS_URL: redis://redis:6379
+  REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-familystar_dev}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8098}
+  CREDENTIAL_VAULT_ACTIVE_KEY_VERSION: ${CREDENTIAL_VAULT_ACTIVE_KEY_VERSION:-}
+  CREDENTIAL_VAULT_MASTER_KEYS: ${CREDENTIAL_VAULT_MASTER_KEYS:-}
+
+x-backend-dependencies: &backend-dependencies
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  migrate:
+    condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-familystar}
+      POSTGRES_USER: ${POSTGRES_USER:-familystar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-familystar}
+    healthcheck:
+      test: ['CMD-SHELL', "pg_isready -U '$${POSTGRES_USER}' -d '$${POSTGRES_DB}'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [internal]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - redis-data:/data
+    networks: [internal]
+    restart: unless-stopped
+
+  migrate:
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-api
+    build:
+      context: .
+      target: api
+      cache_from:
+        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-api
+    command: [pnpm, --filter, '@familystar/api', prisma:migrate:deploy]
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [internal]
+    restart: 'no'
+
+  api:
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-api
+    build:
+      context: .
+      target: api
+      cache_from:
+        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-api
+    environment:
+      <<: *backend-environment
+      NODE_ENV: development
+      PORT: 3001
+    depends_on: *backend-dependencies
+    networks: [internal]
+    restart: unless-stopped
+
+  worker:
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-worker
+    build:
+      context: .
+      target: worker
+      cache_from:
+        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-worker
+    environment:
+      <<: *backend-environment
+      NODE_ENV: development
+      WORKER_PORT: 3002
+      WORKER_POLL_INTERVAL_MS: ${WORKER_POLL_INTERVAL_MS:-5000}
+      WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-100}
+      WORKER_LOCK_TTL_MS: ${WORKER_LOCK_TTL_MS:-300000}
+      MEDIA_CLEANUP_AGE_HOURS: ${MEDIA_CLEANUP_AGE_HOURS:-24}
+    depends_on: *backend-dependencies
+    networks: [internal]
+    restart: unless-stopped
+
+  web:
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-web
+    build:
+      context: .
+      target: web
+      cache_from:
+        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-web
+    environment:
+      API_INTERNAL_URL: http://api:3001
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '0.0.0.0:8098:3000'
+    networks: [internal]
+    restart: unless-stopped
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:

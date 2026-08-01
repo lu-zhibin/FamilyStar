@@ -1,0 +1,9 @@
+{
+  "name": "points",
+  "version": "0.1.0",
+  "capabilities": ["points.ledger", "points.balance"],
+  "dependencies": ["check-in"],
+  "permissions": ["database:read", "database:write", "events:publish", "events:subscribe"],
+  "subscribes": ["check-in.entry.approved.v1"],
+  "publishes": ["points.balance.changed.v1"]
+}

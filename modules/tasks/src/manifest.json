@@ -1,0 +1,9 @@
+{
+  "name": "tasks",
+  "version": "0.1.0",
+  "capabilities": ["tasks.manage", "tasks.schedule"],
+  "dependencies": [],
+  "permissions": ["database:read", "database:write", "events:publish"],
+  "subscribes": [],
+  "publishes": ["tasks.task.created.v1", "tasks.task.updated.v1", "tasks.task.archived.v1"]
+}

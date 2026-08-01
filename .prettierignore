@@ -1,0 +1,7 @@
+.monkeycode/
+.monkeycode-tmp-files/
+design/
+**/.next/
+**/dist/
+**/node_modules/
+pnpm-lock.yaml

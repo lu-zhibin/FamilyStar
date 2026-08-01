@@ -1,0 +1,1388 @@
+'use client';
+
+import {
+  Bell,
+  BookOpen,
+  Camera,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  CloudOff,
+  Gift,
+  Heart,
+  Image as ImageIcon,
+  Info,
+  Mail,
+  Medal,
+  PackageCheck,
+  Pencil,
+  Plus,
+  Save,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  Target,
+  TrendingUp,
+  Trophy,
+  UserPlus,
+  X,
+} from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+
+import { formatFrequency, parentApi, type ParentSection } from '../lib/parent-portal';
+import { ParentShell } from './parent-shell';
+
+type LoadState = 'loading' | 'live' | 'demo';
+type Child = { id: string; nickname: string; grade: string | null; gender: 'male' | 'female' };
+type Task = {
+  id: string;
+  name: string;
+  base_points: number;
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  check_type: string;
+  verify_mode: string;
+  collaboration_mode: string;
+  frequency: { kind: string; count?: number };
+  assignments: Array<{ child_id: string }>;
+};
+type TaskType = { id: string; name: string };
+type Reward = {
+  id: string;
+  name: string;
+  description: string | null;
+  points_cost: number;
+  stock_available: number | null;
+  type: string;
+  status: 'ACTIVE' | 'INACTIVE';
+};
+type Redemption = {
+  id: string;
+  child_id: string;
+  reward_id: string;
+  points_spent: number;
+  status: string;
+};
+type Wish = {
+  id: string;
+  child_id: string;
+  title: string;
+  target_points: number;
+  progress: { points: number; ratio: number };
+};
+type FamilySettings = {
+  time_zone: string;
+  check_in_deadline: string;
+  makeup_days: number;
+  review_timeout_hours: number;
+  auto_approve_quota: number;
+  streak_multipliers: Array<{ days: 3 | 7 | 14 | 30 | 60 | 100; multiplier: number }>;
+};
+
+const demoChildren: Child[] = [
+  { id: 'tongtong', nickname: '潼潼', grade: '六年级', gender: 'female' },
+  { id: 'haohao', nickname: '昊昊', grade: '三年级', gender: 'male' },
+  { id: 'niuniu', nickname: '妞妞', grade: '学前班', gender: 'female' },
+];
+const demoTasks: Task[] = [
+  {
+    id: 'reading',
+    name: '晨读 30 分钟',
+    base_points: 15,
+    status: 'ACTIVE',
+    check_type: 'PHOTO',
+    verify_mode: 'MANUAL',
+    collaboration_mode: 'SOLO',
+    frequency: { kind: 'daily' },
+    assignments: [{ child_id: 'tongtong' }, { child_id: 'haohao' }],
+  },
+  {
+    id: 'math',
+    name: '完成数学练习',
+    base_points: 20,
+    status: 'ACTIVE',
+    check_type: 'TEXT',
+    verify_mode: 'MANUAL',
+    collaboration_mode: 'SOLO',
+    frequency: { kind: 'weekly_count', count: 5 },
+    assignments: [{ child_id: 'haohao' }],
+  },
+  {
+    id: 'tidy',
+    name: '一起整理房间',
+    base_points: 10,
+    status: 'ACTIVE',
+    check_type: 'PHOTO',
+    verify_mode: 'MANUAL',
+    collaboration_mode: 'COLLAB',
+    frequency: { kind: 'weekdays' },
+    assignments: demoChildren.map(({ id }) => ({ child_id: id })),
+  },
+  {
+    id: 'words',
+    name: '英语单词复习',
+    base_points: 15,
+    status: 'INACTIVE',
+    check_type: 'TICK',
+    verify_mode: 'AUTO',
+    collaboration_mode: 'SOLO',
+    frequency: { kind: 'daily' },
+    assignments: [{ child_id: 'haohao' }],
+  },
+];
+const demoRewards: Reward[] = [
+  {
+    id: 'movie',
+    name: '周末动画时间',
+    description: '30 分钟自由动画时间',
+    points_cost: 30,
+    stock_available: null,
+    type: 'PRIVILEGE',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'book',
+    name: '一本课外书',
+    description: '一起挑选喜欢的新书',
+    points_cost: 50,
+    stock_available: 4,
+    type: 'PHYSICAL',
+    status: 'ACTIVE',
+  },
+  {
+    id: 'park',
+    name: '周末游乐园',
+    description: '全家出发的一日体验',
+    points_cost: 200,
+    stock_available: 1,
+    type: 'EXPERIENCE',
+    status: 'ACTIVE',
+  },
+];
+const demoSettings: FamilySettings = {
+  time_zone: 'Asia/Shanghai',
+  check_in_deadline: '23:59',
+  makeup_days: 3,
+  review_timeout_hours: 48,
+  auto_approve_quota: 30,
+  streak_multipliers: [
+    { days: 3, multiplier: 1.5 },
+    { days: 7, multiplier: 2 },
+    { days: 14, multiplier: 3 },
+    { days: 30, multiplier: 5 },
+    { days: 60, multiplier: 8 },
+    { days: 100, multiplier: 10 },
+  ],
+};
+
+function useApiData<T>(path: string, key: string, fallback: T) {
+  const initialFallback = useRef(fallback);
+  const [data, setData] = useState(fallback);
+  const [state, setState] = useState<LoadState>('loading');
+  useEffect(() => {
+    let active = true;
+    parentApi<Record<string, T>>(path)
+      .then((payload) => {
+        if (active) {
+          setData(payload[key] ?? initialFallback.current);
+          setState('live');
+        }
+      })
+      .catch(() => active && setState('demo'));
+    return () => {
+      active = false;
+    };
+  }, [key, path]);
+  return { data, setData, state };
+}
+
+function PageHeader({
+  title,
+  eyebrow,
+  description,
+  state,
+  action,
+}: {
+  title: string;
+  eyebrow: string;
+  description: string;
+  state?: LoadState;
+  action?: ReactNode;
+}) {
+  return (
+    <header className="mb-6 flex items-end justify-between gap-4 mobile:items-start mobile:flex-col">
+      <div>
+        <p className="eyebrow">{eyebrow}</p>
+        <h1 className="font-display text-[clamp(1.75rem,4vw,2.5rem)] leading-tight text-brown">
+          {title}
+        </h1>
+        <p className="mt-2 max-w-2xl font-semibold text-brown-light">{description}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        {state && <DataStatus state={state} />}
+        {action}
+      </div>
+    </header>
+  );
+}
+function DataStatus({ state }: { state: LoadState }) {
+  if (state === 'loading')
+    return (
+      <span className="status-chip bg-sky/15 text-blue">
+        <span className="loading-dot" />
+        同步中
+      </span>
+    );
+  if (state === 'live')
+    return (
+      <span className="status-chip bg-leaf-light text-leaf-dark">
+        <Check size={14} />
+        实时数据
+      </span>
+    );
+  return (
+    <span className="status-chip bg-sand text-brown-light">
+      <CloudOff size={14} />
+      演示数据
+    </span>
+  );
+}
+function Panel({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <section className={`panel ${className}`}>{children}</section>;
+}
+function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3">
+      <h2 className="font-display text-section text-brown">{children}</h2>
+      {action}
+    </div>
+  );
+}
+function EmptyState({
+  title,
+  detail,
+  icon = <Info size={28} />,
+}: {
+  title: string;
+  detail: string;
+  icon?: ReactNode;
+}) {
+  return (
+    <div className="empty-state">
+      {icon}
+      <strong>{title}</strong>
+      <p>{detail}</p>
+    </div>
+  );
+}
+function Progress({ value, label }: { value: number; label: string }) {
+  return (
+    <div>
+      <div className="mb-1 flex justify-between text-caption font-extrabold">
+        <span>{label}</span>
+        <span>{value}%</span>
+      </div>
+      <div className="h-2.5 overflow-hidden rounded-pill bg-sand">
+        <span
+          className="block h-full rounded-pill bg-gradient-to-r from-leaf to-leaf-dark"
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+function Metric({
+  label,
+  value,
+  detail,
+  tone = 'leaf',
+  icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: 'leaf' | 'orange' | 'sky' | 'pink';
+  icon: ReactNode;
+}) {
+  return (
+    <article className={`metric metric-${tone}`}>
+      <span className="metric-icon">{icon}</span>
+      <div>
+        <p className="text-caption font-extrabold text-brown-light">{label}</p>
+        <strong className="font-display text-metric text-brown">{value}</strong>
+        <p className="text-caption font-bold text-brown-light">{detail}</p>
+      </div>
+    </article>
+  );
+}
+
+function DashboardPage() {
+  const children = useApiData('/family/children', 'children', demoChildren);
+  return (
+    <>
+      <PageHeader
+        eyebrow="今天也在一起成长"
+        title="家庭总览"
+        description="把三个孩子的今日节奏、待办和成长趋势放在一个视野里。"
+        state={children.state}
+      />
+      <div className="metric-grid">
+        <Metric label="今日完成" value="6 / 12" detail="较昨日多 2 项" icon={<CheckCircle2 />} />
+        <Metric
+          label="等待审核"
+          value="3"
+          detail="最早将在 6 小时后超时"
+          tone="orange"
+          icon={<Clock3 />}
+        />
+        <Metric label="本周获得" value="+185" detail="全家成长积分" tone="sky" icon={<Star />} />
+        <Metric
+          label="最长连续"
+          value="12 天"
+          detail="潼潼保持中"
+          tone="pink"
+          icon={<TrendingUp />}
+        />
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
+        <Panel>
+          <SectionTitle>孩子今日进度</SectionTitle>
+          <div className="grid gap-3 md:grid-cols-3">
+            {children.data.map((child, index) => (
+              <article key={child.id} className="soft-card">
+                <div className="mb-4 flex items-center gap-3">
+                  <span className="avatar">{child.nickname.slice(-1)}</span>
+                  <div>
+                    <h3 className="font-extrabold">{child.nickname}</h3>
+                    <p className="text-caption font-bold text-brown-light">
+                      {child.grade ?? '成长探索中'}
+                    </p>
+                  </div>
+                </div>
+                <Progress
+                  value={[50, 60, 33][index] ?? 40}
+                  label={`${[2, 3, 1][index] ?? 1} 项已完成`}
+                />
+                <div className="mt-4 flex justify-between text-caption font-extrabold text-brown-light">
+                  <span>Lv.{6 - index}</span>
+                  <span>{[280, 165, 90][index] ?? 0} 星</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Panel>
+        <Panel>
+          <SectionTitle>今日待办</SectionTitle>
+          <a className="todo-row" href="/reviews">
+            <span className="metric-icon">
+              <CheckCircle2 />
+            </span>
+            <span className="flex-1">
+              <strong className="block">3 条打卡待审核</strong>
+              <small>含 1 条照片凭证</small>
+            </span>
+            <ChevronRight />
+          </a>
+          <a className="todo-row" href="/rewards">
+            <span className="metric-icon">
+              <PackageCheck />
+            </span>
+            <span className="flex-1">
+              <strong className="block">2 个奖励待兑现</strong>
+              <small>周末动画、课外书</small>
+            </span>
+            <ChevronRight />
+          </a>
+          <p className="mt-4 rounded-card bg-sand/60 p-3 text-caption font-bold text-brown-light">
+            完成进度来自待建设的总览聚合接口，当前为设计演示口径。
+          </p>
+        </Panel>
+      </div>
+      <Panel className="mt-5">
+        <SectionTitle>最近家庭动态</SectionTitle>
+        <EmptyState
+          title="动态时间线正在接入"
+          detail="家庭动态聚合接口将在后续阶段提供。"
+          icon={<Sparkles size={30} />}
+        />
+      </Panel>
+    </>
+  );
+}
+
+function TasksPage() {
+  const resource = useApiData('/family/tasks', 'tasks', demoTasks);
+  const types = useApiData<TaskType[]>('/family/task-types', 'task_types', [
+    { id: 'demo-habit', name: '生活习惯' },
+  ]);
+  const children = useApiData('/family/children', 'children', demoChildren);
+  const [filter, setFilter] = useState('all');
+  const [open, setOpen] = useState(false);
+  const tasks = resource.data.filter((task) => filter === 'all' || task.status === filter);
+
+  async function createTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const draft = {
+      task_type_id: String(form.get('task_type_id')),
+      name: String(form.get('name')),
+      description: String(form.get('description')),
+      check_type: String(form.get('check_type')),
+      verify_mode: String(form.get('verify_mode')),
+      collaboration_mode: 'SOLO',
+      frequency: { kind: 'daily' },
+      base_points: Number(form.get('base_points')),
+      assignments: [
+        {
+          child_id: String(form.get('child_id')),
+          start_date: new Date().toISOString().slice(0, 10),
+        },
+      ],
+    };
+    try {
+      const data = await parentApi<{ task: Task }>('/family/tasks', {
+        method: 'POST',
+        body: JSON.stringify(draft),
+      });
+      resource.setData((items) => [data.task, ...items]);
+    } catch {
+      resource.setData((items) => [
+        {
+          id: crypto.randomUUID(),
+          status: 'ACTIVE',
+          ...draft,
+          assignments: [{ child_id: draft.assignments[0]?.child_id ?? '' }],
+        },
+        ...items,
+      ]);
+    }
+    setOpen(false);
+  }
+  return (
+    <>
+      <PageHeader
+        eyebrow="习惯从清晰的约定开始"
+        title="任务管理"
+        description="统一配置频率、积分、验收方式和多孩分配。"
+        state={resource.state}
+        action={
+          <button className="primary-button" onClick={() => setOpen(true)}>
+            <Plus size={17} />
+            创建任务
+          </button>
+        }
+      />
+      <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="任务状态筛选">
+        {(
+          [
+            ['all', '全部'],
+            ['ACTIVE', '进行中'],
+            ['INACTIVE', '已停用'],
+            ['ARCHIVED', '已归档'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            className={`chip ${filter === key ? 'chip-active' : ''}`}
+            onClick={() => setFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <Panel>
+        <SectionTitle>家庭任务</SectionTitle>
+        <div className="table-list">
+          {tasks.map((task) => (
+            <article
+              key={task.id}
+              className={`list-row ${task.status !== 'ACTIVE' ? 'opacity-60' : ''}`}
+            >
+              <span className="metric-icon">
+                {task.check_type === 'PHOTO' ? <Camera /> : <BookOpen />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="truncate font-extrabold">{task.name}</h3>
+                  <span className="tag">
+                    {task.collaboration_mode === 'COLLAB' ? '协作' : '单人'}
+                  </span>
+                  <span
+                    className={`tag ${task.verify_mode === 'AUTO' ? 'tag-green' : 'tag-orange'}`}
+                  >
+                    {task.verify_mode === 'AUTO' ? '自动验收' : '人工审核'}
+                  </span>
+                </div>
+                <p className="mt-1 text-caption font-bold text-brown-light">
+                  {formatFrequency(task.frequency)} · 分配 {task.assignments.length} 个孩子
+                </p>
+              </div>
+              <strong className="whitespace-nowrap font-display text-orange">
+                +{task.base_points} 星
+              </strong>
+              <button className="icon-button" aria-label={`编辑${task.name}`}>
+                <Pencil size={17} />
+              </button>
+            </article>
+          ))}
+          {tasks.length === 0 && (
+            <EmptyState title="当前筛选下没有任务" detail="调整筛选条件或创建一项新任务。" />
+          )}
+        </div>
+      </Panel>
+      {open && (
+        <Modal title="创建家庭任务" onClose={() => setOpen(false)}>
+          <form className="space-y-4" onSubmit={createTask}>
+            <label className="field-label">
+              任务名称
+              <input
+                className="field"
+                name="name"
+                required
+                maxLength={80}
+                placeholder="例如：每天阅读 30 分钟"
+              />
+            </label>
+            <label className="field-label">
+              任务说明
+              <textarea className="field min-h-20 py-3" name="description" maxLength={1000} />
+            </label>
+            <div className="form-grid">
+              <label className="field-label">
+                任务类型
+                <select className="field" name="task_type_id">
+                  {types.data.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                分配孩子
+                <select className="field" name="child_id">
+                  {children.data.map((child) => (
+                    <option key={child.id} value={child.id}>
+                      {child.nickname}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                打卡方式
+                <select className="field" name="check_type">
+                  <option value="TICK">勾选</option>
+                  <option value="TEXT">文字</option>
+                  <option value="PHOTO">照片</option>
+                </select>
+              </label>
+              <label className="field-label">
+                验收方式
+                <select className="field" name="verify_mode">
+                  <option value="AUTO">自动验收</option>
+                  <option value="MANUAL">人工审核</option>
+                </select>
+              </label>
+              <label className="field-label">
+                基础积分
+                <input
+                  className="field"
+                  name="base_points"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  defaultValue="10"
+                  required
+                />
+              </label>
+            </div>
+            <button className="primary-button w-full" type="submit">
+              创建并启用
+            </button>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function ReviewsPage() {
+  const [pending, setPending] = useState([
+    '潼潼 · 晨读 30 分钟',
+    '昊昊 · 整理房间',
+    '妞妞 · 亲子阅读',
+  ]);
+  return (
+    <>
+      <PageHeader
+        eyebrow="及时回应每一次认真"
+        title="打卡审核"
+        description="查看凭证、填写反馈，并在超时前完成审核。"
+      />
+      <div className="notice">
+        <Clock3 size={20} />
+        <span>手动审核默认在 48 小时后自动通过；当前审核队列接口尚待补齐，以下为交互演示。</span>
+      </div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        {pending.map((title, index) => (
+          <Panel key={title}>
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <span className="tag tag-orange">剩余 {6 + index * 8} 小时</span>
+                <h2 className="mt-3 font-display text-title">{title}</h2>
+                <p className="text-caption font-bold text-brown-light">
+                  今天 {9 + index}:20 提交 · 照片凭证
+                </p>
+              </div>
+              <span className="avatar">{title[0]}</span>
+            </div>
+            <div className="media-placeholder">
+              <ImageIcon size={36} />
+              <span>媒体访问需审核队列返回 media_id</span>
+            </div>
+            <label className="field-label mt-4">
+              审核评语
+              <input className="field" placeholder="打回时必须填写原因" />
+            </label>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                className="secondary-button"
+                onClick={() => setPending((items) => items.filter((item) => item !== title))}
+              >
+                <X size={17} />
+                打回修改
+              </button>
+              <button
+                className="primary-button"
+                onClick={() => setPending((items) => items.filter((item) => item !== title))}
+              >
+                <Check size={17} />
+                通过并发分
+              </button>
+            </div>
+          </Panel>
+        ))}
+      </div>
+      {pending.length === 0 && (
+        <Panel className="mt-5">
+          <EmptyState
+            title="待审核已清空"
+            detail="新的手动验收打卡会出现在这里。"
+            icon={<CheckCircle2 size={30} />}
+          />
+        </Panel>
+      )}
+    </>
+  );
+}
+
+function RewardsPage() {
+  const rewards = useApiData('/rewards', 'rewards', demoRewards);
+  const redemptions = useApiData<Redemption[]>('/redemptions', 'redemptions', []);
+  const wishes = useApiData<Wish[]>('/wishes', 'wishes', []);
+  const [open, setOpen] = useState(false);
+
+  async function createReward(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const draft = {
+      name: String(form.get('name')),
+      description: String(form.get('description')),
+      points_cost: Number(form.get('points_cost')),
+      type: String(form.get('type')),
+      stock_total: form.get('stock_total') ? Number(form.get('stock_total')) : null,
+      status: 'ACTIVE' as const,
+    };
+    try {
+      const data = await parentApi<{ reward: Reward }>('/rewards', {
+        method: 'POST',
+        body: JSON.stringify(draft),
+      });
+      rewards.setData((items) => [data.reward, ...items]);
+    } catch {
+      rewards.setData((items) => [
+        { id: crypto.randomUUID(), stock_available: draft.stock_total, ...draft },
+        ...items,
+      ]);
+    }
+    setOpen(false);
+  }
+
+  async function advanceRedemption(item: Redemption) {
+    const action = item.status === 'PENDING' ? 'approve' : 'fulfill';
+    try {
+      const data = await parentApi<{ redemption: Redemption }>(
+        `/redemptions/${item.id}/${action}`,
+        { method: 'POST' },
+      );
+      redemptions.setData((items) =>
+        items.map((current) => (current.id === item.id ? data.redemption : current)),
+      );
+    } catch {
+      redemptions.setData((items) =>
+        items.map((current) =>
+          current.id === item.id
+            ? { ...current, status: action === 'approve' ? 'APPROVED' : 'FULFILLED' }
+            : current,
+        ),
+      );
+    }
+  }
+  return (
+    <>
+      <PageHeader
+        eyebrow="努力有回响，期待有着落"
+        title="奖励管理"
+        description="集中处理兑换、奖励库存和孩子的愿望。"
+        state={rewards.state}
+        action={
+          <button className="primary-button" onClick={() => setOpen(true)}>
+            <Plus size={17} />
+            新增奖励
+          </button>
+        }
+      />
+      <div className="grid gap-5 lg:grid-cols-[1fr_1.5fr]">
+        <Panel>
+          <SectionTitle>兑换审批</SectionTitle>
+          {redemptions.data.length === 0 ? (
+            <EmptyState
+              title="暂无待审批兑换"
+              detail="≤ 30 星的兑换会自动进入待兑现。"
+              icon={<PackageCheck size={30} />}
+            />
+          ) : (
+            redemptions.data.map((item) => (
+              <div className="list-row" key={item.id}>
+                <Gift />
+                <span className="flex-1 font-extrabold">兑换 {item.points_spent} 星</span>
+                <span className="tag tag-orange">{item.status}</span>
+                {(item.status === 'PENDING' || item.status === 'APPROVED') && (
+                  <button className="secondary-button" onClick={() => advanceRedemption(item)}>
+                    {item.status === 'PENDING' ? '批准' : '确认兑现'}
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </Panel>
+        <Panel>
+          <SectionTitle>奖励池</SectionTitle>
+          <div className="grid gap-3 md:grid-cols-3">
+            {rewards.data.map((reward) => (
+              <article className="soft-card" key={reward.id}>
+                <span className="metric-icon mb-3">
+                  <Gift />
+                </span>
+                <h3 className="font-extrabold">{reward.name}</h3>
+                <p className="mt-1 min-h-9 text-caption font-bold text-brown-light">
+                  {reward.description}
+                </p>
+                <div className="mt-4 flex items-end justify-between">
+                  <strong className="font-display text-title text-orange">
+                    {reward.points_cost} 星
+                  </strong>
+                  <span className="tag">
+                    {reward.stock_available === null ? '不限量' : `余 ${reward.stock_available}`}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      </div>
+      <Panel className="mt-5">
+        <SectionTitle>许愿墙</SectionTitle>
+        {wishes.data.length === 0 ? (
+          <EmptyState
+            title="还没有新的愿望"
+            detail="孩子创建愿望后，家长可一键采纳为正式奖励。"
+            icon={<Heart size={30} />}
+          />
+        ) : (
+          wishes.data.map((wish) => (
+            <div className="list-row" key={wish.id}>
+              <Heart className="text-pink-dark" />
+              <div className="flex-1">
+                <strong>{wish.title}</strong>
+                <Progress
+                  value={Math.round(wish.progress.ratio * 100)}
+                  label={`${wish.progress.points} / ${wish.target_points} 星`}
+                />
+              </div>
+              <button className="secondary-button">采纳</button>
+            </div>
+          ))
+        )}
+      </Panel>
+      {open && (
+        <Modal title="新增奖励" onClose={() => setOpen(false)}>
+          <form className="space-y-4" onSubmit={createReward}>
+            <label className="field-label">
+              奖励名称
+              <input className="field" name="name" required maxLength={100} />
+            </label>
+            <label className="field-label">
+              奖励说明
+              <textarea className="field min-h-20 py-3" name="description" maxLength={1000} />
+            </label>
+            <div className="form-grid">
+              <label className="field-label">
+                所需积分
+                <input className="field" name="points_cost" type="number" min="1" required />
+              </label>
+              <label className="field-label">
+                奖励类型
+                <select className="field" name="type">
+                  <option value="PRIVILEGE">特权</option>
+                  <option value="PHYSICAL">实物</option>
+                  <option value="EXPERIENCE">体验</option>
+                  <option value="CUSTOM">自定义</option>
+                </select>
+              </label>
+              <label className="field-label">
+                库存（留空不限量）
+                <input className="field" name="stock_total" type="number" min="0" />
+              </label>
+            </div>
+            <button className="primary-button w-full" type="submit">
+              保存并上架
+            </button>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function LevelsPage() {
+  const stages = ['启程', '萌芽', '进阶', '闪耀', '黑铁', '青铜', '白银', '黄金', '铂金', '钻石'];
+  return (
+    <>
+      <PageHeader
+        eyebrow="看见长期积累的力量"
+        title="等级与成就"
+        description="查看孩子当前等级、20 级成长阶梯与等级权益。"
+      />
+      <div className="notice">
+        <Info size={20} />
+        <span>当前 API 支持逐个孩子读取等级视图；完整等级配置与奖励发放接口将在后续补齐。</span>
+      </div>
+      <div className="mt-5 metric-grid">
+        {demoChildren.map((child, index) => (
+          <Metric
+            key={child.id}
+            label={child.nickname}
+            value={`Lv.${6 - index}`}
+            detail={`${[620, 480, 260][index]} 累计积分`}
+            tone={['orange', 'sky', 'leaf'][index] as 'orange' | 'sky' | 'leaf'}
+            icon={<Medal />}
+          />
+        ))}
+      </div>
+      <Panel className="mt-5">
+        <SectionTitle>20 级成长阶梯</SectionTitle>
+        <div className="level-grid">
+          {Array.from({ length: 20 }, (_, index) => (
+            <article className={`level-tile ${index < 6 ? 'level-reached' : ''}`} key={index}>
+              <span className="grid size-9 place-items-center rounded-full bg-white/70">
+                <Trophy size={18} />
+              </span>
+              <div>
+                <strong>Lv.{index + 1}</strong>
+                <p>{stages[Math.min(Math.floor(index / 2), stages.length - 1)]}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Panel>
+      <div className="mt-5 grid gap-5 md:grid-cols-3">
+        <Panel>
+          <SectionTitle>兑换折扣</SectionTitle>
+          <p className="font-display text-metric text-orange">最高 20%</p>
+          <p className="text-caption font-bold text-brown-light">随等级自动生效</p>
+        </Panel>
+        <Panel>
+          <SectionTitle>免审批额度</SectionTitle>
+          <p className="font-display text-metric text-leaf-dark">等级加成</p>
+          <p className="text-caption font-bold text-brown-light">与家庭额度取较高值</p>
+        </Panel>
+        <Panel>
+          <SectionTitle>许愿槽位</SectionTitle>
+          <p className="font-display text-metric text-blue">逐级解锁</p>
+          <p className="text-caption font-bold text-brown-light">支持更多长期目标</p>
+        </Panel>
+      </div>
+    </>
+  );
+}
+
+function StatsPage() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="从趋势中找到陪伴重点"
+        title="数据面板"
+        description="按孩子、任务和时间观察家庭成长节奏。"
+      />
+      <div className="notice">
+        <Info size={20} />
+        <span>MVP 聚合统计接口尚待建设，当前图表展示设计口径并明确标记为演示数据。</span>
+      </div>
+      <div className="mt-5 metric-grid">
+        <Metric label="本周打卡率" value="72%" detail="较上周 +8%" icon={<Target />} />
+        <Metric
+          label="完成任务"
+          value="36"
+          detail="12 项任务持续中"
+          tone="sky"
+          icon={<CheckCircle2 />}
+        />
+        <Metric label="获得积分" value="+185" detail="晨读贡献最多" tone="orange" icon={<Star />} />
+        <Metric
+          label="连续活跃"
+          value="7 天"
+          detail="全家每天有记录"
+          tone="pink"
+          icon={<TrendingUp />}
+        />
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
+        <Panel>
+          <SectionTitle>
+            7 天完成趋势 <span className="tag">演示</span>
+          </SectionTitle>
+          <div className="chart-bars">
+            {[52, 68, 61, 78, 70, 88, 72].map((height, index) => (
+              <div key={index} className="chart-column">
+                <span style={{ height: `${height}%` }} />
+                <small>{['一', '二', '三', '四', '五', '六', '日'][index]}</small>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel>
+          <SectionTitle>孩子完成率</SectionTitle>
+          <div className="space-y-5">
+            <Progress value={82} label="潼潼" />
+            <Progress value={76} label="昊昊" />
+            <Progress value={58} label="妞妞" />
+          </div>
+        </Panel>
+      </div>
+      <Panel className="mt-5">
+        <SectionTitle>任务洞察</SectionTitle>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="insight">
+            <BookOpen />
+            <strong>晨读最稳定</strong>
+            <p>过去 7 天完成率 93%</p>
+          </div>
+          <div className="insight">
+            <TrendingUp />
+            <strong>周末参与更高</strong>
+            <p>协作任务提升 18%</p>
+          </div>
+          <div className="insight">
+            <Clock3 />
+            <strong>晚间需提醒</strong>
+            <p>20:00 后漏卡较集中</p>
+          </div>
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+function RecordsPage() {
+  return (
+    <>
+      <PageHeader
+        eyebrow="把成长留成可回看的故事"
+        title="成长记录"
+        description="未来将在这里汇集照片时间线、习惯追踪和学习笔记。"
+      />
+      <Panel className="overflow-hidden p-0">
+        <div className="restricted-hero">
+          <BookOpen size={46} />
+          <span className="tag bg-white/80">Phase 1 受限页面</span>
+          <h2 className="font-display text-page">记录能力正在生长</h2>
+          <p>当前阶段保留完整响应式骨架。成长记录列表、媒体关联和学习笔记 API 完成后即可启用。</p>
+        </div>
+        <div className="grid gap-4 p-6 md:grid-cols-3 mobile:p-4">
+          <article className="placeholder-card">
+            <ImageIcon />
+            <strong>相册时间线</strong>
+            <p>自动沉淀打卡照片与家庭瞬间</p>
+          </article>
+          <article className="placeholder-card">
+            <TrendingUp />
+            <strong>习惯追踪</strong>
+            <p>按周与月对比长期变化</p>
+          </article>
+          <article className="placeholder-card">
+            <BookOpen />
+            <strong>学习笔记</strong>
+            <p>记录值得保存的学习片段</p>
+          </article>
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+function FamilyPage() {
+  const children = useApiData('/family/children', 'children', demoChildren);
+  const [open, setOpen] = useState(false);
+
+  async function createChild(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const draft = {
+      nickname: String(form.get('nickname')),
+      credential_type: 'pin',
+      credential: String(form.get('credential')),
+      gender: String(form.get('gender')),
+      grade: String(form.get('grade')) || null,
+    };
+    try {
+      const data = await parentApi<{ child: Child }>('/family/children', {
+        method: 'POST',
+        body: JSON.stringify(draft),
+      });
+      children.setData((items) => [...items, data.child]);
+    } catch {
+      children.setData((items) => [
+        ...items,
+        {
+          id: crypto.randomUUID(),
+          nickname: draft.nickname,
+          grade: draft.grade,
+          gender: draft.gender === 'male' ? 'male' : 'female',
+        },
+      ]);
+    }
+    setOpen(false);
+  }
+  return (
+    <>
+      <PageHeader
+        eyebrow="一个家庭，共同守护"
+        title="家庭成员"
+        description="管理孩子档案、双家长协作和家庭基础信息。"
+        state={children.state}
+        action={
+          <button className="primary-button" onClick={() => setOpen(true)}>
+            <UserPlus size={17} />
+            添加孩子
+          </button>
+        }
+      />
+      <Panel>
+        <SectionTitle>孩子档案</SectionTitle>
+        <div className="grid gap-4 md:grid-cols-3">
+          {children.data.map((child) => (
+            <article className="member-card" key={child.id}>
+              <span className="avatar avatar-lg">{child.nickname.slice(-1)}</span>
+              <div className="flex-1">
+                <h3 className="font-display text-title">{child.nickname}</h3>
+                <p className="text-caption font-bold text-brown-light">
+                  {child.grade ?? '未设置年级'} · {child.gender === 'female' ? '女孩' : '男孩'}
+                </p>
+                <button className="mt-3 text-button">
+                  <Pencil size={15} />
+                  编辑档案
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </Panel>
+      <div className="mt-5 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
+        <Panel>
+          <SectionTitle>家长与共同管理</SectionTitle>
+          <div className="list-row">
+            <span className="avatar">斌</span>
+            <div className="flex-1">
+              <strong>斌哥</strong>
+              <p className="text-caption font-bold text-brown-light">家庭创建者</p>
+            </div>
+            <span className="tag tag-green">全部权限</span>
+          </div>
+          <div className="list-row">
+            <span className="metric-icon">
+              <Mail />
+            </span>
+            <div className="flex-1">
+              <strong>邀请共同管理者</strong>
+              <p className="text-caption font-bold text-brown-light">邀请链接有效期 7 天</p>
+            </div>
+            <button className="secondary-button">发送邀请</button>
+          </div>
+        </Panel>
+        <Panel>
+          <SectionTitle>家庭资料</SectionTitle>
+          <label className="field-label">
+            家庭名称
+            <input className="field" defaultValue="小星星家庭" />
+          </label>
+          <label className="field-label">
+            家庭时区
+            <input className="field" value="Asia/Shanghai" readOnly />
+          </label>
+          <button className="secondary-button mt-4">
+            <Save size={17} />
+            保存资料
+          </button>
+          <p className="mt-3 text-caption font-bold text-brown-light">
+            家庭名称与家长列表读取接口尚待补齐。
+          </p>
+        </Panel>
+      </div>
+      {open && (
+        <Modal title="添加孩子" onClose={() => setOpen(false)}>
+          <form className="space-y-4" onSubmit={createChild}>
+            <label className="field-label">
+              昵称
+              <input className="field" name="nickname" required placeholder="孩子昵称" />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="field-label">
+                性别
+                <select className="field" name="gender">
+                  <option value="female">女孩</option>
+                  <option value="male">男孩</option>
+                </select>
+              </label>
+              <label className="field-label">
+                年级
+                <input className="field" name="grade" placeholder="例如：三年级" />
+              </label>
+            </div>
+            <label className="field-label">
+              登录 PIN
+              <input
+                className="field"
+                name="credential"
+                inputMode="numeric"
+                pattern="[0-9]{4,6}"
+                minLength={4}
+                maxLength={6}
+                required
+                placeholder="4-6 位数字"
+              />
+            </label>
+            <button className="primary-button w-full justify-center" type="submit">
+              创建孩子档案
+            </button>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+function SettingsPage() {
+  const resource = useApiData('/family/settings', 'settings', demoSettings);
+  const [settings, setSettings] = useState(demoSettings);
+  const [message, setMessage] = useState('');
+  useEffect(() => setSettings(resource.data), [resource.data]);
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setMessage('保存中…');
+    try {
+      const data = await parentApi<{ settings: FamilySettings }>('/family/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(settings),
+      });
+      setSettings(data.settings);
+      setMessage('规则已保存');
+    } catch {
+      setMessage('演示模式已保留本次设置');
+    }
+  }
+  return (
+    <>
+      <PageHeader
+        eyebrow="让规则适合自己的家庭"
+        title="设置"
+        description="维护打卡、审核、兑换和连续奖励规则。"
+        state={resource.state}
+      />
+      <form onSubmit={save}>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Panel>
+            <SectionTitle>打卡与审核规则</SectionTitle>
+            <div className="form-grid">
+              <label className="field-label">
+                每日截止时间
+                <input
+                  className="field"
+                  type="time"
+                  value={settings.check_in_deadline}
+                  onChange={(e) => setSettings({ ...settings, check_in_deadline: e.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                允许补打天数
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  value={settings.makeup_days}
+                  onChange={(e) =>
+                    setSettings({ ...settings, makeup_days: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <label className="field-label">
+                审核超时小时
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  value={settings.review_timeout_hours}
+                  onChange={(e) =>
+                    setSettings({ ...settings, review_timeout_hours: Number(e.target.value) })
+                  }
+                />
+              </label>
+              <label className="field-label">
+                兑换免审批额度
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  value={settings.auto_approve_quota}
+                  onChange={(e) =>
+                    setSettings({ ...settings, auto_approve_quota: Number(e.target.value) })
+                  }
+                />
+              </label>
+            </div>
+          </Panel>
+          <Panel>
+            <SectionTitle>Streak 连续倍率</SectionTitle>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              {settings.streak_multipliers.map((item, index) => (
+                <label className="stepper" key={item.days}>
+                  <span>{item.days} 天</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="0.5"
+                    value={item.multiplier}
+                    onChange={(e) => {
+                      const streak = [...settings.streak_multipliers];
+                      streak[index] = { ...item, multiplier: Number(e.target.value) };
+                      setSettings({ ...settings, streak_multipliers: streak });
+                    }}
+                  />
+                  <small>倍</small>
+                </label>
+              ))}
+            </div>
+          </Panel>
+        </div>
+        <div className="mt-5 grid gap-5 lg:grid-cols-2">
+          <Panel>
+            <SectionTitle>家庭集成</SectionTitle>
+            <ComingSoonRow
+              icon={<Mail />}
+              title="家庭邮件"
+              detail="凭证状态、维护与连接测试接口待注册"
+            />
+            <ComingSoonRow icon={<Camera />} title="腾讯云 COS" detail="凭证仅由家庭创建者维护" />
+          </Panel>
+          <Panel>
+            <SectionTitle>更多能力</SectionTitle>
+            <ComingSoonRow icon={<Bell />} title="通知偏好与免打扰" detail="即将推出" />
+            <ComingSoonRow icon={<ShieldCheck />} title="PWA 与动态模块开关" detail="即将推出" />
+          </Panel>
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-3">
+          <span className="text-caption font-extrabold text-leaf-dark" role="status">
+            {message}
+          </span>
+          <button className="primary-button" type="submit">
+            <Save size={17} />
+            保存家庭规则
+          </button>
+        </div>
+      </form>
+    </>
+  );
+}
+
+function ComingSoonRow({
+  icon,
+  title,
+  detail,
+}: {
+  icon: ReactNode;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div className="list-row">
+      <span className="metric-icon">{icon}</span>
+      <div className="flex-1">
+        <strong>{title}</strong>
+        <p className="text-caption font-bold text-brown-light">{detail}</p>
+      </div>
+      <span className="tag">即将推出</span>
+    </div>
+  );
+}
+function Modal({
+  children,
+  title,
+  onClose,
+}: {
+  children: ReactNode;
+  title: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="mb-5 flex items-center justify-between">
+          <h2 id="modal-title" className="font-display text-title">
+            {title}
+          </h2>
+          <button className="icon-button" onClick={onClose} aria-label="关闭弹窗">
+            <X />
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+const pages: Record<ParentSection, () => ReactNode> = {
+  dashboard: DashboardPage,
+  tasks: TasksPage,
+  reviews: ReviewsPage,
+  rewards: RewardsPage,
+  levels: LevelsPage,
+  stats: StatsPage,
+  records: RecordsPage,
+  family: FamilyPage,
+  settings: SettingsPage,
+};
+
+export function ParentPortal({ section }: { section: ParentSection }) {
+  const Page = pages[section];
+  return (
+    <ParentShell section={section}>
+      <Page />
+    </ParentShell>
+  );
+}

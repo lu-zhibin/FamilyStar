@@ -1,0 +1,42 @@
+{
+  "name": "familystar",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.18.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "build": "pnpm --recursive --if-present build",
+    "dev": "pnpm --parallel --filter @familystar/web --filter @familystar/api dev",
+    "dev:all": "pnpm --parallel --filter @familystar/web --filter @familystar/api dev worker:dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint apps packages modules --ext .js,.mjs,.cjs,.ts,.tsx --max-warnings 0",
+    "db:format": "pnpm --filter @familystar/api prisma:format",
+    "db:generate": "pnpm --filter @familystar/api prisma:generate",
+    "db:migrate:deploy": "pnpm --filter @familystar/api prisma:migrate:deploy",
+    "db:migrate:dev": "pnpm --filter @familystar/api prisma:migrate:dev",
+    "db:seed": "pnpm --filter @familystar/api prisma:seed",
+    "db:validate": "pnpm --filter @familystar/api prisma:validate",
+    "test": "vitest run",
+    "test:unit": "vitest run --exclude '**/*.integration.test.ts' --exclude '**/*.e2e.test.ts'",
+    "test:integration": "vitest run apps/api/src/phase-1-*.integration.test.ts apps/api/src/phase-1-concurrency-rollback.e2e.test.ts",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "NODE_PATH=$(npm root -g) playwright test",
+    "verify:prisma": "DATABASE_URL=${DATABASE_URL:-postgresql://familystar:familystar@localhost:5432/familystar} pnpm db:validate && pnpm verify:data-model",
+    "quality": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm verify:prisma && pnpm test:coverage && pnpm build && pnpm --filter @familystar/web verify:design-system && pnpm --filter @familystar/api verify:api-foundation && pnpm test:e2e",
+    "typecheck": "pnpm --recursive --if-present typecheck",
+    "verify:data-model": "pnpm --filter @familystar/api verify:data-model"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "8.65.0",
+    "@typescript-eslint/parser": "8.65.0",
+    "@vitest/coverage-v8": "3.2.4",
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.35",
+    "eslint-config-prettier": "10.1.8",
+    "prettier": "3.9.6",
+    "vitest": "3.2.4"
+  }
+}
