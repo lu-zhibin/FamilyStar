@@ -1,5 +1,31 @@
 # FamilyStar 开发记录
 
+## 2026-08-01：部署统一家庭登录开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-002`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `d1c0bff`
+
+### 发布结果
+
+- 构建并推送 `dev-20260801-d1c0bff-api`、`dev-20260801-d1c0bff-worker` 和 `dev-20260801-d1c0bff-web`，`dev-latest-*` 已指向当前版本。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-data/backups/dev/postgres/familystar-dev-pre-a125d34.dump`，文件大小 225780 bytes，权限为 `600`。
+- Prisma 成功应用 `20260801000000_add_family_codes`，迁移总数为 11；所有家庭均已生成家庭码，数据库唯一约束验证通过。
+- PostgreSQL、Redis、API、Worker 和 Web 均为 healthy，迁移容器退出码为 0，当前无待应用迁移。
+
+### 运行态验收
+
+- 公网 `http://119.29.111.248:8098` 可访问，同源 `/api/v1/health` 返回 HTTP 200、版本 `0.1.0` 和 `status: ok`。
+- Chromium 真实链路通过家长注册、自动进入家长端、家庭成员页读取 10 位家庭码、HTTP 页面复制成功反馈和孩子档案创建。
+- 独立孩子会话通过家庭码查询、头像选择和 PIN 登录进入孩子端；家长与孩子已有会话访问根路径时均按角色自动跳转。
+- 孩子链路在 390 × 844 移动端视口通过。验收创建的测试家庭保留在开发数据库中，便于后续回归追踪。
+- 完整 `pnpm quality` 通过：80 个测试文件、502 项测试，以及格式、零警告 Lint、类型、Prisma、数据模型、覆盖率、构建、设计系统、API 契约和 7 项 Playwright 检查。
+
+### 回滚点
+
+- 上一统一登录版本：`dev-20260801-a125d34-*`。
+- Phase 1 原开发基线：`dev-20260801-80bd819-*`。
+
 ## 2026-08-01：完成统一家庭登录 Web 任务 2
 
 - 记录 ID：`FS-UNIFIED-LOGIN-2`
@@ -25,7 +51,7 @@
 
 ### 后续工作
 
-- 构建统一登录开发镜像，部署至开发环境并完成桌面与移动端浏览器运行态验收。
+- 统一登录开发镜像和桌面、移动端运行态验收已由 `FS-DEPLOY-DEV-002` 完成。
 
 ## 2026-08-01：首次部署 Phase 1 开发容器
 
