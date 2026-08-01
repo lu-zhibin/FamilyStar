@@ -65,7 +65,7 @@ describe('security middleware', () => {
         await app.request('/api/v1/auth/child/family', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ family_code: 'STARFAM001' }),
+          body: JSON.stringify({ family_code: '123456' }),
         })
       ).status,
     ).toBe(200);
@@ -74,7 +74,7 @@ describe('security middleware', () => {
         await app.request('/api/v1/auth/child/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ family_code: 'STARFAM001' }),
+          body: JSON.stringify({ family_code: '123456' }),
         })
       ).status,
     ).toBe(200);

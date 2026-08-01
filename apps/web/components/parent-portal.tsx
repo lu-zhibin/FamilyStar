@@ -1276,7 +1276,7 @@ export function FamilyCodeCard({
             {code}
           </output>
           <p className="mt-2 max-w-2xl text-caption font-bold text-brown-light">
-            孩子在登录页输入这 10 位家庭码，选择自己的头像并输入 PIN，即可进入成长空间。
+            孩子在登录页输入这 6 位数字家庭码，选择自己的头像并输入 PIN，即可进入成长空间。
           </p>
           {copyState !== 'idle' && (
             <p

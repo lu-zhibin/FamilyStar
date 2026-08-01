@@ -299,7 +299,7 @@ export class ChildAccountService implements ChildAccountOperations {
   }
 
   private async resolveFamily(familyCode: string) {
-    const family = await this.repository.findActiveFamilyByCode(familyCode.trim().toUpperCase());
+    const family = await this.repository.findActiveFamilyByCode(familyCode.trim());
     if (!family) throw new ChildAuthenticationError('Invalid family code or unavailable family.');
     return family;
   }

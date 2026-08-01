@@ -33,24 +33,22 @@ describe('AuthLanding', () => {
 
   it('renders the family-code lookup contract', () => {
     const markup = renderToStaticMarkup(
-      <FamilyLookupForm
-        code="STARFAM001"
-        pending={false}
-        onCodeChange={vi.fn()}
-        onSubmit={vi.fn()}
-      />,
+      <FamilyLookupForm code="123456" pending={false} onCodeChange={vi.fn()} onSubmit={vi.fn()} />,
     );
 
-    expect(markup).toContain('10 位家庭码');
-    expect(markup).toContain('pattern="[A-Za-z0-9]{10}"');
-    expect(markup).toContain('value="STARFAM001"');
+    expect(markup).toContain('6 位数字家庭码');
+    expect(markup).toContain('pattern="[0-9]{6}"');
+    expect(markup).toContain('inputMode="numeric"');
+    expect(markup).toContain('minLength="6"');
+    expect(markup).toContain('maxLength="6"');
+    expect(markup).toContain('value="123456"');
   });
 
   it('renders child selection and PIN constraints', () => {
     const markup = renderToStaticMarkup(
       <ChildLoginForm
         family={{
-          family: { name: '星星家庭', family_code: 'STARFAM001' },
+          family: { name: '星星家庭', family_code: '123456' },
           children: [{ id: 'child-1', nickname: '小星', grade: '三年级', avatar_media_id: null }],
         }}
         pending={false}
@@ -70,7 +68,7 @@ describe('AuthLanding', () => {
   it('guides parents when a family has no child profiles', () => {
     const markup = renderToStaticMarkup(
       <ChildLoginForm
-        family={{ family: { name: '星星家庭', family_code: 'STARFAM001' }, children: [] }}
+        family={{ family: { name: '星星家庭', family_code: '123456' }, children: [] }}
         pending={false}
         selectedChildId=""
         onBack={vi.fn()}

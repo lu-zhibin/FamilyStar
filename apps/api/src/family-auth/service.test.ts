@@ -30,7 +30,7 @@ import type {
 const parent: ParentIdentity = {
   id: 'parent-1',
   familyId: 'family-1',
-  familyCode: 'STARFAM001',
+  familyCode: '123456',
   nickname: 'Parent',
   email: 'parent@example.com',
   passwordHash: 'stored-hash',
@@ -125,9 +125,9 @@ describe('parent password hashing', () => {
 });
 
 describe('FamilyAuthService', () => {
-  it('generates ten-character uppercase alphanumeric family codes', () => {
+  it('generates six-digit family codes, including leading zeroes', () => {
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      expect(generateFamilyCode()).toMatch(/^[A-Z0-9]{10}$/);
+      expect(generateFamilyCode()).toMatch(/^[0-9]{6}$/);
     }
   });
 
@@ -143,7 +143,7 @@ describe('FamilyAuthService', () => {
 
     expect(harness.created[0]).toMatchObject({
       familyName: 'Star Family',
-      familyCode: expect.stringMatching(/^[A-Z0-9]{10}$/),
+      familyCode: expect.stringMatching(/^[0-9]{6}$/),
       nickname: 'Parent',
       email: 'parent@example.com',
       passwordHash: 'new-hash',
@@ -158,7 +158,7 @@ describe('FamilyAuthService', () => {
     expect(result.parent).toEqual({
       id: 'parent-1',
       familyId: 'family-1',
-      familyCode: 'STARFAM001',
+      familyCode: '123456',
       nickname: 'Parent',
       email: 'parent@example.com',
     });
@@ -196,7 +196,7 @@ describe('FamilyAuthService', () => {
         return parent.familyCode;
       },
     };
-    const codes = ['COLLISION1', 'STARFAM002'];
+    const codes = ['111111', '234567'];
     const service = new FamilyAuthService(
       repository,
       {
@@ -217,7 +217,7 @@ describe('FamilyAuthService', () => {
         },
       },
       () => new Date('2026-07-30T12:00:00.000Z'),
-      () => codes.shift() ?? 'STARFAM003',
+      () => codes.shift() ?? '345678',
     );
 
     await expect(
@@ -227,8 +227,8 @@ describe('FamilyAuthService', () => {
         email: 'parent@example.com',
         password: 'twelve-chars-password',
       }),
-    ).resolves.toMatchObject({ parent: { familyCode: 'STARFAM002' } });
-    expect(attempts).toEqual(['COLLISION1', 'STARFAM002']);
+    ).resolves.toMatchObject({ parent: { familyCode: '234567' } });
+    expect(attempts).toEqual(['111111', '234567']);
   });
 
   it('rejects duplicate email before persistence', async () => {

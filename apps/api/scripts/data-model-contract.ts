@@ -114,7 +114,7 @@ export function verifyDataModelContract(schema: string, migration: string): void
 
   assert.match(
     modelBlock(schema, 'Family'),
-    /familyCode\s+String\s+@unique\s+@map\("family_code"\)\s+@db\.VarChar\(10\)/,
+    /familyCode\s+String\s+@unique\s+@map\("family_code"\)\s+@db\.VarChar\(6\)/,
   );
 
   assert.match(schema, /@@unique\(\[type, businessType, businessId, userId\]\)/);

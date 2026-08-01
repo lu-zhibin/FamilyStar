@@ -47,7 +47,7 @@ describe('authApi', () => {
     const request = authApi('/auth/child/login', {
       method: 'POST',
       headers: { 'X-Request-Id': 'request-2' },
-      body: JSON.stringify({ family_code: 'STARFAM001' }),
+      body: JSON.stringify({ family_code: '123456' }),
     });
 
     await expect(request).rejects.toMatchObject({

@@ -37,25 +37,25 @@ describe('family-code clipboard', () => {
   it('uses the modern clipboard when available', async () => {
     const writes: string[] = [];
 
-    await copyTextToClipboard('AB12CD34EF', {
+    await copyTextToClipboard('012345', {
       clipboard: { writeText: async (text) => void writes.push(text) },
       legacyCopy: () => false,
     });
 
-    expect(writes).toEqual(['AB12CD34EF']);
+    expect(writes).toEqual(['012345']);
   });
 
   it('falls back to legacy selection copy and reports failure', async () => {
     const copied: string[] = [];
 
-    await copyTextToClipboard('AB12CD34EF', {
+    await copyTextToClipboard('012345', {
       clipboard: null,
       legacyCopy: (text) => copied.push(text) > 0,
     });
 
-    expect(copied).toEqual(['AB12CD34EF']);
+    expect(copied).toEqual(['012345']);
     await expect(
-      copyTextToClipboard('AB12CD34EF', { clipboard: null, legacyCopy: () => false }),
+      copyTextToClipboard('012345', { clipboard: null, legacyCopy: () => false }),
     ).rejects.toThrow('Clipboard access is unavailable.');
   });
 });

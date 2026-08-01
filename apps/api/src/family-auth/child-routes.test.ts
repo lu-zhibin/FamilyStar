@@ -39,7 +39,7 @@ function operations(): ChildAccountOperations {
       return { children: [child] };
     },
     async findFamily(input) {
-      expect(input).toEqual({ familyCode: 'STARFAM001' });
+      expect(input).toEqual({ familyCode: '123456' });
       return {
         family: { name: 'Star Family', familyCode: input.familyCode },
         children: [
@@ -53,7 +53,7 @@ function operations(): ChildAccountOperations {
       };
     },
     async login(input) {
-      expect(input).toEqual({ familyCode: 'STARFAM001', childId, credential: '1234' });
+      expect(input).toEqual({ familyCode: '123456', childId, credential: '1234' });
       return {
         child: {
           id: child.id,
@@ -142,13 +142,13 @@ describe('child account HTTP routes', () => {
     const familyResponse = await app.request('/api/v1/auth/child/family', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ family_code: 'starfam001' }),
+      body: JSON.stringify({ family_code: ' 123456 ' }),
     });
     expect(familyResponse.status).toBe(200);
     const familyBody = await familyResponse.json();
     expect(familyBody).toMatchObject({
       data: {
-        family: { name: 'Star Family', family_code: 'STARFAM001' },
+        family: { name: 'Star Family', family_code: '123456' },
         children: [
           {
             id: childId,
@@ -165,7 +165,7 @@ describe('child account HTTP routes', () => {
     const loginResponse = await app.request('/api/v1/auth/child/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ family_code: 'STARFAM001', child_id: childId, credential: '1234' }),
+      body: JSON.stringify({ family_code: '123456', child_id: childId, credential: '1234' }),
     });
     expect(loginResponse.status).toBe(200);
     expect(loginResponse.headers.get('set-cookie')).toContain(
@@ -190,18 +190,30 @@ describe('child account HTTP routes', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ family_code: 'bad' }),
     });
+    const malformedLength = await app.request('/api/v1/auth/child/family', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: '1234567' }),
+    });
+    const malformedCharacters = await app.request('/api/v1/auth/child/family', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: '12A456' }),
+    });
     const unavailable = await app.request('/api/v1/auth/child/family', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ family_code: 'UNKNOWN001' }),
+      body: JSON.stringify({ family_code: '999999' }),
     });
     const unauthorized = await app.request('/api/v1/auth/child/login', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ family_code: 'STARFAM001', child_id: childId, credential: 'wrong' }),
+      body: JSON.stringify({ family_code: '123456', child_id: childId, credential: 'wrong' }),
     });
 
     expect(malformed.status).toBe(400);
+    expect(malformedLength.status).toBe(400);
+    expect(malformedCharacters.status).toBe(400);
     expect(unavailable.status).toBe(401);
     expect(unauthorized.status).toBe(401);
     expect(JSON.stringify(await unauthorized.json())).not.toContain('wrong');

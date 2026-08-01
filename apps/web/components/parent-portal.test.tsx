@@ -43,27 +43,23 @@ describe('ParentPortal', () => {
     expect(loading).toContain('role="status"');
     expect(failure).toContain('家庭码暂时无法读取');
     expect(failure).toContain('role="alert"');
-    expect(`${loading}${failure}`).not.toContain('STARFAM001');
+    expect(`${loading}${failure}`).not.toContain('123456');
   });
 
   it('renders the real family code, usage guidance, and accessible copy feedback', () => {
     const ready = renderToStaticMarkup(
-      <FamilyCodeCard code="STARFAM001" copyState="idle" state="ready" onCopy={() => undefined} />,
+      <FamilyCodeCard code="123456" copyState="idle" state="ready" onCopy={() => undefined} />,
     );
     const copied = renderToStaticMarkup(
-      <FamilyCodeCard
-        code="STARFAM001"
-        copyState="copied"
-        state="ready"
-        onCopy={() => undefined}
-      />,
+      <FamilyCodeCard code="123456" copyState="copied" state="ready" onCopy={() => undefined} />,
     );
     const copyFailure = renderToStaticMarkup(
-      <FamilyCodeCard code="STARFAM001" copyState="error" state="ready" onCopy={() => undefined} />,
+      <FamilyCodeCard code="123456" copyState="error" state="ready" onCopy={() => undefined} />,
     );
 
     expect(ready).toContain('aria-label="当前家庭码"');
-    expect(ready).toContain('STARFAM001');
+    expect(ready).toContain('123456');
+    expect(ready).toContain('6 位数字家庭码');
     expect(ready).toContain('选择自己的头像并输入 PIN');
     expect(ready).toContain('>复制<');
     expect(copied).toContain('家庭码已复制');

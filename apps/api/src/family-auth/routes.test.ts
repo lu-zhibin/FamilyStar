@@ -12,7 +12,7 @@ function createService(): FamilyAuthService {
       return {
         id: 'parent-1',
         familyId: 'family-1',
-        familyCode: 'STARFAM001',
+        familyCode: '123456',
         nickname: input.nickname,
         email: input.email,
         passwordHash: input.passwordHash,
@@ -23,7 +23,7 @@ function createService(): FamilyAuthService {
         ? {
             id: 'parent-1',
             familyId: 'family-1',
-            familyCode: 'STARFAM001',
+            familyCode: '123456',
             nickname: 'Parent',
             email,
             passwordHash: 'hash',
@@ -31,7 +31,7 @@ function createService(): FamilyAuthService {
         : null;
     },
     async findActiveFamilyCodeById(familyId) {
-      return familyId === 'family-1' ? 'STARFAM001' : null;
+      return familyId === 'family-1' ? '123456' : null;
     },
   };
   const sessions: SessionStore = {
@@ -80,7 +80,7 @@ describe('family auth HTTP routes', () => {
     expect(response.headers.get('set-cookie')).toContain('HttpOnly');
     expect(await response.json()).toMatchObject({
       success: true,
-      data: { parent: { familyId: 'family-1', familyCode: 'STARFAM001' } },
+      data: { parent: { familyId: 'family-1', familyCode: '123456' } },
     });
   });
 
@@ -166,7 +166,7 @@ describe('family auth HTTP routes', () => {
           parent: {
             id: 'parent-2',
             familyId: 'family-1',
-            familyCode: 'STARFAM001',
+            familyCode: '123456',
             nickname: input.nickname,
             email: 'second@example.com',
           },
@@ -233,7 +233,7 @@ describe('family auth HTTP routes', () => {
         role: 'parent',
         subject_id: 'parent-1',
         family_id: 'family-1',
-        family_code: 'STARFAM001',
+        family_code: '123456',
       },
     });
     expect((await app.request('/api/v1/auth/session')).status).toBe(401);

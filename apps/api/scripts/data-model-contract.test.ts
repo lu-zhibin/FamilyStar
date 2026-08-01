@@ -62,11 +62,13 @@ describe('verifyDataModelContract', () => {
     ]);
 
     expect(schema).toMatch(
-      /familyCode\s+String\s+@unique\s+@map\("family_code"\)\s+@db\.VarChar\(10\)/,
+      /familyCode\s+String\s+@unique\s+@map\("family_code"\)\s+@db\.VarChar\(6\)/,
     );
     expect(migration).toContain('families_family_code_key');
     expect(migration).toContain('families_family_code_format_check');
-    expect(migration).toContain('^[A-Z0-9]{10}$');
+    expect(migration).toContain('ALTER COLUMN "family_code" TYPE VARCHAR(6)');
+    expect(migration).toContain('DROP CONSTRAINT "families_family_code_format_check"');
+    expect(migration).toContain('^[0-9]{6}$');
   });
 
   it('rejects an Outbox migration missing its claim index', async () => {

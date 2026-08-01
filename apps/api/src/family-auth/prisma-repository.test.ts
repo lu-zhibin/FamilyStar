@@ -6,7 +6,7 @@ import { PrismaFamilyAuthRepository } from './prisma-repository.js';
 
 describe('PrismaFamilyAuthRepository', () => {
   it('creates all family defaults through one transaction client', async () => {
-    const familyCreate = vi.fn().mockResolvedValue({ id: 'family-1', familyCode: 'STARFAM001' });
+    const familyCreate = vi.fn().mockResolvedValue({ id: 'family-1', familyCode: '123456' });
     const userCreate = vi.fn().mockResolvedValue({
       id: 'parent-1',
       familyId: 'family-1',
@@ -35,7 +35,7 @@ describe('PrismaFamilyAuthRepository', () => {
     await expect(
       repository.createFamilyWithParent({
         familyName: 'Star Family',
-        familyCode: 'STARFAM001',
+        familyCode: '123456',
         nickname: 'Parent',
         email: 'parent@example.com',
         passwordHash: 'hash',
@@ -47,7 +47,7 @@ describe('PrismaFamilyAuthRepository', () => {
     expect(familyCreate).toHaveBeenCalledWith({
       data: {
         name: 'Star Family',
-        familyCode: 'STARFAM001',
+        familyCode: '123456',
         settings: { timeZone: 'Asia/Shanghai' },
       },
     });

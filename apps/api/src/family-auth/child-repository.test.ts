@@ -23,17 +23,17 @@ describe('PrismaChildAccountRepository', () => {
     const findFirst = vi.fn().mockResolvedValue({
       id: 'family-1',
       name: 'Star Family',
-      familyCode: 'STARFAM001',
+      familyCode: '123456',
     });
     const repository = new PrismaChildAccountRepository({
       family: { findFirst },
     } as unknown as PrismaClient);
 
-    await expect(repository.findActiveFamilyByCode('STARFAM001')).resolves.toMatchObject({
+    await expect(repository.findActiveFamilyByCode('123456')).resolves.toMatchObject({
       id: 'family-1',
     });
     expect(findFirst).toHaveBeenCalledWith({
-      where: { familyCode: 'STARFAM001', deletedAt: null },
+      where: { familyCode: '123456', deletedAt: null },
       select: { id: true, name: true, familyCode: true },
     });
   });

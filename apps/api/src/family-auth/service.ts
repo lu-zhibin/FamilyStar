@@ -11,15 +11,12 @@ import type {
   SessionStore,
 } from './types.js';
 
-const FAMILY_CODE_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const FAMILY_CODE_LENGTH = 10;
-const FAMILY_CODE_CREATE_ATTEMPTS = 5;
+const FAMILY_CODE_SPACE_SIZE = 1_000_000;
+const FAMILY_CODE_LENGTH = 6;
+const FAMILY_CODE_CREATE_ATTEMPTS = 10;
 
 export function generateFamilyCode(): string {
-  return Array.from(
-    { length: FAMILY_CODE_LENGTH },
-    () => FAMILY_CODE_ALPHABET[randomInt(FAMILY_CODE_ALPHABET.length)],
-  ).join('');
+  return randomInt(FAMILY_CODE_SPACE_SIZE).toString().padStart(FAMILY_CODE_LENGTH, '0');
 }
 
 export class FamilyCodeConflictError extends Error {

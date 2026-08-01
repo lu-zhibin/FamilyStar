@@ -99,7 +99,7 @@ export function AuthLanding() {
     event.preventDefault();
     setPending(true);
     setError('');
-    const normalizedCode = familyCode.trim().toUpperCase();
+    const normalizedCode = familyCode.trim();
     try {
       const result = await authApi<ChildFamilyResult>('/auth/child/family', {
         method: 'POST',
@@ -414,19 +414,19 @@ export function FamilyLookupForm({
         </div>
       </div>
       <label className="field-label">
-        10 位家庭码
+        6 位数字家庭码
         <input
-          autoCapitalize="characters"
           autoComplete="one-time-code"
-          className="field text-center font-display text-title uppercase tracking-[0.2em]"
-          maxLength={10}
-          minLength={10}
+          className="field text-center font-display text-title tracking-[0.2em]"
+          inputMode="numeric"
+          maxLength={6}
+          minLength={6}
           name="family_code"
-          pattern="[A-Za-z0-9]{10}"
-          placeholder="AB12CD34EF"
+          pattern="[0-9]{6}"
+          placeholder="123456"
           required
           value={code}
-          onChange={(event) => onCodeChange(event.target.value.toUpperCase())}
+          onChange={(event) => onCodeChange(event.target.value)}
         />
       </label>
       <button className="primary-button min-h-12 w-full text-body" disabled={pending} type="submit">

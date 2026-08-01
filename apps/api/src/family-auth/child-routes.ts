@@ -59,8 +59,7 @@ const switchSchema = z
 const familyCode = z
   .string()
   .trim()
-  .transform((value) => value.toUpperCase())
-  .pipe(z.string().regex(/^[A-Z0-9]{10}$/));
+  .pipe(z.string().regex(/^[0-9]{6}$/));
 const familyLookupSchema = z.object({ family_code: familyCode }).strict();
 const childLoginSchema = z
   .object({

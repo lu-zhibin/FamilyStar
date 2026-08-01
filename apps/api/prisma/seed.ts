@@ -33,7 +33,7 @@ async function seed(): Promise<void> {
     }
 
     for (const [familyIndex, family] of DEVELOPMENT_SEED.families.entries()) {
-      const familyCode = `SEEDFAM${String(familyIndex + 1).padStart(3, '0')}`;
+      const familyCode = String(familyIndex + 1).padStart(6, '0');
       await transaction.family.upsert({
         where: { id: family.id },
         create: {

@@ -39,7 +39,7 @@ function createHarness(options: { emailConfigured?: boolean; session?: AuthSessi
       return {
         id: parentId,
         familyId,
-        familyCode: 'STARFAM001',
+        familyCode: '123456',
         nickname: input.nickname,
         email: 'second@example.com',
         passwordHash: input.passwordHash,
@@ -175,7 +175,7 @@ describe('FamilyInvitationService', () => {
       parent: {
         id: parentId,
         familyId,
-        familyCode: 'STARFAM001',
+        familyCode: '123456',
         nickname: 'Second Parent',
         email: 'second@example.com',
       },
