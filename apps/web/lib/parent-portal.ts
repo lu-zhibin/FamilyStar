@@ -60,6 +60,47 @@ export async function parentApi<T>(path: string, init?: RequestInit): Promise<T>
   return payload.data;
 }
 
+type ClipboardWriter = { writeText: (text: string) => Promise<void> };
+
+export async function copyTextToClipboard(
+  text: string,
+  options: {
+    clipboard?: ClipboardWriter | null;
+    legacyCopy?: (value: string) => boolean;
+  } = {},
+): Promise<void> {
+  const clipboard =
+    options.clipboard === undefined
+      ? typeof navigator === 'undefined'
+        ? undefined
+        : navigator.clipboard
+      : options.clipboard;
+
+  if (clipboard) {
+    await clipboard.writeText(text);
+    return;
+  }
+
+  const copied = (options.legacyCopy ?? copyTextUsingSelection)(text);
+  if (!copied) throw new Error('Clipboard access is unavailable.');
+}
+
+function copyTextUsingSelection(text: string): boolean {
+  if (typeof document === 'undefined') return false;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    return document.execCommand('copy');
+  } finally {
+    textarea.remove();
+  }
+}
+
 export function formatFrequency(frequency: { kind: string; count?: number }): string {
   if (frequency.kind === 'daily') return '每天';
   if (frequency.kind === 'weekly_count') return `每周 ${frequency.count ?? 1} 次`;

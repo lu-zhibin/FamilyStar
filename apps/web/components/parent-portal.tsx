@@ -33,7 +33,12 @@ import {
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { authApi, type SessionIdentity } from '../lib/auth';
-import { formatFrequency, parentApi, type ParentSection } from '../lib/parent-portal';
+import {
+  copyTextToClipboard,
+  formatFrequency,
+  parentApi,
+  type ParentSection,
+} from '../lib/parent-portal';
 import { ParentShell } from './parent-shell';
 
 type LoadState = 'loading' | 'live' | 'demo';
@@ -1060,7 +1065,7 @@ function FamilyPage() {
 
   async function copyFamilyCode() {
     try {
-      await navigator.clipboard.writeText(familyCode);
+      await copyTextToClipboard(familyCode);
       setCopyState('copied');
     } catch {
       setCopyState('error');
