@@ -1,5 +1,31 @@
 # FamilyStar 开发记录
 
+## 2026-08-01：部署 6 位数字家庭码开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-003`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `64df198`
+- 实现提交：`38481cf`
+
+### 发布结果
+
+- 构建并推送 `dev-20260801-64df198-api`、`dev-20260801-64df198-worker` 和 `dev-20260801-64df198-web`，`dev-latest-*` 已指向当前版本。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-data/backups/dev/postgres/familystar-dev-pre-64df198.dump`，文件大小 285534 bytes，权限为 `600`。
+- Prisma 成功应用 `20260801130000_migrate_family_codes_to_six_digits`，迁移总数为 12；迁移前 3 个家庭码均为 10 位，迁移后全部为唯一 6 位数字。
+- PostgreSQL、Redis、API、Worker 和 Web 均为 healthy，迁移容器退出码为 0；公开同源健康接口返回版本 `0.1.0` 和 `status: ok`。
+
+### 验证结果
+
+- 完整 `pnpm quality` 通过：80 个测试文件、502 项测试，以及格式、零警告 Lint、类型、Prisma、数据模型、覆盖率、构建、设计系统、API 契约和 7 项 Playwright 检查。
+- Chromium 真实链路通过家长注册、6 位数字家庭码展示、HTTP 页面复制反馈和孩子档案创建。
+- 独立孩子会话通过 6 位家庭码查询、头像选择和 PIN 登录进入 `/child`；家长注册进入 `/dashboard`，孩子链路在 390 × 844 移动端视口通过。
+- 验收创建的家庭和孩子保留在开发数据库中，便于后续回归追踪。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260801-d1c0bff-*`。
+- 数据库回滚备份：`familystar-dev-pre-64df198.dump`。
+
 ## 2026-08-01：部署统一家庭登录开发版本
 
 - 记录 ID：`FS-DEPLOY-DEV-002`
