@@ -10,7 +10,7 @@
 | `api` | `node apps/api/dist/server.js` | `http://127.0.0.1:3001/api/v1/health` |
 | `worker` | `node apps/api/dist/worker.js` | `http://127.0.0.1:3002/health` |
 
-Web 使用 Next.js standalone 产物。API 和 Worker 复用构建后的 workspace 与 Prisma Client，均以镜像内 `node` 用户运行。
+Web 使用 Next.js standalone 产物，构建阶段将 rewrite 目标固定为 Docker 内部地址 `http://api:3001`，避免运行产物回退到本机 API 地址。API 和 Worker 复用构建后的 workspace 与 Prisma Client，均以镜像内 `node` 用户运行。
 
 ## 开发编排
 

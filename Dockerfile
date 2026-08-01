@@ -23,6 +23,8 @@ RUN --mount=type=cache,id=familystar-pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
 FROM dependencies AS build
+ARG API_INTERNAL_URL=http://api:3001
+ENV API_INTERNAL_URL=$API_INTERNAL_URL
 COPY . .
 RUN pnpm build
 

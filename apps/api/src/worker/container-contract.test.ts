@@ -14,6 +14,8 @@ describe('Worker container contract', () => {
 
     expect(dockerfile).toContain('pnpm install --frozen-lockfile');
     expect(dockerfile).toContain('--mount=type=cache,id=familystar-pnpm');
+    expect(dockerfile).toContain('ARG API_INTERNAL_URL=http://api:3001');
+    expect(dockerfile).toContain('ENV API_INTERNAL_URL=$API_INTERNAL_URL');
     expect(dockerfile).toContain('FROM node:${NODE_VERSION}-alpine AS web');
     expect(dockerfile).toContain('FROM backend-runtime AS api');
     expect(dockerfile).toContain('FROM backend-runtime AS worker');
