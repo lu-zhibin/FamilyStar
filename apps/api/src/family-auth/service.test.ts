@@ -14,6 +14,8 @@ import {
 } from './password.js';
 import {
   FamilyAuthService,
+  FamilyCodeConflictError,
+  generateFamilyCode,
   InvalidParentCredentialsError,
   ParentEmailConflictError,
 } from './service.js';
@@ -28,6 +30,7 @@ import type {
 const parent: ParentIdentity = {
   id: 'parent-1',
   familyId: 'family-1',
+  familyCode: 'STARFAM001',
   nickname: 'Parent',
   email: 'parent@example.com',
   passwordHash: 'stored-hash',
@@ -43,6 +46,9 @@ function createHarness(existingParent: ParentIdentity | null = null) {
     },
     async findActiveParentByEmail() {
       return existingParent;
+    },
+    async findActiveFamilyCodeById(familyId) {
+      return familyId === parent.familyId ? parent.familyCode : null;
     },
   };
   const sessionStore: SessionStore = {
@@ -119,6 +125,12 @@ describe('parent password hashing', () => {
 });
 
 describe('FamilyAuthService', () => {
+  it('generates ten-character uppercase alphanumeric family codes', () => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      expect(generateFamilyCode()).toMatch(/^[A-Z0-9]{10}$/);
+    }
+  });
+
   it('normalizes registration and creates a session', async () => {
     const harness = createHarness();
     const result = await harness.service.register({
@@ -131,6 +143,7 @@ describe('FamilyAuthService', () => {
 
     expect(harness.created[0]).toMatchObject({
       familyName: 'Star Family',
+      familyCode: expect.stringMatching(/^[A-Z0-9]{10}$/),
       nickname: 'Parent',
       email: 'parent@example.com',
       passwordHash: 'new-hash',
@@ -145,9 +158,77 @@ describe('FamilyAuthService', () => {
     expect(result.parent).toEqual({
       id: 'parent-1',
       familyId: 'family-1',
+      familyCode: 'STARFAM001',
       nickname: 'Parent',
       email: 'parent@example.com',
     });
+  });
+
+  it('returns the active family code in the current session view', async () => {
+    const harness = createHarness();
+    await expect(
+      harness.service.getSession({
+        subjectId: parent.id,
+        familyId: parent.familyId,
+        role: 'parent',
+        issuedAt: '2026-07-30T12:00:00.000Z',
+      }),
+    ).resolves.toEqual({
+      role: 'parent',
+      subjectId: parent.id,
+      familyId: parent.familyId,
+      familyCode: parent.familyCode,
+    });
+  });
+
+  it('retries registration when the database reports a family code collision', async () => {
+    const attempts: string[] = [];
+    const repository: FamilyAuthRepository = {
+      async createFamilyWithParent(input) {
+        attempts.push(input.familyCode);
+        if (attempts.length === 1) throw new FamilyCodeConflictError();
+        return { ...parent, familyCode: input.familyCode };
+      },
+      async findActiveParentByEmail() {
+        return null;
+      },
+      async findActiveFamilyCodeById() {
+        return parent.familyCode;
+      },
+    };
+    const codes = ['COLLISION1', 'STARFAM002'];
+    const service = new FamilyAuthService(
+      repository,
+      {
+        async create() {
+          return 'session-token';
+        },
+        async read() {
+          return null;
+        },
+        async revokeSubject() {},
+      },
+      {
+        async hash() {
+          return 'new-hash';
+        },
+        async verify() {
+          return true;
+        },
+      },
+      () => new Date('2026-07-30T12:00:00.000Z'),
+      () => codes.shift() ?? 'STARFAM003',
+    );
+
+    await expect(
+      service.register({
+        familyName: 'Star Family',
+        nickname: 'Parent',
+        email: 'parent@example.com',
+        password: 'twelve-chars-password',
+      }),
+    ).resolves.toMatchObject({ parent: { familyCode: 'STARFAM002' } });
+    expect(attempts).toEqual(['COLLISION1', 'STARFAM002']);
   });
 
   it('rejects duplicate email before persistence', async () => {

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 import type {
+  ActiveFamily,
   ChildAccountRepository,
   ChildCredentialType,
   ChildGender,
@@ -96,6 +97,13 @@ const childSelection = {
 
 export class PrismaChildAccountRepository implements ChildAccountRepository {
   constructor(private readonly prisma: PrismaClient) {}
+
+  async findActiveFamilyByCode(familyCode: string): Promise<ActiveFamily | null> {
+    return this.prisma.family.findFirst({
+      where: { familyCode, deletedAt: null },
+      select: { id: true, name: true, familyCode: true },
+    });
+  }
 
   async listActiveChildren(familyId: string): Promise<ChildProfile[]> {
     const children = await this.prisma.user.findMany({

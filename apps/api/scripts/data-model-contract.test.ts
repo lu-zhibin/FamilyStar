@@ -55,6 +55,20 @@ describe('verifyDataModelContract', () => {
     );
   });
 
+  it('requires the family code field, unique index, and format guard', async () => {
+    const [schema, migration] = await Promise.all([
+      readFile(schemaUrl, 'utf8'),
+      readMigrationHistory(),
+    ]);
+
+    expect(schema).toMatch(
+      /familyCode\s+String\s+@unique\s+@map\("family_code"\)\s+@db\.VarChar\(10\)/,
+    );
+    expect(migration).toContain('families_family_code_key');
+    expect(migration).toContain('families_family_code_format_check');
+    expect(migration).toContain('^[A-Z0-9]{10}$');
+  });
+
   it('rejects an Outbox migration missing its claim index', async () => {
     const [schema, migration] = await Promise.all([
       readFile(schemaUrl, 'utf8'),

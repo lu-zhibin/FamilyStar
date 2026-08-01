@@ -161,6 +161,7 @@ export class FamilyInvitationService<Transaction> implements InvitationOperation
       parent: {
         id: parent.id,
         familyId: parent.familyId,
+        familyCode: parent.familyCode,
         nickname: parent.nickname,
         email: parent.email,
       },

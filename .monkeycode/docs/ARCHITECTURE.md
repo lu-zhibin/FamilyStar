@@ -29,7 +29,7 @@ FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打�
 | 后台运行时 | 独立 Worker、五类周期作业、Redis 调度锁、数据库运行记录、退避重试和健康端点 |
 | 容器运行时 | Web/API/Worker 多阶段镜像、PostgreSQL 16、Redis、迁移服务和双环境 Compose |
 | 凭证保险库 | Node.js Crypto AES-256-GCM、每记录数据密钥、版本化主密钥与 Prisma 重包裹适配器 |
-| 身份认证 | bcrypt.js cost 12、双家长邀请、孩子 PIN/密码、5 次失败锁定、10 次/15 分钟限流、Redis 滚动会话与主体撤销 |
+| 身份认证 | 家庭码统一入口、bcrypt.js cost 12、双家长邀请、孩子 PIN/密码、5 次失败锁定、10 次/15 分钟限流、Redis 滚动会话与主体撤销 |
 | 对象存储 | 已决定使用家庭级腾讯云 COS，任务 5 实现 |
 
 ## 项目结构
@@ -69,7 +69,7 @@ FamilyStar/
 - 位置：`apps/web/`
 - 入口：`app/layout.tsx`、`app/page.tsx`
 - 样式入口：`app/globals.css`、`tailwind.config.cjs`。
-- 职责：提供浏览器页面、元数据、品牌字体、视觉 Token、家长端九路由和孩子端六路由。
+- 职责：提供统一家庭登录入口、浏览器页面、元数据、品牌字体、视觉 Token、家长端九路由和孩子端六路由。
 - 当前依赖：React、Next.js、Tailwind CSS、Lucide React、`@familystar/shared`。
 - 响应式边界：mobile 小于 768px，tablet 为 768px 至 1024px，desktop 大于 1024px。
 
@@ -110,6 +110,9 @@ FamilyStar/
 
 ### 家长认证与家庭初始化
 
+- 根路径提供家长与孩子共用入口；家长可登录或创建家庭，孩子通过 10 位家庭码查询活动档案并使用 PIN 登录。
+- 每个家庭持有全局唯一且稳定的 10 位大写字母数字家庭码；已有家庭由迁移生成初始码，新家庭使用加密随机源生成。
+- `GET /api/v1/auth/session` 返回有效会话角色和家庭码，Web 据此将家长和孩子分别送入 `/dashboard` 与 `/child`。
 - 注册先规范化邮箱、验证至少 12 字符及 bcrypt 72 字节边界，再使用 cost 12 生成密码哈希。
 - Prisma 仓储在单个事务中创建家庭、创建者、创建者关联、5 种家庭任务类型和 20 级配置。
 - 浏览器 IANA 时区通过 `Intl.DateTimeFormat` 验证，无效或缺失值回退为 `Asia/Shanghai`。

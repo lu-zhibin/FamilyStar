@@ -19,6 +19,25 @@ const row = {
 };
 
 describe('PrismaChildAccountRepository', () => {
+  it('resolves only an active family by its normalized code', async () => {
+    const findFirst = vi.fn().mockResolvedValue({
+      id: 'family-1',
+      name: 'Star Family',
+      familyCode: 'STARFAM001',
+    });
+    const repository = new PrismaChildAccountRepository({
+      family: { findFirst },
+    } as unknown as PrismaClient);
+
+    await expect(repository.findActiveFamilyByCode('STARFAM001')).resolves.toMatchObject({
+      id: 'family-1',
+    });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { familyCode: 'STARFAM001', deletedAt: null },
+      select: { id: true, name: true, familyCode: true },
+    });
+  });
+
   it('creates and maps a child credential record', async () => {
     const create = vi.fn().mockResolvedValue(row);
     const repository = new PrismaChildAccountRepository({

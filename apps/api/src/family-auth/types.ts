@@ -1,6 +1,7 @@
 export type ParentIdentity = {
   id: string;
   familyId: string;
+  familyCode: string;
   nickname: string;
   email: string;
   passwordHash: string;
@@ -10,6 +11,7 @@ export type PublicParentIdentity = Omit<ParentIdentity, 'passwordHash'>;
 
 export type FamilyInitialization = {
   familyName: string;
+  familyCode: string;
   nickname: string;
   email: string;
   passwordHash: string;
@@ -19,6 +21,7 @@ export type FamilyInitialization = {
 export type FamilyAuthRepository = {
   createFamilyWithParent(input: FamilyInitialization): Promise<ParentIdentity>;
   findActiveParentByEmail(email: string): Promise<ParentIdentity | null>;
+  findActiveFamilyCodeById(familyId: string): Promise<string | null>;
 };
 
 export type AuthSession = {

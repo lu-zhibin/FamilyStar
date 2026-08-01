@@ -220,6 +220,7 @@ enum WorkerJobStatus {
 
 model Family {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyCode  String    @unique @map("family_code") @db.VarChar(10)
   name        String    @db.VarChar(120)
   avatarUrl   String?   @map("avatar_url") @db.Text
   settings    Json      @default("{}") @db.JsonB

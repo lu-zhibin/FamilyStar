@@ -12,6 +12,17 @@ export type ChildProfile = {
   avatarMediaId: string | null;
 };
 
+export type PublicChildLoginProfile = Pick<
+  ChildProfile,
+  'id' | 'nickname' | 'grade' | 'avatarMediaId'
+>;
+
+export type ActiveFamily = {
+  id: string;
+  name: string;
+  familyCode: string;
+};
+
 export type ChildIdentity = ChildProfile & {
   credentialHash: string;
   failedLoginAttempts: number;
@@ -47,6 +58,7 @@ export type CreateChildRecord = {
 export type UpdateChildRecord = Partial<Omit<CreateChildRecord, 'familyId'>>;
 
 export type ChildAccountRepository = {
+  findActiveFamilyByCode(familyCode: string): Promise<ActiveFamily | null>;
   listActiveChildren(familyId: string): Promise<ChildProfile[]>;
   findActiveChild(familyId: string, childId: string): Promise<ChildIdentity | null>;
   isReadyFamilyAvatar(familyId: string, avatarMediaId: string): Promise<boolean>;

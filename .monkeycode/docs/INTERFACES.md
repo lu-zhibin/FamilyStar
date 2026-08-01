@@ -63,6 +63,18 @@
 
 使用规范化邮箱和密码登录家长账号。成功返回公开家长身份并设置新的 30 天会话 Cookie；凭据错误返回 `401 UNAUTHORIZED`。响应不包含密码哈希或会话令牌字段。
 
+### `GET /api/v1/auth/session`
+
+读取当前 `familystar_session` Cookie。有效会话返回 `role`、`subject_id`、`family_id` 和 `family_code`，同时刷新 Redis TTL 与 Cookie Max-Age；缺少或失效会话返回 `401 UNAUTHORIZED`。
+
+### `POST /api/v1/auth/child/family`
+
+接收严格的 `{ "family_code": "<10 位大写字母数字>" }` 请求。成功返回家庭名称、家庭码和活动孩子公开档案；每个孩子只包含 `id`、`nickname`、`grade` 和 `avatar_media_id`。格式错误返回 `400 INVALID_REQUEST`，不可用家庭返回无差异的 `401 UNAUTHORIZED`。
+
+### `POST /api/v1/auth/child/login`
+
+接收 `family_code`、UUID `child_id` 和 `credential`。服务先解析活动家庭，再确认孩子归属并复用 PIN/密码校验、5 次失败锁定和 15 分钟 10 次限流；成功设置孩子 30 天会话 Cookie并返回公开孩子档案。
+
 ### `POST /api/v1/auth/parent/invitations`
 
 家庭创建者使用 `familystar_session` Cookie 邀请第二位家长。请求字段为 `email`。成功返回邀请 ID、规范化邮箱、7 天到期时间和 `delivery`。家庭邮件配置为 `VERIFIED` 时，`delivery` 为 `email` 且同事务写入邮件请求 Outbox 事件；其余状态返回 `copy-link` 和可复制 `invitationLink`。缺少会话返回 `401`，共同管理者返回 `403`，家庭已有两位家长或邮箱冲突返回 `409`。
@@ -161,7 +173,7 @@
 
 ### `/`
 
-Next.js App Router 首页，展示 FamilyStar 视觉工程基础状态。根布局设置 `zh-CN` 文档语言、页面标题、描述以及 Fredoka/Nunito 字体变量；页面使用 FamilyStar Design Tokens、Lucide SVG 和 768px 响应式布局。
+Next.js App Router 首页提供统一家庭登录入口。页面先读取服务端有效会话并按角色进入 `/dashboard` 或 `/child`；未认证用户可在家长登录、创建家庭和孩子家庭码两步登录之间切换。页面使用 FamilyStar Design Tokens、Lucide SVG、可见键盘焦点和 320px 至 2560px 响应式布局。
 
 ### 家长端与孩子端
 

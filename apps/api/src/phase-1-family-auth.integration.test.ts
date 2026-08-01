@@ -46,6 +46,7 @@ const PARENT_PASSWORD = 'parent-pass-123';
 
 type FamilyRecord = {
   id: string;
+  familyCode: string;
   name: string;
   createdById: string;
   settings: Record<string, unknown>;
@@ -167,6 +168,10 @@ class MemoryFamilyStore
     return parent ? this.parentIdentity(parent) : null;
   }
 
+  async findActiveFamilyCodeById(familyId: string): Promise<string | null> {
+    return this.state.families.find((family) => family.id === familyId)?.familyCode ?? null;
+  }
+
   async createFamilyWithParent(input: FamilyInitialization): Promise<ParentIdentity> {
     return this.run(async (transaction) => {
       if (
@@ -181,6 +186,7 @@ class MemoryFamilyStore
       const parent: ParentRecord = {
         id: parentId,
         familyId,
+        familyCode: input.familyCode,
         nickname: input.nickname,
         email: input.email,
         passwordHash: input.passwordHash,
@@ -188,6 +194,7 @@ class MemoryFamilyStore
       };
       transaction.families.push({
         id: familyId,
+        familyCode: input.familyCode,
         name: input.familyName,
         createdById: parentId,
         settings: structuredClone(input.settings),
@@ -279,9 +286,12 @@ class MemoryFamilyStore
     ) {
       throw new ParentEmailConflictError();
     }
+    const family = transaction.families.find((candidate) => candidate.id === invitation.familyId);
+    if (!family) throw new InvitationUnavailableError();
     const parent: ParentRecord = {
       id: this.id(),
       familyId: invitation.familyId,
+      familyCode: family.familyCode,
       nickname: input.nickname,
       email: invitation.email,
       passwordHash: input.passwordHash,
@@ -296,6 +306,11 @@ class MemoryFamilyStore
     return this.state.children
       .filter((child) => child.familyId === familyId && child.deletedAt === null)
       .map(publicChild);
+  }
+
+  async findActiveFamilyByCode(familyCode: string) {
+    const family = this.state.families.find((candidate) => candidate.familyCode === familyCode);
+    return family ? { id: family.id, name: family.name, familyCode: family.familyCode } : null;
   }
 
   async findActiveChild(familyId: string, childId: string): Promise<ChildIdentity | null> {
@@ -392,6 +407,7 @@ class MemoryFamilyStore
     return {
       id: parent.id,
       familyId: parent.familyId,
+      familyCode: parent.familyCode,
       nickname: parent.nickname,
       email: parent.email,
       passwordHash: parent.passwordHash,

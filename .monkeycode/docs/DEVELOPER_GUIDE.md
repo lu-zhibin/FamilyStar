@@ -196,6 +196,14 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 - `RedisChildLoginRateLimiter` 使用家庭与孩子范围的 10 次/15 分钟固定窗口，HTTP 响应分别暴露锁定和限流剩余秒数。
 - `RedisSessionStore` 为每个主体维护 revision；有效读取续期 30 天，凭据变更和软删除通过递增 revision 撤销旧会话。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/family-auth`。
+
+## 统一家庭登录开发
+
+- 根路径控制器位于 `apps/web/components/auth-landing.tsx`，认证请求与错误映射位于 `apps/web/lib/auth.ts`。
+- 浏览器只请求同源 `/api/v1`；已有会话、家长登录注册、家庭码查询和孩子登录均使用统一响应信封。
+- 家庭码在浏览器输入时规范化为大写，服务端继续执行 10 位大写字母数字校验和家庭隔离校验。
+- 登录成功使用 `router.replace()` 进入角色门户，避免浏览器返回到登录入口；本地角色信息仅用于现有门户显示，API 授权继续以 HttpOnly 会话为准。
+- 聚焦验证命令为 `pnpm exec vitest run apps/web/components/auth-landing.test.tsx apps/web/lib/auth.test.ts apps/api/src/family-auth`。
 - 阶段 3 集成测试位于 `apps/api/src/phase-1-family-auth.integration.test.ts`，使用 copy-on-write 数据库状态和共享内存 Redis 命令端口组合真实领域服务。
 
 ## 家庭设置开发

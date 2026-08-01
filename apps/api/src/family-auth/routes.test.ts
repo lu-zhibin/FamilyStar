@@ -12,6 +12,7 @@ function createService(): FamilyAuthService {
       return {
         id: 'parent-1',
         familyId: 'family-1',
+        familyCode: 'STARFAM001',
         nickname: input.nickname,
         email: input.email,
         passwordHash: input.passwordHash,
@@ -22,11 +23,15 @@ function createService(): FamilyAuthService {
         ? {
             id: 'parent-1',
             familyId: 'family-1',
+            familyCode: 'STARFAM001',
             nickname: 'Parent',
             email,
             passwordHash: 'hash',
           }
         : null;
+    },
+    async findActiveFamilyCodeById(familyId) {
+      return familyId === 'family-1' ? 'STARFAM001' : null;
     },
   };
   const sessions: SessionStore = {
@@ -75,7 +80,7 @@ describe('family auth HTTP routes', () => {
     expect(response.headers.get('set-cookie')).toContain('HttpOnly');
     expect(await response.json()).toMatchObject({
       success: true,
-      data: { parent: { familyId: 'family-1' } },
+      data: { parent: { familyId: 'family-1', familyCode: 'STARFAM001' } },
     });
   });
 
@@ -161,6 +166,7 @@ describe('family auth HTTP routes', () => {
           parent: {
             id: 'parent-2',
             familyId: 'family-1',
+            familyCode: 'STARFAM001',
             nickname: input.nickname,
             email: 'second@example.com',
           },
@@ -191,5 +197,45 @@ describe('family auth HTTP routes', () => {
       success: true,
       data: { parent: { id: 'parent-2', familyId: 'family-1' } },
     });
+  });
+
+  it('reads and rolls a valid session cookie', async () => {
+    const sessionStore: SessionStore = {
+      async create() {
+        return 'opaque-session';
+      },
+      async read(token) {
+        return token === 'opaque-session'
+          ? {
+              subjectId: 'parent-1',
+              familyId: 'family-1',
+              role: 'parent',
+              issuedAt: '2026-08-01T00:00:00.000Z',
+            }
+          : null;
+      },
+      async revokeSubject() {},
+    };
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      familyAuthService: createService(),
+      sessionStore,
+    });
+
+    const response = await app.request('/api/v1/auth/session', {
+      headers: { cookie: 'familystar_session=opaque-session' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('set-cookie')).toContain('familystar_session=opaque-session');
+    expect(await response.json()).toMatchObject({
+      data: {
+        role: 'parent',
+        subject_id: 'parent-1',
+        family_id: 'family-1',
+        family_code: 'STARFAM001',
+      },
+    });
+    expect((await app.request('/api/v1/auth/session')).status).toBe(401);
   });
 });

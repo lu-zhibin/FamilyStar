@@ -6,6 +6,7 @@ import type {
   ChildGender,
   ChildLoginRateLimiter,
   ChildProfile,
+  PublicChildLoginProfile,
   UpdateChildRecord,
 } from './child-types.js';
 import { CHILD_LOCK_ATTEMPTS, CHILD_LOCK_MILLISECONDS } from './constants.js';
@@ -92,6 +93,15 @@ export type ChildAccountOperations = {
   ): Promise<{ child: ChildProfile }>;
   remove(input: { sessionToken?: string; childId: string }): Promise<{ childId: string }>;
   listSwitchTargets(input: { sessionToken?: string }): Promise<{ children: ChildProfile[] }>;
+  findFamily(input: { familyCode: string }): Promise<{
+    family: { name: string; familyCode: string };
+    children: PublicChildLoginProfile[];
+  }>;
+  login(input: {
+    familyCode: string;
+    childId: string;
+    credential: string;
+  }): Promise<{ child: PublicChildLoginProfile; sessionToken: string }>;
   switchToChild(input: {
     sessionToken?: string;
     childId: string;
@@ -199,24 +209,54 @@ export class ChildAccountService implements ChildAccountOperations {
     return { children: await this.repository.listActiveChildren(session.familyId) };
   }
 
+  async findFamily(input: { familyCode: string }): Promise<{
+    family: { name: string; familyCode: string };
+    children: PublicChildLoginProfile[];
+  }> {
+    const family = await this.resolveFamily(input.familyCode);
+    const children = await this.repository.listActiveChildren(family.id);
+    return {
+      family: { name: family.name, familyCode: family.familyCode },
+      children: children.map((child) => this.publicLoginProfile(child)),
+    };
+  }
+
+  async login(input: {
+    familyCode: string;
+    childId: string;
+    credential: string;
+  }): Promise<{ child: PublicChildLoginProfile; sessionToken: string }> {
+    const family = await this.resolveFamily(input.familyCode);
+    const result = await this.authenticateChild(family.id, input.childId, input.credential);
+    return { child: this.publicLoginProfile(result.child), sessionToken: result.sessionToken };
+  }
+
   async switchToChild(input: {
     sessionToken?: string;
     childId: string;
     credential: string;
   }): Promise<{ child: ChildProfile; sessionToken: string }> {
     const session = await this.requireFamilySession(input.sessionToken);
-    const rateLimit = await this.loginRateLimiter.consume(session.familyId, input.childId);
+    return this.authenticateChild(session.familyId, input.childId, input.credential);
+  }
+
+  private async authenticateChild(
+    familyId: string,
+    childId: string,
+    credential: string,
+  ): Promise<{ child: ChildProfile; sessionToken: string }> {
+    const rateLimit = await this.loginRateLimiter.consume(familyId, childId);
     if (!rateLimit.allowed) throw new ChildLoginRateLimitError(rateLimit.retryAfterSeconds);
 
     for (let attempt = 0; attempt < 12; attempt += 1) {
       const now = this.clock();
-      const child = await this.repository.findActiveChild(session.familyId, input.childId);
+      const child = await this.repository.findActiveChild(familyId, childId);
       if (!child) throw new ChildAuthenticationError('Invalid child profile or credential.');
       if (child.lockedUntil && child.lockedUntil > now) {
         throw new ChildLockedError(this.remainingLockSeconds(child.lockedUntil, now));
       }
 
-      const credentialMatches = await this.passwords.verify(input.credential, child.credentialHash);
+      const credentialMatches = await this.passwords.verify(credential, child.credentialHash);
       const previousFailures = child.lockedUntil ? 0 : child.failedLoginAttempts;
       const failedLoginAttempts = credentialMatches ? 0 : previousFailures + 1;
       const lockedUntil =
@@ -256,6 +296,21 @@ export class ChildAccountService implements ChildAccountOperations {
       };
     }
     throw new Error('Child authentication state could not be updated.');
+  }
+
+  private async resolveFamily(familyCode: string) {
+    const family = await this.repository.findActiveFamilyByCode(familyCode.trim().toUpperCase());
+    if (!family) throw new ChildAuthenticationError('Invalid family code or unavailable family.');
+    return family;
+  }
+
+  private publicLoginProfile(child: ChildProfile): PublicChildLoginProfile {
+    return {
+      id: child.id,
+      nickname: child.nickname,
+      grade: child.grade,
+      avatarMediaId: child.avatarMediaId,
+    };
   }
 
   async changeOwnPassword(input: {

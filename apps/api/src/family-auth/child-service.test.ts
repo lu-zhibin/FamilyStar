@@ -61,6 +61,11 @@ function createHarness(
   const revokedSubjects: string[] = [];
   let currentChild = options.existingChild === undefined ? { ...child } : options.existingChild;
   const repository: ChildAccountRepository = {
+    async findActiveFamilyByCode(familyCode) {
+      return familyCode === 'STARFAM001'
+        ? { id: 'family-1', name: 'Star Family', familyCode }
+        : null;
+    },
     async listActiveChildren(familyId) {
       return familyId === child.familyId ? [profile(child)] : [];
     },
@@ -289,6 +294,35 @@ describe('ChildAccountService', () => {
         sessionToken: 'parent',
         childId: child.id,
         credential: 'wrong',
+      }),
+    ).rejects.toBeInstanceOf(ChildAuthenticationError);
+  });
+
+  it('finds a family with limited public child profiles and logs in through the shared flow', async () => {
+    const harness = createHarness();
+    await expect(harness.service.findFamily({ familyCode: ' starfAM001 ' })).resolves.toEqual({
+      family: { name: 'Star Family', familyCode: 'STARFAM001' },
+      children: [
+        {
+          id: child.id,
+          nickname: child.nickname,
+          grade: child.grade,
+          avatarMediaId: child.avatarMediaId,
+        },
+      ],
+    });
+    await expect(
+      harness.service.login({
+        familyCode: 'STARFAM001',
+        childId: child.id,
+        credential: '1234',
+      }),
+    ).resolves.toMatchObject({ child: { id: child.id }, sessionToken: 'child-session-token' });
+    await expect(
+      harness.service.login({
+        familyCode: 'UNKNOWN001',
+        childId: child.id,
+        credential: '1234',
       }),
     ).rejects.toBeInstanceOf(ChildAuthenticationError);
   });

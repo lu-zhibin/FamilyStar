@@ -9,10 +9,12 @@ import {
   ChevronRight,
   Clock3,
   CloudOff,
+  Copy,
   Gift,
   Heart,
   Image as ImageIcon,
   Info,
+  KeyRound,
   Mail,
   Medal,
   PackageCheck,
@@ -30,10 +32,13 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
+import { authApi, type SessionIdentity } from '../lib/auth';
 import { formatFrequency, parentApi, type ParentSection } from '../lib/parent-portal';
 import { ParentShell } from './parent-shell';
 
 type LoadState = 'loading' | 'live' | 'demo';
+type FamilyCodeLoadState = 'loading' | 'ready' | 'error';
+type CopyState = 'idle' | 'copied' | 'error';
 type Child = { id: string; nickname: string; grade: string | null; gender: 'male' | 'female' };
 type Task = {
   id: string;
@@ -1034,6 +1039,33 @@ function RecordsPage() {
 function FamilyPage() {
   const children = useApiData('/family/children', 'children', demoChildren);
   const [open, setOpen] = useState(false);
+  const [familyCode, setFamilyCode] = useState('');
+  const [familyCodeState, setFamilyCodeState] = useState<FamilyCodeLoadState>('loading');
+  const [copyState, setCopyState] = useState<CopyState>('idle');
+
+  useEffect(() => {
+    let active = true;
+    authApi<SessionIdentity>('/auth/session')
+      .then((session) => {
+        if (!active) return;
+        if (session.role !== 'parent') throw new Error('Parent session required.');
+        setFamilyCode(session.family_code);
+        setFamilyCodeState('ready');
+      })
+      .catch(() => active && setFamilyCodeState('error'));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function copyFamilyCode() {
+    try {
+      await navigator.clipboard.writeText(familyCode);
+      setCopyState('copied');
+    } catch {
+      setCopyState('error');
+    }
+  }
 
   async function createChild(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1077,6 +1109,12 @@ function FamilyPage() {
             添加孩子
           </button>
         }
+      />
+      <FamilyCodeCard
+        code={familyCode}
+        copyState={copyState}
+        state={familyCodeState}
+        onCopy={copyFamilyCode}
       />
       <Panel>
         <SectionTitle>孩子档案</SectionTitle>
@@ -1179,6 +1217,77 @@ function FamilyPage() {
         </Modal>
       )}
     </>
+  );
+}
+
+export function FamilyCodeCard({
+  code,
+  copyState,
+  state,
+  onCopy,
+}: {
+  code: string;
+  copyState: CopyState;
+  state: FamilyCodeLoadState;
+  onCopy: () => void;
+}) {
+  if (state === 'loading') {
+    return (
+      <Panel className="mb-5" aria-live="polite">
+        <div className="flex items-center gap-3 text-brown-light" role="status">
+          <span className="loading-dot" />
+          <strong>正在读取家庭码...</strong>
+        </div>
+      </Panel>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <Panel className="mb-5">
+        <div className="flex items-start gap-3 text-brown-light" role="alert">
+          <CloudOff className="mt-0.5 shrink-0" size={21} />
+          <div>
+            <strong className="text-brown">家庭码暂时无法读取</strong>
+            <p className="mt-1 text-caption font-bold">请刷新页面后重试。</p>
+          </div>
+        </div>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel className="mb-5 overflow-hidden border-leaf/50 bg-gradient-to-r from-leaf-light/65 via-white to-sky/15">
+      <div className="flex items-center gap-4 mobile:items-start">
+        <span className="metric-icon mt-0.5">
+          <KeyRound size={22} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="eyebrow">孩子登录家庭码</p>
+          <output
+            aria-label="当前家庭码"
+            className="block break-all font-display text-[clamp(1.6rem,5vw,2.35rem)] tracking-[0.16em] text-brown"
+          >
+            {code}
+          </output>
+          <p className="mt-2 max-w-2xl text-caption font-bold text-brown-light">
+            孩子在登录页输入这 10 位家庭码，选择自己的头像并输入 PIN，即可进入成长空间。
+          </p>
+          {copyState !== 'idle' && (
+            <p
+              className={`mt-2 text-caption font-extrabold ${copyState === 'copied' ? 'text-leaf-dark' : 'text-red'}`}
+              role={copyState === 'copied' ? 'status' : 'alert'}
+            >
+              {copyState === 'copied' ? '家庭码已复制' : '复制失败，请手动选择家庭码'}
+            </p>
+          )}
+        </div>
+        <button className="secondary-button shrink-0 mobile:px-3" type="button" onClick={onCopy}>
+          {copyState === 'copied' ? <Check size={17} /> : <Copy size={17} />}
+          {copyState === 'copied' ? '已复制' : '复制'}
+        </button>
+      </div>
+    </Panel>
   );
 }
 

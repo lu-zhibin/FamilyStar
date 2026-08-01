@@ -35,6 +35,11 @@ function application(role: 'parent' | 'child', auditWriter?: AuditWriter) {
   );
   app.post('/api/v1/family/tasks', (context) => context.json({ ok: true }, 201));
   app.post('/api/v1/check-ins', (context) => context.json({ ok: true }, 201));
+  app.get('/api/v1/auth/session', (context) =>
+    context.json({ role: context.get('authSession')?.role }),
+  );
+  app.post('/api/v1/auth/child/family', (context) => context.json({ ok: true }));
+  app.post('/api/v1/auth/child/login', (context) => context.json({ ok: true }));
   return { app, sessions };
 }
 
@@ -47,6 +52,33 @@ describe('security middleware', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ familyId });
+  });
+
+  it('protects session reads while leaving child family lookup and login public', async () => {
+    const { app, sessions } = application('child');
+    expect((await app.request('/api/v1/auth/session', { headers: cookie })).status).toBe(200);
+    expect((await app.request('/api/v1/auth/session')).status).toBe(401);
+    sessions.read.mockClear();
+
+    expect(
+      (
+        await app.request('/api/v1/auth/child/family', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ family_code: 'STARFAM001' }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await app.request('/api/v1/auth/child/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ family_code: 'STARFAM001' }),
+        })
+      ).status,
+    ).toBe(200);
+    expect(sessions.read).not.toHaveBeenCalled();
   });
 
   it('rejects a missing session and a child accessing a parent route', async () => {

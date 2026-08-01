@@ -18,6 +18,7 @@ import {
 import { InvalidParentPasswordError } from './password.js';
 import {
   FamilyAuthService,
+  InvalidAuthSessionError,
   InvalidParentCredentialsError,
   ParentEmailConflictError,
 } from './service.js';
@@ -74,6 +75,34 @@ export function registerFamilyAuthRoutes(
   secureCookies: boolean,
   invitationService?: InvitationOperations,
 ): void {
+  api.get('/auth/session', async (context) => {
+    try {
+      const session = await service.getSession(context.get('authSession'));
+      const token = context.get('sessionToken');
+      if (!token) throw new InvalidAuthSessionError();
+      attachSessionCookie(context, token, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          {
+            role: session.role,
+            subject_id: session.subjectId,
+            family_id: session.familyId,
+            family_code: session.familyCode,
+          },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      if (error instanceof InvalidAuthSessionError) {
+        return context.json(
+          createErrorResponse(ERROR_CODES.UNAUTHORIZED, error.message, context.get('requestId')),
+          401,
+        );
+      }
+      throw error;
+    }
+  });
+
   api.post('/auth/parent/register', async (context) => {
     const parsed = registerSchema.safeParse(await readJson(context));
     if (!parsed.success) {

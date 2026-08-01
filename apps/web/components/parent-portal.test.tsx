@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { parentSections } from '../lib/parent-portal';
-import { ParentPortal } from './parent-portal';
+import { FamilyCodeCard, ParentPortal } from './parent-portal';
 
 const titles = [
   '家庭总览',
@@ -29,5 +29,46 @@ describe('ParentPortal', () => {
     expect(renderToStaticMarkup(<ParentPortal section="tasks" />)).toContain('创建任务');
     expect(renderToStaticMarkup(<ParentPortal section="settings" />)).toContain('即将推出');
     expect(renderToStaticMarkup(<ParentPortal section="records" />)).toContain('Phase 1 受限页面');
+  });
+
+  it('renders family-code loading and failure states without a placeholder code', () => {
+    const loading = renderToStaticMarkup(
+      <FamilyCodeCard code="" copyState="idle" state="loading" onCopy={() => undefined} />,
+    );
+    const failure = renderToStaticMarkup(
+      <FamilyCodeCard code="" copyState="idle" state="error" onCopy={() => undefined} />,
+    );
+
+    expect(loading).toContain('正在读取家庭码');
+    expect(loading).toContain('role="status"');
+    expect(failure).toContain('家庭码暂时无法读取');
+    expect(failure).toContain('role="alert"');
+    expect(`${loading}${failure}`).not.toContain('STARFAM001');
+  });
+
+  it('renders the real family code, usage guidance, and accessible copy feedback', () => {
+    const ready = renderToStaticMarkup(
+      <FamilyCodeCard code="STARFAM001" copyState="idle" state="ready" onCopy={() => undefined} />,
+    );
+    const copied = renderToStaticMarkup(
+      <FamilyCodeCard
+        code="STARFAM001"
+        copyState="copied"
+        state="ready"
+        onCopy={() => undefined}
+      />,
+    );
+    const copyFailure = renderToStaticMarkup(
+      <FamilyCodeCard code="STARFAM001" copyState="error" state="ready" onCopy={() => undefined} />,
+    );
+
+    expect(ready).toContain('aria-label="当前家庭码"');
+    expect(ready).toContain('STARFAM001');
+    expect(ready).toContain('选择自己的头像并输入 PIN');
+    expect(ready).toContain('>复制<');
+    expect(copied).toContain('家庭码已复制');
+    expect(copied).toContain('role="status"');
+    expect(copyFailure).toContain('复制失败，请手动选择家庭码');
+    expect(copyFailure).toContain('role="alert"');
   });
 });

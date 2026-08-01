@@ -6,7 +6,7 @@ import { PrismaFamilyAuthRepository } from './prisma-repository.js';
 
 describe('PrismaFamilyAuthRepository', () => {
   it('creates all family defaults through one transaction client', async () => {
-    const familyCreate = vi.fn().mockResolvedValue({ id: 'family-1' });
+    const familyCreate = vi.fn().mockResolvedValue({ id: 'family-1', familyCode: 'STARFAM001' });
     const userCreate = vi.fn().mockResolvedValue({
       id: 'parent-1',
       familyId: 'family-1',
@@ -35,6 +35,7 @@ describe('PrismaFamilyAuthRepository', () => {
     await expect(
       repository.createFamilyWithParent({
         familyName: 'Star Family',
+        familyCode: 'STARFAM001',
         nickname: 'Parent',
         email: 'parent@example.com',
         passwordHash: 'hash',
@@ -43,6 +44,13 @@ describe('PrismaFamilyAuthRepository', () => {
     ).resolves.toMatchObject({ id: 'parent-1', familyId: 'family-1' });
 
     expect(prisma.$transaction).toHaveBeenCalledOnce();
+    expect(familyCreate).toHaveBeenCalledWith({
+      data: {
+        name: 'Star Family',
+        familyCode: 'STARFAM001',
+        settings: { timeZone: 'Asia/Shanghai' },
+      },
+    });
     expect(templateUpsert).toHaveBeenCalledTimes(DEFAULT_TASK_TYPES.length);
     expect(taskTypeCreateMany.mock.calls[0]?.[0].data).toHaveLength(DEFAULT_TASK_TYPES.length);
     expect(levelCreateMany.mock.calls[0]?.[0].data).toHaveLength(DEFAULT_LEVEL_CONFIGS.length);

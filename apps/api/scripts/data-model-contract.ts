@@ -87,6 +87,8 @@ const MIGRATION_GUARDS = [
   'worker_job_runs_attempts_check',
   'worker_job_runs_state_check',
   'worker_job_runs_job_name_run_key_key',
+  'families_family_code_key',
+  'families_family_code_format_check',
 ] as const;
 
 function modelBlock(schema: string, model: string): string {
@@ -109,6 +111,11 @@ export function verifyDataModelContract(schema: string, migration: string): void
   for (const model of SOFT_DELETE_MODELS) {
     assert.match(modelBlock(schema, model), /deletedAt\s+DateTime\?\s+@map\("deleted_at"\)/);
   }
+
+  assert.match(
+    modelBlock(schema, 'Family'),
+    /familyCode\s+String\s+@unique\s+@map\("family_code"\)\s+@db\.VarChar\(10\)/,
+  );
 
   assert.match(schema, /@@unique\(\[type, businessType, businessId, userId\]\)/);
   assert.match(schema, /@@unique\(\[familyId, idempotencyKey\]\)/);

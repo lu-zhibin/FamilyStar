@@ -12,7 +12,7 @@ import {
   InvitationExpiredError,
   InvitationUnavailableError,
 } from './invitation-service.js';
-import { ParentEmailConflictError } from './service.js';
+import { FamilyCodeConflictError, ParentEmailConflictError } from './service.js';
 import type {
   AcceptInvitationInput,
   CreateInvitationInput,
@@ -23,18 +23,21 @@ import type {
   ParentIdentity,
 } from './types.js';
 
-function mapParent(user: {
-  id: string;
-  familyId: string;
-  nickname: string;
-  email: string | null;
-  passwordHash: string | null;
-}): ParentIdentity {
+function mapParent(
+  user: {
+    id: string;
+    familyId: string;
+    nickname: string;
+    email: string | null;
+    passwordHash: string | null;
+  },
+  familyCode: string,
+): ParentIdentity {
   if (!user.email || !user.passwordHash) throw new Error('Parent credential record is incomplete.');
-  return { ...user, email: user.email, passwordHash: user.passwordHash };
+  return { ...user, familyCode, email: user.email, passwordHash: user.passwordHash };
 }
 
-type FamilyRow = { id: string; createdById: string | null };
+type FamilyRow = { id: string; createdById: string | null; familyCode: string };
 type InvitationIdRow = { id: string };
 type InvitationRow = {
   id: string;
@@ -51,14 +54,24 @@ export class PrismaFamilyAuthRepository
 
   async findActiveParentByEmail(email: string): Promise<ParentIdentity | null> {
     const users = await this.prisma.$queryRaw<ParentIdentity[]>(Prisma.sql`
-      SELECT "id", "family_id" AS "familyId", "nickname", "email", "password_hash" AS "passwordHash"
-      FROM "users"
-      WHERE "role" = 'parent'
-        AND "deleted_at" IS NULL
-        AND LOWER("email") = ${email}
+      SELECT u."id", u."family_id" AS "familyId", f."family_code" AS "familyCode",
+             u."nickname", u."email", u."password_hash" AS "passwordHash"
+      FROM "users" u
+      JOIN "families" f ON f."id" = u."family_id" AND f."deleted_at" IS NULL
+      WHERE u."role" = 'parent'
+        AND u."deleted_at" IS NULL
+        AND LOWER(u."email") = ${email}
       LIMIT 1
     `);
     return users[0] ?? null;
+  }
+
+  async findActiveFamilyCodeById(familyId: string): Promise<string | null> {
+    const family = await this.prisma.family.findFirst({
+      where: { id: familyId, deletedAt: null },
+      select: { familyCode: true },
+    });
+    return family?.familyCode ?? null;
   }
 
   async createFamilyWithParent(input: FamilyInitialization): Promise<ParentIdentity> {
@@ -67,6 +80,7 @@ export class PrismaFamilyAuthRepository
         const family = await transaction.family.create({
           data: {
             name: input.familyName,
+            familyCode: input.familyCode,
             settings: input.settings as Prisma.InputJsonObject,
           },
         });
@@ -108,10 +122,14 @@ export class PrismaFamilyAuthRepository
         await transaction.levelConfig.createMany({
           data: DEFAULT_LEVEL_CONFIGS.map((level) => ({ ...level, familyId: family.id })),
         });
-        return mapParent(parent);
+        return mapParent(parent, family.familyCode);
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const target = String(error.meta?.target ?? '');
+        if (target.includes('family_code') || target.includes('familyCode')) {
+          throw new FamilyCodeConflictError();
+        }
         throw new ParentEmailConflictError();
       }
       throw error;
@@ -123,7 +141,7 @@ export class PrismaFamilyAuthRepository
     input: CreateInvitationInput,
   ): Promise<InvitationCreation> {
     const families = await transaction.$queryRaw<FamilyRow[]>(Prisma.sql`
-      SELECT "id", "created_by" AS "createdById"
+      SELECT "id", "created_by" AS "createdById", "family_code" AS "familyCode"
       FROM "families"
       WHERE "id" = ${input.familyId}::uuid AND "deleted_at" IS NULL
       FOR UPDATE
@@ -211,12 +229,13 @@ export class PrismaFamilyAuthRepository
       }
 
       const families = await transaction.$queryRaw<FamilyRow[]>(Prisma.sql`
-        SELECT "id", "created_by" AS "createdById"
+        SELECT "id", "created_by" AS "createdById", "family_code" AS "familyCode"
         FROM "families"
         WHERE "id" = ${invitation.familyId}::uuid AND "deleted_at" IS NULL
         FOR UPDATE
       `);
-      if (families.length === 0) throw new InvitationUnavailableError();
+      const family = families[0];
+      if (!family) throw new InvitationUnavailableError();
       const activeParents = await transaction.user.count({
         where: { familyId: invitation.familyId, role: 'PARENT', deletedAt: null },
       });
@@ -247,7 +266,7 @@ export class PrismaFamilyAuthRepository
           acceptedAt: input.now,
         },
       });
-      return mapParent(parent);
+      return mapParent(parent, family.familyCode);
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ParentEmailConflictError();

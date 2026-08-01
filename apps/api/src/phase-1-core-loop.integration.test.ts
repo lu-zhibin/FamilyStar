@@ -25,6 +25,7 @@ import type { TaskOperations, TaskRecord } from './tasks/types.js';
 
 const NOW = new Date('2026-07-31T12:00:00.000Z');
 const FAMILY_ID = '00000000-0000-4000-8000-000000000101';
+const FAMILY_CODE = 'CORELOOP01';
 const PARENT_ID = '00000000-0000-4000-8000-000000000102';
 const CHILD_ID = '00000000-0000-4000-8000-000000000103';
 const TASK_TYPE_ID = '00000000-0000-4000-8000-000000000104';
@@ -121,6 +122,7 @@ class CoreLoopFixture implements FamilyAuthRepository {
     const parent: ParentIdentity = {
       id: PARENT_ID,
       familyId: FAMILY_ID,
+      familyCode: input.familyCode,
       nickname: input.nickname,
       email: input.email,
       passwordHash: input.passwordHash,
@@ -133,6 +135,10 @@ class CoreLoopFixture implements FamilyAuthRepository {
 
   async findActiveParentByEmail(email: string): Promise<ParentIdentity | null> {
     return this.state.parent?.email === email ? this.state.parent : null;
+  }
+
+  async findActiveFamilyCodeById(familyId: string): Promise<string | null> {
+    return familyId === FAMILY_ID && this.state.familyCreated ? FAMILY_CODE : null;
   }
 
   childOperations(): ChildAccountOperations {
@@ -162,6 +168,43 @@ class CoreLoopFixture implements FamilyAuthRepository {
       listSwitchTargets: async ({ sessionToken }) => {
         await this.requireSession(sessionToken);
         return { children: this.state.child ? [this.state.child] : [] };
+      },
+      findFamily: async ({ familyCode }) => {
+        expect(familyCode).toBe(FAMILY_CODE);
+        return {
+          family: { name: 'Core Loop Family', familyCode: FAMILY_CODE },
+          children: this.state.child
+            ? [
+                {
+                  id: this.state.child.id,
+                  nickname: this.state.child.nickname,
+                  grade: this.state.child.grade,
+                  avatarMediaId: this.state.child.avatarMediaId,
+                },
+              ]
+            : [],
+        };
+      },
+      login: async ({ familyCode, childId, credential }) => {
+        expect(familyCode).toBe(FAMILY_CODE);
+        const child = this.required(this.state.child, 'child');
+        expect(childId).toBe(child.id);
+        expect(credential).toBe(this.state.childCredential);
+        const sessionToken = await this.sessions.create({
+          subjectId: child.id,
+          familyId: child.familyId,
+          role: 'child',
+          issuedAt: NOW.toISOString(),
+        });
+        return {
+          child: {
+            id: child.id,
+            nickname: child.nickname,
+            grade: child.grade,
+            avatarMediaId: child.avatarMediaId,
+          },
+          sessionToken,
+        };
       },
       switchToChild: async ({ sessionToken, childId, credential }) => {
         const session = await this.requireSession(sessionToken);
@@ -639,7 +682,13 @@ describe('Phase 1 core loop HTTP integration', () => {
   it('completes earning, leveling, fulfillment, and refund through createApp routes', async () => {
     const sessions = new MemorySessionStore();
     const fixture = new CoreLoopFixture(sessions);
-    const auth = new FamilyAuthService(fixture, sessions, passwordHasher, () => new Date(NOW));
+    const auth = new FamilyAuthService(
+      fixture,
+      sessions,
+      passwordHasher,
+      () => new Date(NOW),
+      () => FAMILY_CODE,
+    );
     const app = createApp({
       publicBaseUrl: 'http://localhost:3000',
       familyAuthService: auth,
@@ -664,12 +713,13 @@ describe('Phase 1 core loop HTTP integration', () => {
       },
     });
     const registration = await success<{
-      parent: { id: string; familyId: string; email: string };
+      parent: { id: string; familyId: string; familyCode: string; email: string };
     }>(registrationResponse, 201);
     const parentCookie = cookie(registrationResponse);
     expect(registration.parent).toEqual({
       id: PARENT_ID,
       familyId: FAMILY_ID,
+      familyCode: FAMILY_CODE,
       nickname: 'Parent One',
       email: 'parent@example.com',
     });
