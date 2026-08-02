@@ -109,7 +109,7 @@ export function ParentShell({
           </p>
         )}
       </header>
-      <main className="page-shell">{children}</main>
+      <main className="page-shell py-7 mobile:py-5">{children}</main>
       <nav
         className="fixed inset-x-0 bottom-0 z-40 border-t border-wood bg-white/95 shadow-[0_-8px_28px_rgba(93,64,55,0.10)] backdrop-blur-xl"
         aria-label="家长端模块导航"
