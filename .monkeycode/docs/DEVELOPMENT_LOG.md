@@ -1,5 +1,31 @@
 # FamilyStar 开发记录
 
+## 2026-08-02：部署门户会话与真实数据修复开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-004`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `a7fd9b1`
+- 实现提交：`a7fd9b1`
+
+### 发布结果
+
+- 从提交 `a7fd9b1` 的独立源码归档构建并推送 `dev-20260802-a7fd9b1-api`、`dev-20260802-a7fd9b1-worker` 和 `dev-20260802-a7fd9b1-web`，`dev-latest-*` 已更新到相同镜像。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-a7fd9b1-20260802.dump`，文件大小 738445 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- Prisma 迁移容器使用新 API 镜像成功退出，退出码为 0；PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。
+- API、Worker 和 Web 运行镜像均锁定到 `dev-20260802-a7fd9b1-*`；公网首页返回 HTTP 200，同源 `/api/v1/health` 返回版本 `0.1.0` 和 `status: ok`。
+
+### 真实数据验收
+
+- 通过公开同源 API 创建新的隔离验收家庭和孩子，家长注册返回 201，有效会话读取返回 200，孩子创建返回 201。
+- 使用省略可选 `description` 的真实请求创建单人每日任务，接口返回 201，随后任务列表包含该服务端记录。
+- 当前家长会话退出返回 200 并清除 Cookie；复用旧 Cookie 读取会话返回 401，确认 Redis 单令牌撤销生效。
+- 验收创建的家庭、孩子和任务保留在开发数据库中，便于后续审核、积分、等级与奖励闭环回归。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260801-64df198-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-a7fd9b1-20260802.dump`。
+
 ## 2026-08-01：修复家长端创建任务默认请求 400
 
 - 记录 ID：`FS-TASK-CREATE-FIX-001`
@@ -17,7 +43,7 @@
 - 新增 `buildSoloTaskDraft()` 集中生成单人每日任务请求；空白说明从请求省略，有效说明去除首尾空白后保留。
 - 新增两项请求体回归测试，覆盖空白说明和有效说明；任务链路定向测试 4 个文件、28 项通过。
 - 完整单元测试 77 个文件、490 项通过；全工作区 TypeScript、零警告 ESLint、Prettier 和生产构建通过。
-- 本次修复尚未提交、推送或部署到开发环境 `8098`。
+- 本次修复已通过提交 `a7fd9b1` 发布到开发环境 `8098`，运行结果见 `FS-DEPLOY-DEV-004`。
 
 ## 2026-08-01：移除认证门户演示数据与伪成功回退
 
