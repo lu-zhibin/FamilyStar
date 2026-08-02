@@ -21,6 +21,7 @@ describe('ParentPortal', () => {
     const markup = renderToStaticMarkup(<ParentPortal section={section} />);
 
     expect(markup).toContain(titles[parentSections.indexOf(section)]);
+    expect(markup).toContain('<main class="page-shell">');
     expect(markup).toContain('家长端模块导航');
     expect(markup).toContain('aria-label="退出家长端"');
     expect(markup).toContain('aria-current="page"');
