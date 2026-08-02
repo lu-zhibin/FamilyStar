@@ -13,6 +13,7 @@ function sessions(role: 'parent' | 'child', familyId = 'family-1'): SessionStore
       role,
       issuedAt: '2026-07-31T00:00:00.000Z',
     }),
+    revoke: vi.fn(),
     revokeSubject: vi.fn(),
   };
 }

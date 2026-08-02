@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AuthApiError, authApi, loginErrorMessage } from './auth';
+import { AuthApiError, authApi, clearStoredIdentity, loginErrorMessage } from './auth';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -82,5 +82,19 @@ describe('loginErrorMessage', () => {
     [new TypeError('network'), '网络连接遇到问题，请稍后重试'],
   ])('maps authentication failures to actionable Chinese messages', (error, expected) => {
     expect(loginErrorMessage(error)).toBe(expected);
+  });
+});
+
+describe('clearStoredIdentity', () => {
+  it('removes every browser identity cache key after logout', () => {
+    const removeItem = vi.fn();
+
+    clearStoredIdentity({ removeItem });
+
+    expect(removeItem.mock.calls).toEqual([
+      ['familystar_role'],
+      ['familystar_family_code'],
+      ['familystar_child_id'],
+    ]);
   });
 });

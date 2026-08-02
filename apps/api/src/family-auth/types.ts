@@ -34,6 +34,7 @@ export type AuthSession = {
 export type SessionStore = {
   create(session: AuthSession): Promise<string>;
   read(token: string): Promise<AuthSession | null>;
+  revoke(token: string): Promise<void>;
   revokeSubject(subjectId: string): Promise<void>;
 };
 

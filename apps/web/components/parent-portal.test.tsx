@@ -22,13 +22,25 @@ describe('ParentPortal', () => {
 
     expect(markup).toContain(titles[parentSections.indexOf(section)]);
     expect(markup).toContain('家长端模块导航');
+    expect(markup).toContain('aria-label="退出家长端"');
     expect(markup).toContain('aria-current="page"');
   });
 
   it('renders responsive forms and explicit limited states', () => {
-    expect(renderToStaticMarkup(<ParentPortal section="tasks" />)).toContain('创建任务');
-    expect(renderToStaticMarkup(<ParentPortal section="settings" />)).toContain('即将推出');
+    const tasks = renderToStaticMarkup(<ParentPortal section="tasks" />);
+    expect(tasks).toContain('创建任务');
+    expect(tasks).toContain('当前筛选下没有任务');
+    expect(renderToStaticMarkup(<ParentPortal section="settings" />)).toContain('正在读取家庭规则');
     expect(renderToStaticMarkup(<ParentPortal section="records" />)).toContain('Phase 1 受限页面');
+  });
+
+  it('does not render seeded family identities or business data before API responses', () => {
+    const markup = parentSections
+      .map((section) => renderToStaticMarkup(<ParentPortal section={section} />))
+      .join('');
+
+    expect(markup).not.toMatch(/潼潼|昊昊|妞妞|斌哥|小星星家庭/);
+    expect(markup).not.toMatch(/晨读 30 分钟|周末动画时间|一起整理房间/);
   });
 
   it('renders family-code loading and failure states without a placeholder code', () => {

@@ -34,6 +34,27 @@ export function canAccessParentPortal(role: string | null): boolean {
   return role === null || role === 'parent';
 }
 
+export function buildSoloTaskDraft(form: Pick<FormData, 'get'>, startDate: string) {
+  const description = String(form.get('description') ?? '').trim();
+
+  return {
+    task_type_id: String(form.get('task_type_id') ?? ''),
+    name: String(form.get('name') ?? ''),
+    ...(description ? { description } : {}),
+    check_type: String(form.get('check_type') ?? ''),
+    verify_mode: String(form.get('verify_mode') ?? ''),
+    collaboration_mode: 'SOLO',
+    frequency: { kind: 'daily' },
+    base_points: Number(form.get('base_points')),
+    assignments: [
+      {
+        child_id: String(form.get('child_id') ?? ''),
+        start_date: startDate,
+      },
+    ],
+  };
+}
+
 export class ParentApiError extends Error {
   constructor(
     message: string,

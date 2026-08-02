@@ -137,6 +137,7 @@ function createHarness(
     async read(token) {
       return sessionByToken[token] ?? null;
     },
+    async revoke() {},
     async revokeSubject(subjectId) {
       revokedSubjects.push(subjectId);
     },

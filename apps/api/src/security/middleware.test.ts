@@ -18,6 +18,7 @@ function application(role: 'parent' | 'child', auditWriter?: AuditWriter) {
       role,
       issuedAt: '2026-07-31T00:00:00.000Z',
     }),
+    revoke: vi.fn(),
     revokeSubject: vi.fn(),
   };
   const app = new Hono<AppEnvironment>();

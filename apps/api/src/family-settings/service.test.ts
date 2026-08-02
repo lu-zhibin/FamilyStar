@@ -25,6 +25,7 @@ function dependencies(raw: Record<string, unknown> | null = {}) {
   const sessions: SessionStore = {
     create: vi.fn(),
     read: vi.fn().mockResolvedValue(parentSession),
+    revoke: vi.fn(),
     revokeSubject: vi.fn(),
   };
   return { repository, sessions };

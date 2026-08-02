@@ -67,6 +67,10 @@
 
 读取当前 `familystar_session` Cookie。有效会话返回 `role`、`subject_id`、`family_id` 和 `family_code`，同时刷新 Redis TTL 与 Cookie Max-Age；缺少或失效会话返回 `401 UNAUTHORIZED`。
 
+### `POST /api/v1/auth/logout`
+
+撤销当前 `familystar_session` 对应的单个 Redis 会话并清除 Cookie。接口允许家长或孩子会话调用，成功返回 `{ "logged_out": true }`；缺少或失效会话返回 `401 UNAUTHORIZED`，浏览器跨站写请求继续受精确 Origin 和 Fetch Metadata 保护。
+
 ### `POST /api/v1/auth/child/family`
 
 接收严格的 `{ "family_code": "<6 位数字>" }` 请求，家庭码按字符串处理并保留前导零。成功返回家庭名称、家庭码和活动孩子公开档案；每个孩子只包含 `id`、`nickname`、`grade` 和 `avatar_media_id`。格式错误返回 `400 INVALID_REQUEST`，不可用家庭返回无差异的 `401 UNAUTHORIZED`。
@@ -116,6 +120,8 @@
 `GET /api/v1/family/tasks`、`POST /api/v1/family/tasks` 和 `PATCH /api/v1/family/tasks/:taskId` 提供任务与多孩分配管理。`POST /api/v1/family/tasks/:taskId/activate`、`deactivate` 和 `archive` 执行显式状态转换，归档状态不可恢复。
 
 任务请求包含 `task_type_id`、`name`、`check_type`、`frequency`、`base_points` 和 `assignments`，并可包含提交说明、验收方式和单人/协作模式。分配项可覆盖积分、频率、打卡方式和验收方式；协作模式至少要求两名不同孩子。
+
+Web 任务表单通过 `buildSoloTaskDraft()` 构造单人每日任务请求。可选 `description` 为空白时省略该字段；存在内容时先去除首尾空白，保持与 API 的“缺省或至少一个字符”Schema 一致。
 
 ### 打卡接口
 
@@ -179,7 +185,7 @@ Next.js App Router 首页提供统一家庭登录入口。页面先读取服务�
 
 家长端使用 `/dashboard`、`/tasks`、`/reviews`、`/rewards`、`/levels`、`/stats`、`/records`、`/family` 和 `/settings`。孩子端使用 `/child`、`/child/check-ins`、`/child/achievements`、`/child/rewards`、`/child/records` 和 `/child/profile`。两个动态路由均限制为固定白名单，未知 section 返回 Next.js 404。
 
-孩子端五项底部导航将“我的记录”归入“我的”激活状态。浏览器角色守卫阻止已知家长角色进入孩子端；后端写接口继续以 HttpOnly 会话角色和本人范围作为授权边界。
+孩子端五项底部导航将“我的记录”归入“我的”激活状态。家长和孩子动态路由在 Next.js 服务端调用会话接口校验角色，业务 API 继续以 HttpOnly 会话角色和本人范围作为授权边界；两个门户均提供当前会话退出入口。
 
 ## 共享类型
 
@@ -319,7 +325,7 @@ Prisma 6.19.2 使用 PostgreSQL datasource，生成 29 个模型。主要聚合�
 | `connectRedis()`、`disconnectRedis()` | 按客户端连接状态建立或销毁连接 |
 | `createRedisKeyspace()` | 创建 session、rate-limit、scheduler-lock、review-lock、idempotency 和 cache 隔离键 |
 | `RedisCommandPort` | 通过单一 `sendCommand()` 接口隔离 node-redis 与领域调用方 |
-| `writeSession()`、`readSession()`、`deleteSession()` | 管理带 TTL 的不透明会话值 |
+| `writeSession()`、`readSession()`、`deleteSession()` | 管理带 TTL 的不透明会话值与当前令牌撤销 |
 | `consumeRateLimit()` | 原子消费固定窗口限额并返回是否允许、已消费量、剩余量和重试秒数 |
 | `acquireLock()`、`releaseLock()` | 使用所有者令牌和毫秒 TTL 管理调度锁 |
 | `claimIdempotency()` | 使用带秒级 TTL 的原子占位标记首次消费 |
@@ -464,7 +470,7 @@ Next.js 将浏览器发往 `/api/:path*` 的请求转发至 `${API_INTERNAL_URL}
 
 ## 契约验证
 
-`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务。`pnpm test:integration` 运行 5 个 Phase 1 集成文件和 23 项核心闭环、并发回滚测试。`pnpm test:e2e` 运行 7 项 Playwright 浏览器测试，覆盖双端 15 个路由及关键交互。阶段 12 最终覆盖率运行共有 78 个测试文件、475 项测试通过。
+`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务，当前为 77 个文件、490 项测试。`pnpm test:integration` 运行 5 个 Phase 1 集成文件和 23 项核心闭环、并发回滚测试。`pnpm test:e2e` 运行 7 项 Playwright 浏览器测试，覆盖双端 15 个路由及关键交互。
 
 ## 开发种子接口
 

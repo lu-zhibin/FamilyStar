@@ -1,6 +1,6 @@
 import { ERROR_CODES } from '@familystar/shared';
 import type { Context, Hono } from 'hono';
-import { getCookie, setCookie } from 'hono/cookie';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 
 import { createErrorResponse, createSuccessResponse } from '../http/responses.js';
@@ -172,6 +172,23 @@ export function registerFamilyAuthRoutes(
       }
       throw error;
     }
+  });
+
+  api.post('/auth/logout', async (context) => {
+    const sessionToken = context.get('sessionToken');
+    if (!sessionToken) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.UNAUTHORIZED,
+          'A valid session is required.',
+          context.get('requestId'),
+        ),
+        401,
+      );
+    }
+    await service.logout(sessionToken);
+    deleteCookie(context, 'familystar_session', { path: '/', secure: secureCookies });
+    return context.json(createSuccessResponse({ logged_out: true }, context.get('requestId')));
   });
 
   if (!invitationService) return;

@@ -126,6 +126,10 @@ export class FamilyAuthService {
     };
   }
 
+  async logout(sessionToken: string): Promise<void> {
+    await this.sessions.revoke(sessionToken);
+  }
+
   private async createAuthenticatedParent(parent: ParentIdentity): Promise<AuthenticatedParent> {
     const sessionToken = await this.sessions.create({
       subjectId: parent.id,

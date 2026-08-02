@@ -29,6 +29,16 @@ export type ChildFamilyResult = {
   children: ChildLoginProfile[];
 };
 
+const storedIdentityKeys = [
+  'familystar_role',
+  'familystar_family_code',
+  'familystar_child_id',
+] as const;
+
+export function clearStoredIdentity(storage: Pick<Storage, 'removeItem'>): void {
+  for (const key of storedIdentityKeys) storage.removeItem(key);
+}
+
 export class AuthApiError extends Error {
   constructor(
     message: string,

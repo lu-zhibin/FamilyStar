@@ -14,6 +14,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 
 function requiredRole(method: string, path: string): RequiredRole | null {
   if (method === 'GET' && path === '/api/v1/auth/session') return 'authenticated';
+  if (method === 'POST' && path === '/api/v1/auth/logout') return 'authenticated';
   if (method === 'POST' && path === '/api/v1/auth/parent/invitations') return 'parent';
   if (path === '/api/v1/auth/switch-targets' || path === '/api/v1/auth/child/switch') {
     return 'authenticated';

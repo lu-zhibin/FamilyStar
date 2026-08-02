@@ -60,6 +60,7 @@ function createHarness(options: { emailConfigured?: boolean; session?: AuthSessi
         ? { subjectId: parentId, familyId, role: 'parent', issuedAt: fixedNow.toISOString() }
         : options.session;
     },
+    async revoke() {},
     async revokeSubject() {},
   };
   const passwords: PasswordHasher = {

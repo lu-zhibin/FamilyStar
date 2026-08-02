@@ -1,10 +1,11 @@
 'use client';
 
-import { Bell, CheckCircle2, Gift, Home, Trophy, UserRound, UsersRound } from 'lucide-react';
+import { Bell, CheckCircle2, Gift, Home, LogOut, Trophy, UserRound } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
-import { canAccessChildPortal, childSectionPaths, type ChildSection } from '../lib/child-portal';
+import { authApi, clearStoredIdentity } from '../lib/auth';
+import { childSectionPaths, type ChildSection } from '../lib/child-portal';
 
 const navigation = [
   { key: 'home', label: '主页', icon: Home },
@@ -16,25 +17,29 @@ const navigation = [
 
 export function ChildShell({
   children,
+  child,
   section,
   onSwitch,
-}: Readonly<{ children: ReactNode; section: ChildSection; onSwitch: () => void }>) {
-  const [allowed, setAllowed] = useState(true);
+}: Readonly<{
+  children: ReactNode;
+  child: { nickname: string } | undefined;
+  section: ChildSection;
+  onSwitch: () => void;
+}>) {
+  const [logoutError, setLogoutError] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  useEffect(() => {
-    setAllowed(canAccessChildPortal(window.localStorage.getItem('familystar_role')));
-  }, []);
-
-  if (!allowed) {
-    return (
-      <main className="page-shell grid min-h-screen place-items-center py-10">
-        <section className="child-card max-w-lg text-center" role="alert">
-          <UsersRound className="mx-auto text-orange" size={42} />
-          <h1 className="mt-4 font-display text-page">需要孩子身份</h1>
-          <p className="mt-2 font-bold text-brown-light">请先切换到孩子账号，再进入个人空间。</p>
-        </section>
-      </main>
-    );
+  async function logout() {
+    setLoggingOut(true);
+    setLogoutError('');
+    try {
+      await authApi('/auth/logout', { method: 'POST' });
+      clearStoredIdentity(window.localStorage);
+      window.location.assign('/');
+    } catch {
+      setLogoutError('退出失败，请稍后重试。');
+      setLoggingOut(false);
+    }
   }
 
   const activeNavigationSection = section === 'records' ? 'profile' : section;
@@ -48,19 +53,39 @@ export function ChildShell({
           onClick={onSwitch}
           aria-label="切换家庭账号"
         >
-          <span className="child-avatar">昊</span>
+          <span className="child-avatar">{child?.nickname.slice(0, 1) ?? '孩'}</span>
           <span>
-            <strong className="block font-display text-title">昊昊的小天地</strong>
+            <strong className="block font-display text-title">
+              {child ? `${child.nickname}的小天地` : '孩子成长空间'}
+            </strong>
             <span className="text-label font-extrabold text-brown-light">点击头像切换账号</span>
           </span>
         </button>
-        <button className="icon-button relative bg-white" aria-label="通知，即将推出">
-          <Bell aria-hidden="true" size={22} />
-          <span className="absolute -right-1 -top-1 rounded-pill bg-coral px-1.5 text-[10px] font-extrabold text-white">
-            Soon
-          </span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="icon-button relative bg-white" aria-label="通知，即将推出">
+            <Bell aria-hidden="true" size={22} />
+            <span className="absolute -right-1 -top-1 rounded-pill bg-coral px-1.5 text-[10px] font-extrabold text-white">
+              Soon
+            </span>
+          </button>
+          <button
+            type="button"
+            className="icon-button bg-white"
+            aria-label="退出孩子端"
+            title="退出登录"
+            disabled={loggingOut}
+            onClick={logout}
+          >
+            <LogOut aria-hidden="true" size={22} />
+          </button>
+        </div>
       </header>
+
+      {logoutError && (
+        <p className="page-shell pb-3 text-right font-bold text-red" role="alert">
+          {logoutError}
+        </p>
+      )}
 
       <main className="page-shell">{children}</main>
 

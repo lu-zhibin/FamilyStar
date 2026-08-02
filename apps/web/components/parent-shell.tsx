@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Gift,
   Home,
+  LogOut,
   Medal,
   Settings,
   Star,
@@ -16,11 +17,8 @@ import {
 import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import {
-  canAccessParentPortal,
-  parentSectionPaths,
-  type ParentSection,
-} from '../lib/parent-portal';
+import { authApi, clearStoredIdentity } from '../lib/auth';
+import { parentSectionPaths, type ParentSection } from '../lib/parent-portal';
 
 const navItems = [
   { key: 'dashboard', label: '总览', icon: Home },
@@ -38,24 +36,25 @@ export function ParentShell({
   children,
   section,
 }: Readonly<{ children: ReactNode; section: ParentSection }>) {
-  const [allowed, setAllowed] = useState(true);
+  const [logoutError, setLogoutError] = useState('');
+  const [loggingOut, setLoggingOut] = useState(false);
   const activeRef = useRef<HTMLAnchorElement>(null);
 
   useEffect(() => {
-    setAllowed(canAccessParentPortal(window.localStorage.getItem('familystar_role')));
     activeRef.current?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [section]);
 
-  if (!allowed) {
-    return (
-      <main className="page-shell grid min-h-screen place-items-center py-10">
-        <section className="panel max-w-lg text-center" role="alert">
-          <Users className="mx-auto text-orange" size={38} />
-          <h1 className="mt-4 font-display text-page">需要家长身份</h1>
-          <p className="mt-2 text-brown-light">请切换到家长账号后访问管理页面。</p>
-        </section>
-      </main>
-    );
+  async function logout() {
+    setLoggingOut(true);
+    setLogoutError('');
+    try {
+      await authApi('/auth/logout', { method: 'POST' });
+      clearStoredIdentity(window.localStorage);
+      window.location.assign('/');
+    } catch {
+      setLogoutError('退出失败，请稍后重试。');
+      setLoggingOut(false);
+    }
   }
 
   return (
@@ -71,7 +70,7 @@ export function ParentShell({
                 FamilyStar
               </span>
               <span className="text-label font-extrabold text-brown-light">
-                小星星家庭 · 家长端
+                家庭管理空间 · 家长端
               </span>
             </div>
           </Link>
@@ -86,14 +85,29 @@ export function ParentShell({
                 Soon
               </span>
             </button>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="退出家长端"
+              title="退出登录"
+              disabled={loggingOut}
+              onClick={logout}
+            >
+              <LogOut aria-hidden="true" size={20} />
+            </button>
             <span
               className="grid size-10 place-items-center rounded-full bg-leaf-light font-display text-leaf-dark"
-              aria-label="当前家长：斌哥"
+              aria-label="当前家长账号"
             >
-              斌
+              家
             </span>
           </div>
         </div>
+        {logoutError && (
+          <p className="page-shell pb-2 text-right text-label font-bold text-red" role="alert">
+            {logoutError}
+          </p>
+        )}
       </header>
       <main className="page-shell py-7 mobile:py-5">{children}</main>
       <nav

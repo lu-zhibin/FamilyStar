@@ -6,7 +6,7 @@ import type { PasswordHasher } from './password.js';
 import { FamilyAuthService } from './service.js';
 import type { FamilyAuthRepository, SessionStore } from './types.js';
 
-function createService(): FamilyAuthService {
+function createService(sessionStore?: SessionStore): FamilyAuthService {
   const repository: FamilyAuthRepository = {
     async createFamilyWithParent(input) {
       return {
@@ -34,13 +34,14 @@ function createService(): FamilyAuthService {
       return familyId === 'family-1' ? '123456' : null;
     },
   };
-  const sessions: SessionStore = {
+  const sessions: SessionStore = sessionStore ?? {
     async create() {
       return 'opaque-session';
     },
     async read() {
       return null;
     },
+    async revoke() {},
     async revokeSubject() {},
   };
   const passwords: PasswordHasher = {
@@ -214,11 +215,12 @@ describe('family auth HTTP routes', () => {
             }
           : null;
       },
+      async revoke() {},
       async revokeSubject() {},
     };
     const app = createApp({
       publicBaseUrl: 'http://localhost:3000',
-      familyAuthService: createService(),
+      familyAuthService: createService(sessionStore),
       sessionStore,
     });
 
@@ -237,5 +239,45 @@ describe('family auth HTTP routes', () => {
       },
     });
     expect((await app.request('/api/v1/auth/session')).status).toBe(401);
+  });
+
+  it('revokes the current session and clears its cookie on logout', async () => {
+    const revoke = vi.fn<(token: string) => Promise<void>>().mockResolvedValue(undefined);
+    const sessionStore: SessionStore = {
+      async create() {
+        return 'opaque-session';
+      },
+      async read(token) {
+        return token === 'opaque-session'
+          ? {
+              subjectId: 'parent-1',
+              familyId: 'family-1',
+              role: 'parent',
+              issuedAt: '2026-08-01T00:00:00.000Z',
+            }
+          : null;
+      },
+      revoke,
+      async revokeSubject() {},
+    };
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      familyAuthService: createService(sessionStore),
+      sessionStore,
+    });
+
+    const response = await app.request('/api/v1/auth/logout', {
+      method: 'POST',
+      headers: {
+        cookie: 'familystar_session=opaque-session',
+        origin: 'http://localhost:3000',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(revoke).toHaveBeenCalledWith('opaque-session');
+    expect(response.headers.get('set-cookie')).toContain('familystar_session=');
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(await response.json()).toMatchObject({ data: { logged_out: true } });
   });
 });

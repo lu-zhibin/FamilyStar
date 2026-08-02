@@ -1,13 +1,9 @@
 'use client';
 
 import {
-  Activity,
   ArrowLeft,
   BookOpen,
-  Camera,
   Check,
-  Clock3,
-  Flame,
   Gift,
   Image as ImageIcon,
   LockKeyhole,
@@ -19,21 +15,13 @@ import {
   Star,
   Target,
   Trophy,
-  Upload,
   UserRound,
-  Video,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ChangeEvent,
-  type FormEvent,
-  type ReactNode,
-} from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
+import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
 import {
   ChildApiError,
   belongsToCurrentChild,
@@ -46,7 +34,7 @@ import {
 } from '../lib/child-portal';
 import { ChildShell } from './child-shell';
 
-type LoadState = 'loading' | 'live' | 'demo';
+type LoadState = ApiLoadState;
 type FeedbackState = { tone: 'success' | 'warning' | 'error'; message: string } | null;
 type LevelView = {
   user_id: string;
@@ -66,19 +54,6 @@ type LevelView = {
     points_remaining: number;
     progress_ratio: number;
   };
-};
-type ChildTask = {
-  id: string;
-  assignmentId: string;
-  roundId?: string;
-  name: string;
-  category: string;
-  points: number;
-  mode: 'SOLO' | 'COLLAB';
-  checkType: 'CHECKBOX' | 'TEXT' | 'PHOTO' | 'VIDEO' | 'MIXED';
-  status: 'OPEN' | 'PENDING' | 'APPROVED' | 'REJECTED';
-  instructions: string;
-  participants?: string[];
 };
 type Reward = {
   id: string;
@@ -110,147 +85,6 @@ type SwitchTarget = {
   gender: 'male' | 'female';
 };
 
-const currentChildId = '00000000-0000-4000-8000-000000000002';
-const demoLevel: LevelView = {
-  user_id: currentChildId,
-  points_earned_total: 480,
-  current_level: 5,
-  current: { level: 5, name: '闪耀', icon: 'Star', points_required: 350 },
-  benefits: { discount: 0.9, effective_auto_approve_quota: 30, wish_slots: 2 },
-  next: {
-    level: 6,
-    name: '黑铁',
-    icon: 'Flame',
-    points_required: 600,
-    points_remaining: 120,
-    progress_ratio: 0.52,
-  },
-};
-const demoTasks: ChildTask[] = [
-  {
-    id: 'reading',
-    assignmentId: '00000000-0000-4000-8000-000000000101',
-    name: '晨读 20 分钟',
-    category: '阅读',
-    points: 10,
-    mode: 'SOLO',
-    checkType: 'CHECKBOX',
-    status: 'APPROVED',
-    instructions: '认真朗读今天的课文。',
-  },
-  {
-    id: 'rope',
-    assignmentId: '00000000-0000-4000-8000-000000000102',
-    name: '跳绳 100 个',
-    category: '运动',
-    points: 15,
-    mode: 'SOLO',
-    checkType: 'VIDEO',
-    status: 'APPROVED',
-    instructions: '上传一段跳绳视频，最长 3 分钟。',
-  },
-  {
-    id: 'desk',
-    assignmentId: '00000000-0000-4000-8000-000000000103',
-    name: '整理书桌',
-    category: '家务',
-    points: 10,
-    mode: 'SOLO',
-    checkType: 'PHOTO',
-    status: 'PENDING',
-    instructions: '上传整理完成后的照片。',
-  },
-  {
-    id: 'math',
-    assignmentId: '00000000-0000-4000-8000-000000000104',
-    name: '数学口算练习',
-    category: '学习',
-    points: 20,
-    mode: 'SOLO',
-    checkType: 'TEXT',
-    status: 'OPEN',
-    instructions: '写下今天完成的页码和正确率。',
-  },
-  {
-    id: 'clean',
-    assignmentId: '00000000-0000-4000-8000-000000000105',
-    roundId: '00000000-0000-4000-8000-000000000205',
-    name: '周末大扫除',
-    category: '协作',
-    points: 15,
-    mode: 'COLLAB',
-    checkType: 'MIXED',
-    status: 'OPEN',
-    instructions: '完成自己的区域，拍照并说说做了什么。',
-    participants: ['昊昊', '妞妞'],
-  },
-];
-const demoRewards: Reward[] = [
-  {
-    id: '00000000-0000-4000-8000-000000000301',
-    name: '动画时间 30 分钟',
-    description: '周末自由选择一集动画',
-    points_cost: 30,
-    type: 'PRIVILEGE',
-    stock_available: null,
-    prerequisites: {},
-  },
-  {
-    id: '00000000-0000-4000-8000-000000000302',
-    name: '一本课外书',
-    description: '和爸爸妈妈一起挑选',
-    points_cost: 50,
-    type: 'PHYSICAL',
-    stock_available: 4,
-    prerequisites: { min_level: 3 },
-  },
-  {
-    id: '00000000-0000-4000-8000-000000000303',
-    name: '周末游乐园',
-    description: '全家出发的一日体验',
-    points_cost: 200,
-    type: 'EXPERIENCE',
-    stock_available: 1,
-    prerequisites: { min_level: 6 },
-  },
-  {
-    id: '00000000-0000-4000-8000-000000000304',
-    name: '晚睡 30 分钟',
-    description: '周五晚上使用',
-    points_cost: 40,
-    type: 'PRIVILEGE',
-    stock_available: null,
-    prerequisites: {},
-  },
-];
-const demoRedemptions: Redemption[] = [
-  {
-    id: 'redemption-1',
-    child_id: currentChildId,
-    reward_id: '00000000-0000-4000-8000-000000000301',
-    points_spent: 27,
-    status: 'APPROVED',
-  },
-];
-const demoWishes: Wish[] = [
-  {
-    id: 'wish-1',
-    child_id: currentChildId,
-    title: '乐高千年隼',
-    target_points: 300,
-    progress: { points: 165, remaining: 135, ratio: 0.55 },
-  },
-];
-const demoTargets: SwitchTarget[] = [
-  { id: currentChildId, nickname: '昊昊', grade: '三年级', gender: 'male' },
-  {
-    id: '00000000-0000-4000-8000-000000000003',
-    nickname: '妞妞',
-    grade: '学前班',
-    gender: 'female',
-  },
-];
-
 const levelNames = [
   '新星',
   '萌芽',
@@ -274,21 +108,21 @@ const levelNames = [
   '传说',
 ];
 
-function useApiData<T>(path: string, key: string, fallback: T) {
-  const fallbackRef = useRef(fallback);
-  const [data, setData] = useState(fallback);
+function useApiData<T>(path: string, key: string, initialValue: T) {
+  const [data, setData] = useState(initialValue);
   const [state, setState] = useState<LoadState>('loading');
 
   useEffect(() => {
     let active = true;
-    childApi<Record<string, T>>(path)
+    childApi<Record<string, unknown>>(path)
       .then((payload) => {
         if (active) {
-          setData(payload[key] ?? fallbackRef.current);
-          setState('live');
+          const value = readApiField<T>(payload, key);
+          setData(value);
+          setState(loadedState(value));
         }
       })
-      .catch(() => active && setState('demo'));
+      .catch(() => active && setState('error'));
     return () => {
       active = false;
     };
@@ -308,9 +142,12 @@ function DataStatus({ state, limited }: Readonly<{ state: LoadState; limited?: s
   if (state === 'live') {
     return <span className="child-status bg-leaf-light text-leaf-dark">实时数据</span>;
   }
+  if (state === 'empty') {
+    return <span className="child-status bg-sand text-brown-light">暂无数据</span>;
+  }
   return (
-    <span className="child-status bg-sand text-brown-light" title={limited}>
-      演示数据
+    <span className="child-status bg-red/5 text-red" role="alert" title={limited}>
+      读取失败
     </span>
   );
 }
@@ -377,12 +214,9 @@ function LevelHero({ level, state }: Readonly<{ level: LevelView; state: LoadSta
           <DataStatus state={state} />
         </div>
         <div className="mt-4 flex items-end gap-2">
-          <strong className="child-big-number">165</strong>
-          <span className="pb-1 font-extrabold">可用星星</span>
+          <strong className="child-big-number">{level.points_earned_total}</strong>
+          <span className="pb-1 font-extrabold">累计星星</span>
         </div>
-        <span className="child-glass-chip mt-3">
-          <Flame aria-hidden="true" size={17} /> 连续打卡 7 天
-        </span>
         <div className="mt-4 rounded-card bg-white/20 p-3">
           <ProgressBar
             value={level.next?.progress_ratio ?? 1}
@@ -398,58 +232,15 @@ function LevelHero({ level, state }: Readonly<{ level: LevelView; state: LoadSta
   );
 }
 
-function TaskCard({ task, onOpen }: Readonly<{ task: ChildTask; onOpen?: () => void }>) {
-  const complete = task.status === 'APPROVED' || task.status === 'PENDING';
-  const status = {
-    OPEN: '去打卡',
-    PENDING: '审核中',
-    APPROVED: '已完成',
-    REJECTED: '重新打卡',
-  }[task.status];
-  return (
-    <article className={`child-task-card ${complete ? 'child-task-complete' : ''}`}>
-      <span className="child-task-icon">
-        {task.category === '运动' ? <Activity /> : <BookOpen />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <h3 className="font-extrabold">{task.name}</h3>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-label font-bold text-brown-light">
-          <span className={task.mode === 'COLLAB' ? 'tag bg-sky/20 text-blue' : 'tag-green tag'}>
-            {task.mode === 'COLLAB' ? '协作' : '个人'}
-          </span>
-          <span>{task.category}</span>
-          <strong className="text-orange">+{task.points} 星</strong>
-        </div>
-        {task.participants && (
-          <p className="mt-1 text-label font-extrabold text-blue">
-            伙伴：{task.participants.join('、')}
-          </p>
-        )}
-      </div>
-      {task.status === 'OPEN' || task.status === 'REJECTED' ? (
-        <button type="button" className="child-action-button" onClick={onOpen}>
-          {status}
-        </button>
-      ) : (
-        <span className="grid size-11 shrink-0 place-items-center rounded-full bg-leaf text-white">
-          {task.status === 'PENDING' ? <Clock3 size={21} /> : <Check size={24} />}
-          <span className="sr-only">{status}</span>
-        </span>
-      )}
-    </article>
-  );
-}
-
 function HomePage({
   level,
   levelState,
-  onCheckIn,
+  wishes,
 }: Readonly<{
   level: LevelView;
   levelState: LoadState;
-  onCheckIn: (task: ChildTask) => void;
+  wishes: Wish[];
 }>) {
-  const visibleTasks = demoTasks.slice(2);
   return (
     <div className="space-y-6">
       <LevelHero level={level} state={levelState} />
@@ -462,42 +253,39 @@ function HomePage({
             </Link>
           }
         />
-        <div className="child-task-grid">
-          {visibleTasks.map((task) => (
-            <TaskCard key={task.id} task={task} onOpen={() => onCheckIn(task)} />
-          ))}
+        <div className="empty-state">
+          <BookOpen aria-hidden="true" size={34} />
+          <strong>今日任务接口待接入</strong>
+          <p>任务聚合完成后，这里会展示当前账号的真实任务。</p>
         </div>
       </section>
       <section className="grid gap-4 md:grid-cols-2 child-animate-in child-delay-2">
         <div className="child-card bg-gradient-to-br from-sky/40 to-white">
           <SectionHeading title="我的愿望" />
-          <strong className="text-subtitle">乐高千年隼</strong>
-          <div className="mt-3">
-            <ProgressBar value={0.55} label="165 / 300 星" />
-          </div>
-          <p className="mt-2 text-caption font-bold text-blue">再攒 135 星就实现愿望</p>
+          {wishes[0] ? (
+            <>
+              <strong className="text-subtitle">{wishes[0].title}</strong>
+              <div className="mt-3">
+                <ProgressBar
+                  value={wishes[0].progress.ratio}
+                  label={`${wishes[0].progress.points} / ${wishes[0].target_points} 星`}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="font-bold text-brown-light">还没有创建愿望。</p>
+          )}
         </div>
         <div className="child-card">
           <SectionHeading title="最新鼓励" />
-          <div className="flex items-start gap-3">
-            <span className="grid size-11 place-items-center rounded-full bg-sand font-display">
-              爸
-            </span>
-            <p className="font-bold text-brown-light">
-              数学练习越来越认真了，今天也继续保持！
-              <span className="mt-1 block text-label">昨天 20:16</span>
-            </p>
-          </div>
+          <p className="font-bold text-brown-light">家庭鼓励记录接口待接入。</p>
         </div>
       </section>
     </div>
   );
 }
 
-function CheckInsPage({ onCheckIn }: Readonly<{ onCheckIn: (task: ChildTask) => void }>) {
-  const personal = demoTasks.filter((task) => task.mode === 'SOLO');
-  const collaboration = demoTasks.filter((task) => task.mode === 'COLLAB');
-  const done = demoTasks.filter((task) => ['PENDING', 'APPROVED'].includes(task.status)).length;
+function CheckInsPage() {
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-orange child-animate-in">
@@ -506,49 +294,26 @@ function CheckInsPage({ onCheckIn }: Readonly<{ onCheckIn: (task: ChildTask) => 
             <h1 className="font-display text-subtitle">今日打卡</h1>
             <span className="child-glass-chip">23:59 截止</span>
           </div>
-          <strong className="child-big-number mt-3 block">
-            {done}
-            <small className="text-subtitle"> / {demoTasks.length} 完成</small>
-          </strong>
-          <div className="mt-3 rounded-card bg-white/20 p-3">
-            <ProgressBar value={done / demoTasks.length} label="今日进度" />
-          </div>
+          <p className="mt-3 font-extrabold">任务聚合接口接入后显示真实截止时间与进度。</p>
         </div>
       </section>
       <section className="child-animate-in child-delay-1">
-        <SectionHeading title={`个人任务 ${personal.length}`} />
-        <div className="child-task-grid">
-          {personal.map((task) => (
-            <TaskCard key={task.id} task={task} onOpen={() => onCheckIn(task)} />
-          ))}
-        </div>
-      </section>
-      <section className="child-animate-in child-delay-2">
-        <SectionHeading title={`协作任务 ${collaboration.length}`} />
-        <div className="child-task-grid">
-          {collaboration.map((task) => (
-            <TaskCard key={task.id} task={task} onOpen={() => onCheckIn(task)} />
-          ))}
+        <SectionHeading title="个人任务与协作任务" />
+        <div className="empty-state">
+          <Check aria-hidden="true" size={34} />
+          <strong>今日任务接口待接入</strong>
+          <p>当前页面不会使用预置任务提交打卡。</p>
         </div>
       </section>
       <div className="notice" role="note">
         <ShieldAlert aria-hidden="true" className="shrink-0 text-blue" />
-        <p>
-          今日任务聚合接口将在核心闭环阶段接入。当前任务卡为演示数据；真实提交会显示服务端冲突、拒绝和上传失败原因。
-        </p>
+        <p>今日任务聚合接口将在核心闭环阶段接入，完成后将展示服务端任务状态和提交入口。</p>
       </div>
     </div>
   );
 }
 
 function AchievementsPage({ level, state }: Readonly<{ level: LevelView; state: LoadState }>) {
-  const badges = [
-    ['Flame', '坚持 7 天', true],
-    ['Book', '阅读达人', true],
-    ['Team', '最佳搭档', true],
-    ['First', '首次兑换', false],
-    ['Target', '积分破千', false],
-  ] as const;
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-gold child-animate-in text-[#6d4c00]">
@@ -592,18 +357,11 @@ function AchievementsPage({ level, state }: Readonly<{ level: LevelView; state: 
         </div>
       </section>
       <section className="child-animate-in child-delay-2">
-        <SectionHeading
-          title="徽章墙"
-          action={<span className="child-status bg-sand text-brown-light">演示数据</span>}
-        />
-        <div className="child-badge-grid">
-          {badges.map(([icon, name, earned]) => (
-            <article key={name} className={`child-badge ${earned ? '' : 'child-badge-locked'}`}>
-              <Trophy aria-hidden="true" size={28} />
-              <strong>{name}</strong>
-              <small>{earned ? `${icon} 已获得` : '继续努力'}</small>
-            </article>
-          ))}
+        <SectionHeading title="徽章墙" />
+        <div className="empty-state">
+          <Trophy aria-hidden="true" size={34} />
+          <strong>徽章接口待接入</strong>
+          <p>徽章规则和获得记录开放后会显示在这里。</p>
         </div>
       </section>
       <section className="child-card child-animate-in child-delay-3">
@@ -635,15 +393,14 @@ function RewardsPage({
   onRedeem: (reward: Reward) => void;
   onWish: () => void;
 }>) {
-  const balance = 165;
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-purple child-animate-in">
         <div className="relative z-10 flex items-center justify-between gap-4">
           <div>
             <p className="font-extrabold">我的星星</p>
-            <strong className="child-big-number">{balance}</strong>
-            <p className="text-label font-bold">等级折扣已自动计算</p>
+            <strong className="text-subtitle">余额接口待接入</strong>
+            <p className="text-label font-bold">累计星星 {level.points_earned_total}</p>
           </div>
           <div className="rounded-card bg-white/20 p-3 text-center text-label font-extrabold">
             {level.benefits.effective_auto_approve_quota} 星内
@@ -683,7 +440,7 @@ function RewardsPage({
               const cost = effectiveRewardCost(reward.points_cost, level.benefits.discount);
               const levelLocked = (reward.prerequisites.min_level ?? 1) > level.current_level;
               const unavailable = reward.stock_available === 0;
-              const disabled = levelLocked || unavailable || cost > balance;
+              const disabled = levelLocked || unavailable;
               return (
                 <article
                   key={reward.id}
@@ -710,9 +467,7 @@ function RewardsPage({
                       ? `Lv.${reward.prerequisites.min_level} 解锁`
                       : unavailable
                         ? '已兑完'
-                        : cost > balance
-                          ? '星星不足'
-                          : '立即兑换'}
+                        : '立即兑换'}
                   </button>
                 </article>
               );
@@ -756,10 +511,6 @@ function RewardsPage({
 }
 
 function RecordsPage() {
-  const records = [
-    { title: '完成晨读 20 分钟', date: '7 月 30 日', type: '阅读', media: 2 },
-    { title: '和妞妞一起大扫除', date: '7 月 28 日', type: '协作', media: 3 },
-  ];
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-blue child-animate-in">
@@ -768,47 +519,17 @@ function RecordsPage() {
         </Link>
         <h1 className="font-display text-page">我的记录</h1>
         <p className="mt-2 font-bold">每一次坚持，都在这里变成闪亮回忆。</p>
-        <div className="mt-4 grid grid-cols-3 gap-2 rounded-card bg-white/20 p-3 text-center">
-          <div>
-            <strong className="block text-subtitle">18</strong>
-            <small>本月打卡</small>
-          </div>
-          <div>
-            <strong className="block text-subtitle">7</strong>
-            <small>连续天数</small>
-          </div>
-          <div>
-            <strong className="block text-subtitle">32</strong>
-            <small>成长照片</small>
-          </div>
-        </div>
       </section>
       <div className="notice child-animate-in child-delay-1" role="note">
         <ShieldAlert aria-hidden="true" className="shrink-0 text-blue" />
-        <p>本人打卡历史与批量媒体签名接口待接入，以下时间线用于展示页面结构和空数据边界。</p>
+        <p>本人打卡历史与批量媒体签名接口待接入。</p>
       </div>
       <section className="child-animate-in child-delay-2">
-        <SectionHeading
-          title="成长时间线"
-          action={<span className="child-status bg-sand text-brown-light">演示数据</span>}
-        />
-        <div className="space-y-4 border-l-4 border-dashed border-wood pl-5">
-          {records.map((record) => (
-            <article key={record.title} className="child-card relative">
-              <span className="absolute -left-[34px] top-5 size-4 rounded-full border-4 border-cream bg-sky" />
-              <small className="font-extrabold text-brown-light">{record.date}</small>
-              <h2 className="mt-1 font-extrabold">{record.title}</h2>
-              <div className="child-photo-grid mt-3">
-                {Array.from({ length: record.media }, (_, index) => (
-                  <div key={index} className="child-photo-placeholder">
-                    <ImageIcon aria-hidden="true" />
-                    <span className="sr-only">成长照片 {index + 1}</span>
-                  </div>
-                ))}
-              </div>
-              <span className="tag-green tag mt-3">{record.type}</span>
-            </article>
-          ))}
+        <SectionHeading title="成长时间线" />
+        <div className="empty-state">
+          <ImageIcon aria-hidden="true" size={34} />
+          <strong>成长记录接口待接入</strong>
+          <p>真实打卡与媒体记录开放后会显示在这里。</p>
         </div>
       </section>
     </div>
@@ -817,62 +538,37 @@ function RecordsPage() {
 
 function ProfilePage({
   level,
+  child,
   onPassword,
-}: Readonly<{ level: LevelView; onPassword: () => void }>) {
-  const ranking = [
-    ['潼潼', 280, 6],
-    ['昊昊', 165, 5],
-    ['妞妞', 90, 4],
-  ] as const;
+}: Readonly<{
+  level: LevelView;
+  child: SwitchTarget | undefined;
+  onPassword: () => void;
+}>) {
+  const nickname = child?.nickname ?? '孩子账号';
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-green child-animate-in text-center">
-        <div className="child-profile-avatar">昊</div>
-        <h1 className="mt-3 font-display text-page">昊昊</h1>
-        <p className="font-extrabold">三年级 · 密码模式</p>
+        <div className="child-profile-avatar">{nickname.slice(0, 1)}</div>
+        <h1 className="mt-3 font-display text-page">{nickname}</h1>
+        <p className="font-extrabold">{child?.grade ?? '未设置年级'}</p>
         <span className="child-glass-chip mt-3">
           Lv.{level.current_level} {level.current.name}
         </span>
-        <div className="mt-4 grid grid-cols-3 gap-2 rounded-card bg-white/20 p-3">
+        <div className="mt-4 rounded-card bg-white/20 p-3">
           <div>
-            <strong className="block text-subtitle">165</strong>
-            <small>星星</small>
-          </div>
-          <div>
-            <strong className="block text-subtitle">7</strong>
-            <small>连续天数</small>
-          </div>
-          <div>
-            <strong className="block text-subtitle">18</strong>
-            <small>本月打卡</small>
+            <strong className="block text-subtitle">{level.points_earned_total}</strong>
+            <small>累计星星</small>
           </div>
         </div>
       </section>
       <section className="child-card child-animate-in child-delay-1">
-        <SectionHeading
-          title="家庭排行"
-          action={<span className="child-status bg-sand text-brown-light">演示数据</span>}
-        />
-        <p className="mb-3 text-caption font-bold text-brown-light">
-          余额、累计积分与等级排行聚合接口待接入。
-        </p>
-        {ranking.map(([name, points, rank], index) => (
-          <div
-            key={name}
-            className={`list-row ${name === '昊昊' ? 'rounded-card bg-sand px-3' : ''}`}
-          >
-            <strong className="w-8 font-display text-title">{index + 1}</strong>
-            <span className="child-avatar !size-10 !text-body">{name.slice(0, 1)}</span>
-            <div className="flex-1">
-              <strong>
-                {name}
-                {name === '昊昊' ? '（我）' : ''}
-              </strong>
-              <p className="text-label font-bold text-brown-light">Lv.{rank}</p>
-            </div>
-            <strong className="font-display text-orange">{points} 星</strong>
-          </div>
-        ))}
+        <SectionHeading title="家庭排行" />
+        <div className="empty-state">
+          <Medal aria-hidden="true" size={34} />
+          <strong>排行接口待接入</strong>
+          <p>家庭成员积分与等级聚合完成后会显示在这里。</p>
+        </div>
       </section>
       <section className="child-card child-animate-in child-delay-2">
         <SectionHeading title="我的空间" />
@@ -924,139 +620,13 @@ function Modal({
   );
 }
 
-function CheckInModal({ task, onClose }: Readonly<{ task: ChildTask; onClose: () => void }>) {
-  const [text, setText] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
-  const [feedback, setFeedback] = useState<FeedbackState>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  function chooseFiles(event: ChangeEvent<HTMLInputElement>) {
-    const selected = Array.from(event.target.files ?? []);
-    const images = selected.filter((file) => file.type.startsWith('image/'));
-    const videos = selected.filter((file) => file.type.startsWith('video/'));
-    if (images.length > 9 || videos.length > 1) {
-      setFeedback({ tone: 'error', message: '最多选择 9 张照片和 1 个视频。' });
-      return;
-    }
-    if (images.some((file) => file.size > 25 * 1024 * 1024)) {
-      setFeedback({ tone: 'error', message: '每张照片不能超过 25MB。' });
-      return;
-    }
-    if (videos.some((file) => file.size > 100 * 1024 * 1024)) {
-      setFeedback({ tone: 'error', message: '视频不能超过 100MB。' });
-      return;
-    }
-    setFiles(selected);
-    setFeedback(null);
-  }
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const requiresText = task.checkType === 'TEXT';
-    const requiresMedia = ['PHOTO', 'VIDEO'].includes(task.checkType);
-    if (requiresText && !text.trim()) {
-      setFeedback({ tone: 'error', message: '请写下完成情况。' });
-      return;
-    }
-    if (requiresMedia && files.length === 0) {
-      setFeedback({ tone: 'error', message: '请先选择任务要求的媒体文件。' });
-      return;
-    }
-    if (files.length > 0) {
-      setFeedback({
-        tone: 'warning',
-        message: '媒体已在本地完成校验。家庭 COS 与今日任务聚合接通后即可上传并提交。',
-      });
-      return;
-    }
-    setSubmitting(true);
-    setFeedback(null);
-    try {
-      const path = task.roundId
-        ? `/collaboration-rounds/${task.roundId}/submissions`
-        : '/check-ins';
-      const body = task.roundId
-        ? { content: { text: text.trim() || undefined, media_ids: [] } }
-        : {
-            task_assignment_id: task.assignmentId,
-            content: { text: text.trim() || undefined, media_ids: [] },
-          };
-      await childApi(path, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': createIdempotencyKey('check-in') },
-        body: JSON.stringify(body),
-      });
-      setFeedback({ tone: 'success', message: '打卡成功！审核通过后星星会自动到账。' });
-    } catch (error) {
-      const message = error instanceof ChildApiError ? error.message : '提交失败，请稍后重试。';
-      const prefix =
-        error instanceof ChildApiError && error.status === 409 ? '任务状态刚刚变化：' : '';
-      setFeedback({ tone: 'error', message: `${prefix}${message}` });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <Modal title={task.name} onClose={onClose}>
-      <form className="mt-4" onSubmit={submit}>
-        <div className="rounded-card bg-sand p-3 text-caption font-bold text-brown-light">
-          <strong className="block text-brown">任务说明</strong>
-          {task.instructions}
-        </div>
-        {['TEXT', 'MIXED'].includes(task.checkType) && (
-          <label className="field-label mt-4">
-            说说完成情况
-            <textarea
-              className="field min-h-28 py-3"
-              value={text}
-              maxLength={10_000}
-              onChange={(event) => setText(event.target.value)}
-              placeholder="今天完成了什么？"
-            />
-          </label>
-        )}
-        {['PHOTO', 'VIDEO', 'MIXED'].includes(task.checkType) && (
-          <label className="child-upload mt-4">
-            <Upload aria-hidden="true" size={28} />
-            <strong>选择照片或视频</strong>
-            <small>照片最多 9 张；视频最长 3 分钟且不超过 100MB</small>
-            <input
-              className="sr-only"
-              type="file"
-              accept="image/*,video/*"
-              multiple={task.checkType === 'MIXED' || task.checkType === 'PHOTO'}
-              onChange={chooseFiles}
-            />
-          </label>
-        )}
-        {files.length > 0 && (
-          <ul className="mt-3 space-y-2" aria-label="已选择媒体">
-            {files.map((file) => (
-              <li
-                key={`${file.name}-${file.lastModified}`}
-                className="flex items-center gap-2 rounded-card bg-cream p-2 text-label font-bold"
-              >
-                {file.type.startsWith('video/') ? <Video size={17} /> : <Camera size={17} />}
-                <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                <span>{Math.ceil(file.size / 1024)}KB</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <Feedback value={feedback} />
-        <button type="submit" className="child-success-button mt-5" disabled={submitting}>
-          {submitting ? <RefreshCw className="animate-spin" /> : <Sparkles />}
-          {submitting ? '正在提交' : '完成打卡'}
-        </button>
-      </form>
-    </Modal>
-  );
-}
-
 function SwitchModal({ onClose }: Readonly<{ onClose: () => void }>) {
-  const { data: targets, state } = useApiData('/auth/switch-targets', 'children', demoTargets);
-  const [selected, setSelected] = useState(targets[0]?.id ?? currentChildId);
+  const { data: targets, state } = useApiData<SwitchTarget[]>(
+    '/auth/switch-targets',
+    'children',
+    [],
+  );
+  const [selected, setSelected] = useState('');
   const [credential, setCredential] = useState('');
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [remaining, setRemaining] = useState(0);
@@ -1067,8 +637,18 @@ function SwitchModal({ onClose }: Readonly<{ onClose: () => void }>) {
     return () => window.clearInterval(timer);
   }, [remaining]);
 
+  useEffect(() => {
+    setSelected((current) =>
+      targets.some((target) => target.id === current) ? current : (targets[0]?.id ?? ''),
+    );
+  }, [targets]);
+
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!selected) {
+      setFeedback({ tone: 'error', message: '当前家庭没有可切换的孩子账号。' });
+      return;
+    }
     if (!credential) {
       setFeedback({ tone: 'error', message: '请输入 PIN 或密码。' });
       return;
@@ -1112,6 +692,12 @@ function SwitchModal({ onClose }: Readonly<{ onClose: () => void }>) {
             </button>
           ))}
         </div>
+        {targets.length === 0 && state !== 'loading' && (
+          <div className="empty-state mt-3">
+            <UserRound aria-hidden="true" />
+            <strong>没有可切换的孩子账号</strong>
+          </div>
+        )}
         <div className="mt-3">
           <DataStatus state={state} />
         </div>
@@ -1122,7 +708,7 @@ function SwitchModal({ onClose }: Readonly<{ onClose: () => void }>) {
             type="password"
             value={credential}
             autoComplete="current-password"
-            disabled={remaining > 0}
+            disabled={remaining > 0 || !selected}
             onChange={(event) => setCredential(event.target.value)}
           />
         </label>
@@ -1132,7 +718,11 @@ function SwitchModal({ onClose }: Readonly<{ onClose: () => void }>) {
           </p>
         )}
         <Feedback value={feedback} />
-        <button type="submit" className="child-success-button mt-5" disabled={remaining > 0}>
+        <button
+          type="submit"
+          className="child-success-button mt-5"
+          disabled={remaining > 0 || !selected}
+        >
           <UserRound aria-hidden="true" /> 进入个人空间
         </button>
       </form>
@@ -1321,25 +911,45 @@ function WishModal({
 }
 
 export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
-  const { data: level, state: levelState } = useApiData('/levels/me', 'level', demoLevel);
-  const { data: rewards, state: rewardsState } = useApiData('/rewards', 'rewards', demoRewards);
-  const { data: rawRedemptions, setData: setRedemptions } = useApiData(
+  const { data: level, state: levelState } = useApiData<LevelView | null>(
+    '/levels/me',
+    'level',
+    null,
+  );
+  const { data: targets } = useApiData<SwitchTarget[]>('/auth/switch-targets', 'children', []);
+  const { data: rewards, state: rewardsState } = useApiData<Reward[]>('/rewards', 'rewards', []);
+  const { data: rawRedemptions, setData: setRedemptions } = useApiData<Redemption[]>(
     '/redemptions',
     'redemptions',
-    demoRedemptions,
+    [],
   );
-  const { data: rawWishes, setData: setWishes } = useApiData('/wishes', 'wishes', demoWishes);
-  const redemptions = belongsToCurrentChild(rawRedemptions, level.user_id);
-  const wishes = belongsToCurrentChild(rawWishes, level.user_id);
-  const [checkInTask, setCheckInTask] = useState<ChildTask | null>(null);
+  const { data: rawWishes, setData: setWishes } = useApiData<Wish[]>('/wishes', 'wishes', []);
   const [reward, setReward] = useState<Reward | null>(null);
   const [switching, setSwitching] = useState(false);
   const [wishing, setWishing] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
 
+  const currentChild = level ? targets.find((target) => target.id === level.user_id) : undefined;
+
+  if (!level) {
+    return (
+      <ChildShell section={section} child={currentChild} onSwitch={() => setSwitching(true)}>
+        <div className="child-card empty-state">
+          <Star aria-hidden="true" size={34} />
+          <strong>{levelState === 'error' ? '成长数据读取失败' : '正在读取成长数据'}</strong>
+          <p>{levelState === 'error' ? '请刷新页面后重试。' : '加载完成后进入个人成长空间。'}</p>
+        </div>
+        {switching && <SwitchModal onClose={() => setSwitching(false)} />}
+      </ChildShell>
+    );
+  }
+
+  const redemptions = belongsToCurrentChild(rawRedemptions, level.user_id);
+  const wishes = belongsToCurrentChild(rawWishes, level.user_id);
+
   const page = {
-    home: <HomePage level={level} levelState={levelState} onCheckIn={setCheckInTask} />,
-    'check-ins': <CheckInsPage onCheckIn={setCheckInTask} />,
+    home: <HomePage level={level} levelState={levelState} wishes={wishes} />,
+    'check-ins': <CheckInsPage />,
     achievements: <AchievementsPage level={level} state={levelState} />,
     rewards: (
       <RewardsPage
@@ -1353,13 +963,18 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
       />
     ),
     records: <RecordsPage />,
-    profile: <ProfilePage level={level} onPassword={() => setChangingPassword(true)} />,
+    profile: (
+      <ProfilePage
+        level={level}
+        child={currentChild}
+        onPassword={() => setChangingPassword(true)}
+      />
+    ),
   }[section];
 
   return (
-    <ChildShell section={section} onSwitch={() => setSwitching(true)}>
+    <ChildShell section={section} child={currentChild} onSwitch={() => setSwitching(true)}>
       {page}
-      {checkInTask && <CheckInModal task={checkInTask} onClose={() => setCheckInTask(null)} />}
       {reward && (
         <RedemptionModal
           reward={reward}

@@ -81,6 +81,10 @@ class MemorySessionStore implements SessionStore {
     return this.sessions.get(token) ?? null;
   }
 
+  async revoke(token: string): Promise<void> {
+    this.sessions.delete(token);
+  }
+
   async revokeSubject(subjectId: string): Promise<void> {
     for (const [token, session] of this.sessions) {
       if (session.subjectId === subjectId) this.sessions.delete(token);

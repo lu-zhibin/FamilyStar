@@ -59,6 +59,7 @@ function createHarness(existingParent: ParentIdentity | null = null) {
     async read() {
       return null;
     },
+    async revoke() {},
     async revokeSubject() {},
   };
   const passwords: PasswordHasher = {
@@ -206,6 +207,7 @@ describe('FamilyAuthService', () => {
         async read() {
           return null;
         },
+        async revoke() {},
         async revokeSubject() {},
       },
       {

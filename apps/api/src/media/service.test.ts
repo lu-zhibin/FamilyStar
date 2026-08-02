@@ -181,6 +181,7 @@ function fixture() {
             }
           : null;
       },
+      async revoke() {},
       async revokeSubject() {},
     },
     connections: {

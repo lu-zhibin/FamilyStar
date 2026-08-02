@@ -28,7 +28,7 @@
 | `src/family-auth/child-repository.ts` | 家庭范围孩子 CRUD、软删除和头像归属适配 |
 | `src/family-auth/child-routes.ts` | 孩子档案与家庭内账号切换 HTTP 契约 |
 | `src/family-auth/login-rate-limiter.ts` | 家庭与孩子范围的 Redis 登录固定窗口 |
-| `src/family-auth/session-store.ts` | 滚动 TTL、主体 revision 与批量会话撤销 |
+| `src/family-auth/session-store.ts` | 滚动 TTL、单令牌退出、主体 revision 与批量会话撤销 |
 | `src/family-settings/service.ts` | 家庭规则默认合并、家长权限和字段校验 |
 | `src/family-settings/prisma-repository.ts` | 活动家庭 JSONB 设置读写适配 |
 | `src/family-settings/routes.ts` | 家庭设置 GET/PATCH HTTP 契约与 Cookie 续期 |

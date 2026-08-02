@@ -6,7 +6,6 @@ import {
   Camera,
   Check,
   CheckCircle2,
-  ChevronRight,
   Clock3,
   CloudOff,
   Copy,
@@ -16,24 +15,24 @@ import {
   Info,
   KeyRound,
   Mail,
-  Medal,
   PackageCheck,
   Pencil,
   Plus,
   Save,
   ShieldCheck,
   Sparkles,
-  Star,
   Target,
   TrendingUp,
   Trophy,
   UserPlus,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
+import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
 import { authApi, type SessionIdentity } from '../lib/auth';
 import {
+  buildSoloTaskDraft,
   copyTextToClipboard,
   formatFrequency,
   parentApi,
@@ -41,7 +40,7 @@ import {
 } from '../lib/parent-portal';
 import { ParentShell } from './parent-shell';
 
-type LoadState = 'loading' | 'live' | 'demo';
+type LoadState = ApiLoadState;
 type FamilyCodeLoadState = 'loading' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'error';
 type Child = { id: string; nickname: string; grade: string | null; gender: 'male' | 'female' };
@@ -89,87 +88,7 @@ type FamilySettings = {
   streak_multipliers: Array<{ days: 3 | 7 | 14 | 30 | 60 | 100; multiplier: number }>;
 };
 
-const demoChildren: Child[] = [
-  { id: 'tongtong', nickname: '潼潼', grade: '六年级', gender: 'female' },
-  { id: 'haohao', nickname: '昊昊', grade: '三年级', gender: 'male' },
-  { id: 'niuniu', nickname: '妞妞', grade: '学前班', gender: 'female' },
-];
-const demoTasks: Task[] = [
-  {
-    id: 'reading',
-    name: '晨读 30 分钟',
-    base_points: 15,
-    status: 'ACTIVE',
-    check_type: 'PHOTO',
-    verify_mode: 'MANUAL',
-    collaboration_mode: 'SOLO',
-    frequency: { kind: 'daily' },
-    assignments: [{ child_id: 'tongtong' }, { child_id: 'haohao' }],
-  },
-  {
-    id: 'math',
-    name: '完成数学练习',
-    base_points: 20,
-    status: 'ACTIVE',
-    check_type: 'TEXT',
-    verify_mode: 'MANUAL',
-    collaboration_mode: 'SOLO',
-    frequency: { kind: 'weekly_count', count: 5 },
-    assignments: [{ child_id: 'haohao' }],
-  },
-  {
-    id: 'tidy',
-    name: '一起整理房间',
-    base_points: 10,
-    status: 'ACTIVE',
-    check_type: 'PHOTO',
-    verify_mode: 'MANUAL',
-    collaboration_mode: 'COLLAB',
-    frequency: { kind: 'weekdays' },
-    assignments: demoChildren.map(({ id }) => ({ child_id: id })),
-  },
-  {
-    id: 'words',
-    name: '英语单词复习',
-    base_points: 15,
-    status: 'INACTIVE',
-    check_type: 'TICK',
-    verify_mode: 'AUTO',
-    collaboration_mode: 'SOLO',
-    frequency: { kind: 'daily' },
-    assignments: [{ child_id: 'haohao' }],
-  },
-];
-const demoRewards: Reward[] = [
-  {
-    id: 'movie',
-    name: '周末动画时间',
-    description: '30 分钟自由动画时间',
-    points_cost: 30,
-    stock_available: null,
-    type: 'PRIVILEGE',
-    status: 'ACTIVE',
-  },
-  {
-    id: 'book',
-    name: '一本课外书',
-    description: '一起挑选喜欢的新书',
-    points_cost: 50,
-    stock_available: 4,
-    type: 'PHYSICAL',
-    status: 'ACTIVE',
-  },
-  {
-    id: 'park',
-    name: '周末游乐园',
-    description: '全家出发的一日体验',
-    points_cost: 200,
-    stock_available: 1,
-    type: 'EXPERIENCE',
-    status: 'ACTIVE',
-  },
-];
-const demoSettings: FamilySettings = {
+const defaultSettings: FamilySettings = {
   time_zone: 'Asia/Shanghai',
   check_in_deadline: '23:59',
   makeup_days: 3,
@@ -185,20 +104,20 @@ const demoSettings: FamilySettings = {
   ],
 };
 
-function useApiData<T>(path: string, key: string, fallback: T) {
-  const initialFallback = useRef(fallback);
-  const [data, setData] = useState(fallback);
+function useApiData<T>(path: string, key: string, initialValue: T) {
+  const [data, setData] = useState(initialValue);
   const [state, setState] = useState<LoadState>('loading');
   useEffect(() => {
     let active = true;
-    parentApi<Record<string, T>>(path)
+    parentApi<Record<string, unknown>>(path)
       .then((payload) => {
         if (active) {
-          setData(payload[key] ?? initialFallback.current);
-          setState('live');
+          const value = readApiField<T>(payload, key);
+          setData(value);
+          setState(loadedState(value));
         }
       })
-      .catch(() => active && setState('demo'));
+      .catch(() => active && setState('error'));
     return () => {
       active = false;
     };
@@ -250,10 +169,12 @@ function DataStatus({ state }: { state: LoadState }) {
         实时数据
       </span>
     );
+  if (state === 'empty')
+    return <span className="status-chip bg-sand text-brown-light">暂无数据</span>;
   return (
-    <span className="status-chip bg-sand text-brown-light">
+    <span className="status-chip bg-red/5 text-red" role="alert">
       <CloudOff size={14} />
-      演示数据
+      读取失败
     </span>
   );
 }
@@ -301,64 +222,21 @@ function Progress({ value, label }: { value: number; label: string }) {
     </div>
   );
 }
-function Metric({
-  label,
-  value,
-  detail,
-  tone = 'leaf',
-  icon,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  tone?: 'leaf' | 'orange' | 'sky' | 'pink';
-  icon: ReactNode;
-}) {
-  return (
-    <article className={`metric metric-${tone}`}>
-      <span className="metric-icon">{icon}</span>
-      <div>
-        <p className="text-caption font-extrabold text-brown-light">{label}</p>
-        <strong className="font-display text-metric text-brown">{value}</strong>
-        <p className="text-caption font-bold text-brown-light">{detail}</p>
-      </div>
-    </article>
-  );
-}
-
 function DashboardPage() {
-  const children = useApiData('/family/children', 'children', demoChildren);
+  const children = useApiData<Child[]>('/family/children', 'children', []);
   return (
     <>
       <PageHeader
         eyebrow="今天也在一起成长"
         title="家庭总览"
-        description="把三个孩子的今日节奏、待办和成长趋势放在一个视野里。"
+        description="查看真实家庭成员，并了解尚待接入的总览聚合能力。"
         state={children.state}
       />
-      <div className="metric-grid">
-        <Metric label="今日完成" value="6 / 12" detail="较昨日多 2 项" icon={<CheckCircle2 />} />
-        <Metric
-          label="等待审核"
-          value="3"
-          detail="最早将在 6 小时后超时"
-          tone="orange"
-          icon={<Clock3 />}
-        />
-        <Metric label="本周获得" value="+185" detail="全家成长积分" tone="sky" icon={<Star />} />
-        <Metric
-          label="最长连续"
-          value="12 天"
-          detail="潼潼保持中"
-          tone="pink"
-          icon={<TrendingUp />}
-        />
-      </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
         <Panel>
           <SectionTitle>孩子今日进度</SectionTitle>
           <div className="grid gap-3 md:grid-cols-3">
-            {children.data.map((child, index) => (
+            {children.data.map((child) => (
               <article key={child.id} className="soft-card">
                 <div className="mb-4 flex items-center gap-3">
                   <span className="avatar">{child.nickname.slice(-1)}</span>
@@ -369,43 +247,22 @@ function DashboardPage() {
                     </p>
                   </div>
                 </div>
-                <Progress
-                  value={[50, 60, 33][index] ?? 40}
-                  label={`${[2, 3, 1][index] ?? 1} 项已完成`}
-                />
-                <div className="mt-4 flex justify-between text-caption font-extrabold text-brown-light">
-                  <span>Lv.{6 - index}</span>
-                  <span>{[280, 165, 90][index] ?? 0} 星</span>
-                </div>
+                <p className="text-caption font-bold text-brown-light">
+                  今日进度与积分将在总览聚合接口接入后展示。
+                </p>
               </article>
             ))}
+            {children.data.length === 0 && (
+              <EmptyState title="还没有孩子档案" detail="前往家庭成员页创建第一个孩子档案。" />
+            )}
           </div>
         </Panel>
         <Panel>
           <SectionTitle>今日待办</SectionTitle>
-          <a className="todo-row" href="/reviews">
-            <span className="metric-icon">
-              <CheckCircle2 />
-            </span>
-            <span className="flex-1">
-              <strong className="block">3 条打卡待审核</strong>
-              <small>含 1 条照片凭证</small>
-            </span>
-            <ChevronRight />
-          </a>
-          <a className="todo-row" href="/rewards">
-            <span className="metric-icon">
-              <PackageCheck />
-            </span>
-            <span className="flex-1">
-              <strong className="block">2 个奖励待兑现</strong>
-              <small>周末动画、课外书</small>
-            </span>
-            <ChevronRight />
-          </a>
-          <p className="mt-4 rounded-card bg-sand/60 p-3 text-caption font-bold text-brown-light">
-            完成进度来自待建设的总览聚合接口，当前为设计演示口径。
-          </p>
+          <EmptyState
+            title="总览待办接口待接入"
+            detail="审核和兑换聚合完成后，这里会展示当前家庭的真实待办。"
+          />
         </Panel>
       </div>
       <Panel className="mt-5">
@@ -421,52 +278,29 @@ function DashboardPage() {
 }
 
 function TasksPage() {
-  const resource = useApiData('/family/tasks', 'tasks', demoTasks);
-  const types = useApiData<TaskType[]>('/family/task-types', 'task_types', [
-    { id: 'demo-habit', name: '生活习惯' },
-  ]);
-  const children = useApiData('/family/children', 'children', demoChildren);
+  const resource = useApiData<Task[]>('/family/tasks', 'tasks', []);
+  const types = useApiData<TaskType[]>('/family/task-types', 'task_types', []);
+  const children = useApiData<Child[]>('/family/children', 'children', []);
   const [filter, setFilter] = useState('all');
   const [open, setOpen] = useState(false);
+  const [actionMessage, setActionMessage] = useState('');
   const tasks = resource.data.filter((task) => filter === 'all' || task.status === filter);
 
   async function createTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setActionMessage('');
     const form = new FormData(event.currentTarget);
-    const draft = {
-      task_type_id: String(form.get('task_type_id')),
-      name: String(form.get('name')),
-      description: String(form.get('description')),
-      check_type: String(form.get('check_type')),
-      verify_mode: String(form.get('verify_mode')),
-      collaboration_mode: 'SOLO',
-      frequency: { kind: 'daily' },
-      base_points: Number(form.get('base_points')),
-      assignments: [
-        {
-          child_id: String(form.get('child_id')),
-          start_date: new Date().toISOString().slice(0, 10),
-        },
-      ],
-    };
+    const draft = buildSoloTaskDraft(form, new Date().toISOString().slice(0, 10));
     try {
       const data = await parentApi<{ task: Task }>('/family/tasks', {
         method: 'POST',
         body: JSON.stringify(draft),
       });
       resource.setData((items) => [data.task, ...items]);
+      setOpen(false);
     } catch {
-      resource.setData((items) => [
-        {
-          id: crypto.randomUUID(),
-          status: 'ACTIVE',
-          ...draft,
-          assignments: [{ child_id: draft.assignments[0]?.child_id ?? '' }],
-        },
-        ...items,
-      ]);
+      setActionMessage('任务创建失败，请检查输入后重试。');
     }
-    setOpen(false);
   }
   return (
     <>
@@ -476,12 +310,22 @@ function TasksPage() {
         description="统一配置频率、积分、验收方式和多孩分配。"
         state={resource.state}
         action={
-          <button className="primary-button" onClick={() => setOpen(true)}>
+          <button
+            className="primary-button"
+            disabled={children.data.length === 0 || types.data.length === 0}
+            title={children.data.length === 0 ? '请先创建孩子档案' : undefined}
+            onClick={() => setOpen(true)}
+          >
             <Plus size={17} />
             创建任务
           </button>
         }
       />
+      {actionMessage && (
+        <p className="notice mb-4 text-red" role="alert">
+          {actionMessage}
+        </p>
+      )}
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="任务状态筛选">
         {(
           [
@@ -617,11 +461,6 @@ function TasksPage() {
 }
 
 function ReviewsPage() {
-  const [pending, setPending] = useState([
-    '潼潼 · 晨读 30 分钟',
-    '昊昊 · 整理房间',
-    '妞妞 · 亲子阅读',
-  ]);
   return (
     <>
       <PageHeader
@@ -631,69 +470,29 @@ function ReviewsPage() {
       />
       <div className="notice">
         <Clock3 size={20} />
-        <span>手动审核默认在 48 小时后自动通过；当前审核队列接口尚待补齐，以下为交互演示。</span>
+        <span>手动审核默认在 48 小时后自动通过；当前审核队列聚合接口尚待补齐。</span>
       </div>
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        {pending.map((title, index) => (
-          <Panel key={title}>
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <span className="tag tag-orange">剩余 {6 + index * 8} 小时</span>
-                <h2 className="mt-3 font-display text-title">{title}</h2>
-                <p className="text-caption font-bold text-brown-light">
-                  今天 {9 + index}:20 提交 · 照片凭证
-                </p>
-              </div>
-              <span className="avatar">{title[0]}</span>
-            </div>
-            <div className="media-placeholder">
-              <ImageIcon size={36} />
-              <span>媒体访问需审核队列返回 media_id</span>
-            </div>
-            <label className="field-label mt-4">
-              审核评语
-              <input className="field" placeholder="打回时必须填写原因" />
-            </label>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <button
-                className="secondary-button"
-                onClick={() => setPending((items) => items.filter((item) => item !== title))}
-              >
-                <X size={17} />
-                打回修改
-              </button>
-              <button
-                className="primary-button"
-                onClick={() => setPending((items) => items.filter((item) => item !== title))}
-              >
-                <Check size={17} />
-                通过并发分
-              </button>
-            </div>
-          </Panel>
-        ))}
-      </div>
-      {pending.length === 0 && (
-        <Panel className="mt-5">
-          <EmptyState
-            title="待审核已清空"
-            detail="新的手动验收打卡会出现在这里。"
-            icon={<CheckCircle2 size={30} />}
-          />
-        </Panel>
-      )}
+      <Panel className="mt-5">
+        <EmptyState
+          title="审核队列接口待接入"
+          detail="聚合接口完成后，这里会展示当前家庭的真实待审核提交。"
+          icon={<CheckCircle2 size={30} />}
+        />
+      </Panel>
     </>
   );
 }
 
 function RewardsPage() {
-  const rewards = useApiData('/rewards', 'rewards', demoRewards);
+  const rewards = useApiData<Reward[]>('/rewards', 'rewards', []);
   const redemptions = useApiData<Redemption[]>('/redemptions', 'redemptions', []);
   const wishes = useApiData<Wish[]>('/wishes', 'wishes', []);
   const [open, setOpen] = useState(false);
+  const [actionMessage, setActionMessage] = useState('');
 
   async function createReward(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setActionMessage('');
     const form = new FormData(event.currentTarget);
     const draft = {
       name: String(form.get('name')),
@@ -709,16 +508,14 @@ function RewardsPage() {
         body: JSON.stringify(draft),
       });
       rewards.setData((items) => [data.reward, ...items]);
+      setOpen(false);
     } catch {
-      rewards.setData((items) => [
-        { id: crypto.randomUUID(), stock_available: draft.stock_total, ...draft },
-        ...items,
-      ]);
+      setActionMessage('奖励创建失败，请检查输入后重试。');
     }
-    setOpen(false);
   }
 
   async function advanceRedemption(item: Redemption) {
+    setActionMessage('');
     const action = item.status === 'PENDING' ? 'approve' : 'fulfill';
     try {
       const data = await parentApi<{ redemption: Redemption }>(
@@ -729,13 +526,7 @@ function RewardsPage() {
         items.map((current) => (current.id === item.id ? data.redemption : current)),
       );
     } catch {
-      redemptions.setData((items) =>
-        items.map((current) =>
-          current.id === item.id
-            ? { ...current, status: action === 'approve' ? 'APPROVED' : 'FULFILLED' }
-            : current,
-        ),
-      );
+      setActionMessage('兑换状态更新失败，请刷新后重试。');
     }
   }
   return (
@@ -752,6 +543,11 @@ function RewardsPage() {
           </button>
         }
       />
+      {actionMessage && (
+        <p className="notice mb-4 text-red" role="alert">
+          {actionMessage}
+        </p>
+      )}
       <div className="grid gap-5 lg:grid-cols-[1fr_1.5fr]">
         <Panel>
           <SectionTitle>兑换审批</SectionTitle>
@@ -778,27 +574,31 @@ function RewardsPage() {
         </Panel>
         <Panel>
           <SectionTitle>奖励池</SectionTitle>
-          <div className="grid gap-3 md:grid-cols-3">
-            {rewards.data.map((reward) => (
-              <article className="soft-card" key={reward.id}>
-                <span className="metric-icon mb-3">
-                  <Gift />
-                </span>
-                <h3 className="font-extrabold">{reward.name}</h3>
-                <p className="mt-1 min-h-9 text-caption font-bold text-brown-light">
-                  {reward.description}
-                </p>
-                <div className="mt-4 flex items-end justify-between">
-                  <strong className="font-display text-title text-orange">
-                    {reward.points_cost} 星
-                  </strong>
-                  <span className="tag">
-                    {reward.stock_available === null ? '不限量' : `余 ${reward.stock_available}`}
+          {rewards.data.length === 0 ? (
+            <EmptyState title="奖励池还是空的" detail="创建第一个家庭奖励后会显示在这里。" />
+          ) : (
+            <div className="grid gap-3 md:grid-cols-3">
+              {rewards.data.map((reward) => (
+                <article className="soft-card" key={reward.id}>
+                  <span className="metric-icon mb-3">
+                    <Gift />
                   </span>
-                </div>
-              </article>
-            ))}
-          </div>
+                  <h3 className="font-extrabold">{reward.name}</h3>
+                  <p className="mt-1 min-h-9 text-caption font-bold text-brown-light">
+                    {reward.description}
+                  </p>
+                  <div className="mt-4 flex items-end justify-between">
+                    <strong className="font-display text-title text-orange">
+                      {reward.points_cost} 星
+                    </strong>
+                    <span className="tag">
+                      {reward.stock_available === null ? '不限量' : `余 ${reward.stock_available}`}
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </Panel>
       </div>
       <Panel className="mt-5">
@@ -866,6 +666,7 @@ function RewardsPage() {
 }
 
 function LevelsPage() {
+  const children = useApiData<Child[]>('/family/children', 'children', []);
   const stages = ['启程', '萌芽', '进阶', '闪耀', '黑铁', '青铜', '白银', '黄金', '铂金', '钻石'];
   return (
     <>
@@ -873,22 +674,31 @@ function LevelsPage() {
         eyebrow="看见长期积累的力量"
         title="等级与成就"
         description="查看孩子当前等级、20 级成长阶梯与等级权益。"
+        state={children.state}
       />
       <div className="notice">
         <Info size={20} />
         <span>当前 API 支持逐个孩子读取等级视图；完整等级配置与奖励发放接口将在后续补齐。</span>
       </div>
-      <div className="mt-5 metric-grid">
-        {demoChildren.map((child, index) => (
-          <Metric
-            key={child.id}
-            label={child.nickname}
-            value={`Lv.${6 - index}`}
-            detail={`${[620, 480, 260][index]} 累计积分`}
-            tone={['orange', 'sky', 'leaf'][index] as 'orange' | 'sky' | 'leaf'}
-            icon={<Medal />}
-          />
+      <div className="mt-5 grid gap-4 md:grid-cols-3">
+        {children.data.map((child) => (
+          <Panel key={child.id}>
+            <div className="flex items-center gap-3">
+              <span className="avatar">{child.nickname.slice(-1)}</span>
+              <div>
+                <strong>{child.nickname}</strong>
+                <p className="text-caption font-bold text-brown-light">
+                  {child.grade ?? '未设置年级'} · 等级视图待加载
+                </p>
+              </div>
+            </div>
+          </Panel>
         ))}
+        {children.data.length === 0 && (
+          <Panel className="md:col-span-3">
+            <EmptyState title="还没有孩子档案" detail="创建孩子后即可查看等级成长。" />
+          </Panel>
+        )}
       </div>
       <Panel className="mt-5">
         <SectionTitle>20 级成长阶梯</SectionTitle>
@@ -937,68 +747,14 @@ function StatsPage() {
       />
       <div className="notice">
         <Info size={20} />
-        <span>MVP 聚合统计接口尚待建设，当前图表展示设计口径并明确标记为演示数据。</span>
-      </div>
-      <div className="mt-5 metric-grid">
-        <Metric label="本周打卡率" value="72%" detail="较上周 +8%" icon={<Target />} />
-        <Metric
-          label="完成任务"
-          value="36"
-          detail="12 项任务持续中"
-          tone="sky"
-          icon={<CheckCircle2 />}
-        />
-        <Metric label="获得积分" value="+185" detail="晨读贡献最多" tone="orange" icon={<Star />} />
-        <Metric
-          label="连续活跃"
-          value="7 天"
-          detail="全家每天有记录"
-          tone="pink"
-          icon={<TrendingUp />}
-        />
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-        <Panel>
-          <SectionTitle>
-            7 天完成趋势 <span className="tag">演示</span>
-          </SectionTitle>
-          <div className="chart-bars">
-            {[52, 68, 61, 78, 70, 88, 72].map((height, index) => (
-              <div key={index} className="chart-column">
-                <span style={{ height: `${height}%` }} />
-                <small>{['一', '二', '三', '四', '五', '六', '日'][index]}</small>
-              </div>
-            ))}
-          </div>
-        </Panel>
-        <Panel>
-          <SectionTitle>孩子完成率</SectionTitle>
-          <div className="space-y-5">
-            <Progress value={82} label="潼潼" />
-            <Progress value={76} label="昊昊" />
-            <Progress value={58} label="妞妞" />
-          </div>
-        </Panel>
+        <span>MVP 聚合统计接口尚待建设。</span>
       </div>
       <Panel className="mt-5">
-        <SectionTitle>任务洞察</SectionTitle>
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="insight">
-            <BookOpen />
-            <strong>晨读最稳定</strong>
-            <p>过去 7 天完成率 93%</p>
-          </div>
-          <div className="insight">
-            <TrendingUp />
-            <strong>周末参与更高</strong>
-            <p>协作任务提升 18%</p>
-          </div>
-          <div className="insight">
-            <Clock3 />
-            <strong>晚间需提醒</strong>
-            <p>20:00 后漏卡较集中</p>
-          </div>
-        </div>
+        <EmptyState
+          title="统计数据接口待接入"
+          detail="真实打卡率、积分趋势和任务洞察将在聚合接口完成后展示。"
+          icon={<Target size={30} />}
+        />
       </Panel>
     </>
   );
@@ -1042,11 +798,12 @@ function RecordsPage() {
 }
 
 function FamilyPage() {
-  const children = useApiData('/family/children', 'children', demoChildren);
+  const children = useApiData<Child[]>('/family/children', 'children', []);
   const [open, setOpen] = useState(false);
   const [familyCode, setFamilyCode] = useState('');
   const [familyCodeState, setFamilyCodeState] = useState<FamilyCodeLoadState>('loading');
   const [copyState, setCopyState] = useState<CopyState>('idle');
+  const [actionMessage, setActionMessage] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -1074,6 +831,7 @@ function FamilyPage() {
 
   async function createChild(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setActionMessage('');
     const form = new FormData(event.currentTarget);
     const draft = {
       nickname: String(form.get('nickname')),
@@ -1088,18 +846,10 @@ function FamilyPage() {
         body: JSON.stringify(draft),
       });
       children.setData((items) => [...items, data.child]);
+      setOpen(false);
     } catch {
-      children.setData((items) => [
-        ...items,
-        {
-          id: crypto.randomUUID(),
-          nickname: draft.nickname,
-          grade: draft.grade,
-          gender: draft.gender === 'male' ? 'male' : 'female',
-        },
-      ]);
+      setActionMessage('孩子档案创建失败，请检查信息后重试。');
     }
-    setOpen(false);
   }
   return (
     <>
@@ -1115,6 +865,11 @@ function FamilyPage() {
           </button>
         }
       />
+      {actionMessage && (
+        <p className="notice mb-4 text-red" role="alert">
+          {actionMessage}
+        </p>
+      )}
       <FamilyCodeCard
         code={familyCode}
         copyState={copyState}
@@ -1139,47 +894,26 @@ function FamilyPage() {
               </div>
             </article>
           ))}
+          {children.data.length === 0 && (
+            <EmptyState title="还没有孩子档案" detail="使用右上角按钮创建第一个孩子档案。" />
+          )}
         </div>
       </Panel>
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <Panel>
           <SectionTitle>家长与共同管理</SectionTitle>
-          <div className="list-row">
-            <span className="avatar">斌</span>
-            <div className="flex-1">
-              <strong>斌哥</strong>
-              <p className="text-caption font-bold text-brown-light">家庭创建者</p>
-            </div>
-            <span className="tag tag-green">全部权限</span>
-          </div>
-          <div className="list-row">
-            <span className="metric-icon">
-              <Mail />
-            </span>
-            <div className="flex-1">
-              <strong>邀请共同管理者</strong>
-              <p className="text-caption font-bold text-brown-light">邀请链接有效期 7 天</p>
-            </div>
-            <button className="secondary-button">发送邀请</button>
-          </div>
+          <EmptyState
+            title="家长列表接口待接入"
+            detail="共同管理者信息和邀请状态将在家庭资料读取接口完成后展示。"
+            icon={<Mail size={30} />}
+          />
         </Panel>
         <Panel>
           <SectionTitle>家庭资料</SectionTitle>
-          <label className="field-label">
-            家庭名称
-            <input className="field" defaultValue="小星星家庭" />
-          </label>
-          <label className="field-label">
-            家庭时区
-            <input className="field" value="Asia/Shanghai" readOnly />
-          </label>
-          <button className="secondary-button mt-4">
-            <Save size={17} />
-            保存资料
-          </button>
-          <p className="mt-3 text-caption font-bold text-brown-light">
-            家庭名称与家长列表读取接口尚待补齐。
-          </p>
+          <EmptyState
+            title="家庭资料接口待接入"
+            detail="家庭名称和时区会在真实读取接口开放后提供编辑。"
+          />
         </Panel>
       </div>
       {open && (
@@ -1297,10 +1031,12 @@ export function FamilyCodeCard({
 }
 
 function SettingsPage() {
-  const resource = useApiData('/family/settings', 'settings', demoSettings);
-  const [settings, setSettings] = useState(demoSettings);
+  const resource = useApiData<FamilySettings | null>('/family/settings', 'settings', null);
+  const [settings, setSettings] = useState(defaultSettings);
   const [message, setMessage] = useState('');
-  useEffect(() => setSettings(resource.data), [resource.data]);
+  useEffect(() => {
+    if (resource.data) setSettings(resource.data);
+  }, [resource.data]);
   async function save(event: FormEvent) {
     event.preventDefault();
     setMessage('保存中…');
@@ -1312,8 +1048,26 @@ function SettingsPage() {
       setSettings(data.settings);
       setMessage('规则已保存');
     } catch {
-      setMessage('演示模式已保留本次设置');
+      setMessage('保存失败，请刷新后重试');
     }
+  }
+  if (!resource.data) {
+    return (
+      <>
+        <PageHeader
+          eyebrow="让规则适合自己的家庭"
+          title="设置"
+          description="维护打卡、审核、兑换和连续奖励规则。"
+          state={resource.state}
+        />
+        <Panel>
+          <EmptyState
+            title={resource.state === 'error' ? '家庭规则读取失败' : '正在读取家庭规则'}
+            detail={resource.state === 'error' ? '请刷新页面后重试。' : '规则加载完成后即可编辑。'}
+          />
+        </Panel>
+      </>
+    );
   }
   return (
     <>

@@ -204,6 +204,11 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 - 家庭码在浏览器和服务端始终按字符串处理；输入使用数字键盘提示，服务端执行严格 6 位数字校验并保留前导零。
 - `20260801130000_migrate_family_codes_to_six_digits` 在事务和独占表锁内为历史家庭换码，家庭数量超过 100 万时终止迁移；数据库字段、CHECK 和唯一索引提供最终格式与冲突保护。
 - 登录成功使用 `router.replace()` 进入角色门户，避免浏览器返回到登录入口；本地角色信息仅用于现有门户显示，API 授权继续以 HttpOnly 会话为准。
+- 家长和孩子门户页面在服务端调用 `/api/v1/auth/session` 校验有效会话与角色，失效会话在业务组件渲染前返回统一入口，角色不匹配时进入对应门户。
+- 双端退出使用 `POST /api/v1/auth/logout` 删除当前 Redis 令牌和 Cookie，成功后清理 `familystar_role`、`familystar_family_code` 与 `familystar_child_id`。
+- 门户 API 资源通过 `apps/web/lib/api-resource.ts` 区分 `loading`、`live`、`empty` 和 `error`；空数组是有效空状态，缺少必需响应字段进入错误状态。
+- 门户写操作仅使用服务端成功响应更新数据；请求失败保留当前真实数据并呈现错误。缺少读取接口的业务区域保持受限空态。
+- 家长端单人任务请求由 `buildSoloTaskDraft()` 集中构造。可选文本字段先去除首尾空白，空值从 JSON 请求中省略，避免与 API 的 optional non-empty Schema 产生契约漂移。
 - 聚焦验证命令为 `pnpm exec vitest run apps/web/components/auth-landing.test.tsx apps/web/lib/auth.test.ts apps/api/src/family-auth`。
 - 阶段 3 集成测试位于 `apps/api/src/phase-1-family-auth.integration.test.ts`，使用 copy-on-write 数据库状态和共享内存 Redis 命令端口组合真实领域服务。
 
@@ -222,6 +227,7 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 - Task 与 TaskAssignment 在同一 Prisma 事务中写入；替换分配使用软删除和唯一键 upsert，支持恢复历史分配。
 - 协作调度按家庭自然日期生成参与者与奖励积分快照，数据库唯一键负责并发下的最终幂等保护。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/tasks`。
+- Web 任务创建请求体回归验证命令为 `pnpm exec vitest run apps/web/lib/parent-portal.test.ts apps/web/components/parent-portal.test.tsx apps/api/src/tasks/routes.test.ts apps/api/src/tasks/task-service.test.ts`。
 
 ## 打卡与媒体开发
 
@@ -347,10 +353,11 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 
 - 孩子端入口位于 `apps/web/app/child/`，六个 section 由 `apps/web/lib/child-portal.ts` 的固定白名单映射。
 - `ChildShell` 提供身份提示、账号切换、通知占位和五项固定底部导航；记录页沿用“我的”激活状态。
-- `ChildPortal` 对等级、奖励、兑换、愿望和切换目标使用同源 API。缺少聚合读取接口的区域显示演示或受限状态。
-- 打卡与兑换写请求分别生成作用域幂等键；兑换和愿望响应按当前等级返回的 `user_id` 再过滤本人记录。
+- `ChildPortal` 对等级、奖励、兑换、愿望和切换目标使用同源 API。缺少聚合读取接口的区域显示受限空态。
+- 当前孩子由等级接口的 `user_id` 与真实切换目标关联；兑换和愿望响应按该 ID 过滤本人记录。任务聚合读取接口接入后再开放打卡入口。
+- 兑换写请求生成作用域幂等键，成功后使用服务端记录更新视图；失败时保留已加载数据并显示错误。
 - 密码模式通过 `PATCH /api/v1/auth/child/password` 修改密码，成功后撤销该孩子全部会话并要求重新认证。
-- 聚焦验证命令为 `pnpm exec vitest run apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/family-auth/child-service.test.ts apps/api/src/family-auth/child-routes.test.ts`。
+- 聚焦验证命令为 `pnpm exec vitest run apps/web/lib/api-resource.test.ts apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/family-auth/child-service.test.ts apps/api/src/family-auth/child-routes.test.ts`。
 
 ## TypeScript 基线
 

@@ -59,6 +59,7 @@ function dependencies(role: 'parent' | 'child' = 'parent') {
           }
         : null,
     ),
+    revoke: vi.fn(),
     revokeSubject: vi.fn(),
   };
   const commands: readonly (readonly string[])[] = [];
