@@ -65,6 +65,21 @@ const levelFixture = {
   },
 };
 
+const childTaskFixture = {
+  task_id: 'task-child-e2e',
+  task_assignment_id: 'assignment-child-e2e',
+  name: '整理学习桌',
+  description: '把文具和书本归位',
+  submission_guide: '完成后勾选',
+  collaboration_mode: 'SOLO',
+  frequency: { kind: 'daily' },
+  points: 15,
+  check_type: 'TICK',
+  verify_mode: 'AUTO',
+  start_date: '2026-08-01',
+  end_date: null,
+};
+
 function defaultApiResponse(request, role) {
   const url = request.url();
   if (url.endsWith('/auth/session')) {
@@ -82,6 +97,9 @@ function defaultApiResponse(request, role) {
     });
   }
   if (url.endsWith('/family/tasks')) return envelope({ tasks: [] });
+  if (new URL(url).pathname.endsWith('/tasks/me')) {
+    return envelope({ date: '2026-08-02', tasks: [childTaskFixture] });
+  }
   if (url.endsWith('/family/submission-reviews/pending')) return envelope({ reviews: [] });
   if (url.endsWith('/levels/me') || /\/levels\/[^/]+$/.test(url)) {
     return envelope({ level: levelFixture });
@@ -262,11 +280,56 @@ test.describe('FamilyStar core browser flows', () => {
     expect(taskPayload.assignments).toHaveLength(1);
   });
 
-  test('keeps child check-ins in the explicit limited state', async ({ page }) => {
+  test('edits a parent task and keeps the server response after refresh', async ({ page }) => {
+    let task = {
+      id: 'task-edit-e2e',
+      task_type_id: 'task-type-e2e',
+      name: '整理书桌',
+      description: '收好课本',
+      submission_guide: null,
+      check_type: 'TICK',
+      verify_mode: 'AUTO',
+      collaboration_mode: 'SOLO',
+      frequency: { kind: 'daily' },
+      base_points: 10,
+      status: 'ACTIVE',
+      assignments: [{ id: 'assignment-edit-e2e', child_id: childFixture.id }],
+    };
+    let patch;
+    await mockApi(page, (request) => {
+      const url = request.url();
+      if (request.method() === 'GET' && url.endsWith('/family/tasks')) {
+        return envelope({ tasks: [task] });
+      }
+      if (request.method() === 'PATCH' && url.endsWith('/family/tasks/task-edit-e2e')) {
+        patch = request.postDataJSON();
+        task = { ...task, ...patch };
+        return envelope({ task });
+      }
+      return undefined;
+    });
+
+    await page.goto('/tasks');
+    await page.getByRole('button', { name: '编辑整理书桌' }).click();
+    await page
+      .getByRole('dialog', { name: '编辑家庭任务' })
+      .getByLabel('任务名称')
+      .fill('整理学习桌');
+    await page.getByRole('button', { name: '保存修改' }).click();
+    await expect.poll(() => patch?.name).toBe('整理学习桌');
+    await expect(page.getByText('整理学习桌', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('整理学习桌', { exact: true })).toBeVisible();
+  });
+
+  test('shows the current child assigned tasks on home and check-ins', async ({ page }) => {
     await mockApi(page, undefined, 'child');
+    await page.goto('/child');
+    await expect(page.getByText('整理学习桌', { exact: true })).toBeVisible();
     await page.goto('/child/check-ins');
-    await expect(page.getByText('今日任务接口待接入', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '去打卡' })).toHaveCount(0);
+    await expect(page.getByText('整理学习桌', { exact: true })).toBeVisible();
+    await expect(page.getByText('+15 星', { exact: true })).toBeVisible();
+    await expect(page.getByText('提交说明：完成后勾选', { exact: true })).toBeVisible();
   });
 
   test('simulates COS multipart calls and displays PIN lock countdown', async ({ page }) => {

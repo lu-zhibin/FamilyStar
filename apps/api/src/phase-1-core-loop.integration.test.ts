@@ -234,6 +234,32 @@ class CoreLoopFixture implements FamilyAuthRepository {
         await this.requireSession(sessionToken, 'parent');
         return { tasks: this.state.task ? [this.state.task] : [] };
       },
+      listMine: async ({ sessionToken, date }) => {
+        const session = await this.requireSession(sessionToken, 'child');
+        const task = this.required(this.state.task, 'task');
+        const assignment = task.assignments.find(({ childId }) => childId === session.subjectId);
+        return {
+          date,
+          tasks: assignment
+            ? [
+                {
+                  taskId: task.id,
+                  taskAssignmentId: assignment.id,
+                  name: task.name,
+                  description: task.description,
+                  submissionGuide: task.submissionGuide,
+                  collaborationMode: task.collaborationMode,
+                  frequency: assignment.customFrequency ?? task.frequency,
+                  points: assignment.customPoints ?? task.basePoints,
+                  checkType: assignment.customCheckType ?? task.checkType,
+                  verifyMode: assignment.customVerifyMode ?? task.verifyMode,
+                  startDate: assignment.startDate,
+                  endDate: assignment.endDate ?? null,
+                },
+              ]
+            : [],
+        };
+      },
       create: async ({ sessionToken, task: input }) => {
         await this.requireSession(sessionToken, 'parent');
         expect(this.state.taskTypeIds).toContain(input.taskTypeId);
@@ -781,6 +807,34 @@ describe('Phase 1 core loop HTTP integration', () => {
       assignments: [{ id: ASSIGNMENT_ID }],
     });
 
+    const assignedTasks = await success<{
+      date: string;
+      tasks: Array<{
+        task_id: string;
+        task_assignment_id: string;
+        name: string;
+        points: number;
+        check_type: string;
+      }>;
+    }>(
+      await request(app, '/api/v1/tasks/me?date=2026-07-31', {
+        cookie: childCookie,
+      }),
+    );
+    expect(assignedTasks).toEqual({
+      date: '2026-07-31',
+      tasks: [
+        expect.objectContaining({
+          task_id: TASK_ID,
+          task_assignment_id: ASSIGNMENT_ID,
+          name: 'Photo chore',
+          points: 20,
+          check_type: 'PHOTO',
+        }),
+      ],
+    });
+    const discoveredAssignmentId = assignedTasks.tasks[0]!.task_assignment_id;
+
     const uploadResponse = await request(app, '/api/v1/media/uploads', {
       method: 'POST',
       cookie: childCookie,
@@ -846,7 +900,7 @@ describe('Phase 1 core loop HTTP integration', () => {
         cookie: childCookie,
         idempotencyKey: 'core-check-in',
         body: {
-          task_assignment_id: ASSIGNMENT_ID,
+          task_assignment_id: discoveredAssignmentId,
           check_date: '2026-07-31',
           content: { media_ids: [MEDIA_ID] },
         },

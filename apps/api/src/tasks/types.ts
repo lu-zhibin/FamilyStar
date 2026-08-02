@@ -105,6 +105,21 @@ export type TaskRecord = Readonly<{
   assignments: readonly TaskAssignmentRecord[];
 }>;
 
+export type ChildTaskRecord = Readonly<{
+  taskId: string;
+  taskAssignmentId: string;
+  name: string;
+  description: string | null;
+  submissionGuide: string | null;
+  collaborationMode: CollaborationMode;
+  frequency: TaskFrequency;
+  points: number;
+  checkType: TaskCheckType;
+  verifyMode: VerifyMode;
+  startDate: string;
+  endDate: string | null;
+}>;
+
 export type TaskCreateInput = Readonly<{
   taskTypeId: string;
   name: string;
@@ -118,12 +133,17 @@ export type TaskCreateInput = Readonly<{
   assignments: readonly TaskAssignmentInput[];
 }>;
 
-export type TaskPatch = Partial<Omit<TaskCreateInput, 'assignments'>> & {
+export type TaskPatch = Partial<
+  Omit<TaskCreateInput, 'assignments' | 'description' | 'submissionGuide'>
+> & {
+  description?: string | null;
+  submissionGuide?: string | null;
   assignments?: readonly TaskAssignmentInput[];
 };
 
 export type TaskRepository = {
   list(familyId: string): Promise<readonly TaskRecord[]>;
+  listForChild(familyId: string, childId: string): Promise<readonly TaskRecord[]>;
   findById(familyId: string, taskId: string): Promise<TaskRecord | null>;
   create(familyId: string, input: TaskCreateInput): Promise<TaskRecord>;
   update(familyId: string, taskId: string, input: TaskPatch): Promise<TaskRecord | null>;
@@ -132,6 +152,10 @@ export type TaskRepository = {
 
 export type TaskOperations = {
   list(input: { sessionToken?: string }): Promise<{ tasks: readonly TaskRecord[] }>;
+  listMine(input: {
+    sessionToken?: string;
+    date: string;
+  }): Promise<{ date: string; tasks: readonly ChildTaskRecord[] }>;
   create(input: { sessionToken?: string; task: TaskCreateInput }): Promise<{ task: TaskRecord }>;
   update(input: {
     sessionToken?: string;

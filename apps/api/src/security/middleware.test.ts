@@ -37,6 +37,9 @@ function application(role: 'parent' | 'child', auditWriter?: AuditWriter) {
   app.get('/api/v1/family/submission-reviews/pending', (context) =>
     context.json({ familyId: context.get('authSession')?.familyId }),
   );
+  app.get('/api/v1/tasks/me', (context) =>
+    context.json({ childId: context.get('authSession')?.subjectId }),
+  );
   app.post('/api/v1/family/tasks', (context) => context.json({ ok: true }, 201));
   app.post('/api/v1/check-ins', (context) => context.json({ ok: true }, 201));
   app.get('/api/v1/auth/session', (context) =>
@@ -108,6 +111,22 @@ describe('security middleware', () => {
       body: '{}',
     });
     expect(response.status).toBe(403);
+  });
+
+  it('allows only a child session to read current assignments', async () => {
+    const child = application('child');
+    expect((await child.app.request('/api/v1/tasks/me', { headers: cookie })).status).toBe(200);
+    expect((await child.app.request('/api/v1/tasks/me')).status).toBe(401);
+
+    const parent = application('parent');
+    expect((await parent.app.request('/api/v1/tasks/me', { headers: cookie })).status).toBe(403);
+    expect(
+      (
+        await child.app.request('/api/v1/tasks/me?family_id=another-family', {
+          headers: cookie,
+        })
+      ).status,
+    ).toBe(403);
   });
 
   it('rejects a forged family id from headers, query parameters or JSON', async () => {

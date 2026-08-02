@@ -6,6 +6,7 @@ import {
   childSectionPaths,
   childSections,
   createIdempotencyKey,
+  currentCalendarDate,
   effectiveRewardCost,
   formatCountdown,
   isChildSection,
@@ -46,5 +47,9 @@ describe('child portal business helpers', () => {
     expect(createIdempotencyKey('check-in', () => 'request-id')).toBe('check-in-request-id');
     expect(formatCountdown(654)).toBe('10:54');
     expect(formatCountdown(-1)).toBe('00:00');
+  });
+
+  it('formats the browser-local date used for current assignments', () => {
+    expect(currentCalendarDate(new Date(2026, 7, 2, 23, 30))).toBe('2026-08-02');
   });
 });

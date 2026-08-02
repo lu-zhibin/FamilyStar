@@ -3,7 +3,6 @@
 import {
   ArrowLeft,
   BookOpen,
-  Check,
   Gift,
   Image as ImageIcon,
   LockKeyhole,
@@ -28,6 +27,7 @@ import {
   childApi,
   childSectionPaths,
   createIdempotencyKey,
+  currentCalendarDate,
   effectiveRewardCost,
   formatCountdown,
   type ChildSection,
@@ -83,6 +83,20 @@ type SwitchTarget = {
   nickname: string;
   grade: string | null;
   gender: 'male' | 'female';
+};
+type ChildTask = {
+  task_id: string;
+  task_assignment_id: string;
+  name: string;
+  description: string | null;
+  submission_guide: string | null;
+  collaboration_mode: 'SOLO' | 'COLLAB';
+  frequency: { kind: string; count?: number; weekdays?: number[] };
+  points: number;
+  check_type: 'TICK' | 'TEXT' | 'PHOTO' | 'VIDEO' | 'MIXED';
+  verify_mode: 'AUTO' | 'MANUAL';
+  start_date: string;
+  end_date: string | null;
 };
 
 const levelNames = [
@@ -236,10 +250,14 @@ function HomePage({
   level,
   levelState,
   wishes,
+  tasks,
+  tasksState,
 }: Readonly<{
   level: LevelView;
   levelState: LoadState;
   wishes: Wish[];
+  tasks: ChildTask[];
+  tasksState: LoadState;
 }>) {
   return (
     <div className="space-y-6">
@@ -253,11 +271,7 @@ function HomePage({
             </Link>
           }
         />
-        <div className="empty-state">
-          <BookOpen aria-hidden="true" size={34} />
-          <strong>今日任务接口待接入</strong>
-          <p>任务聚合完成后，这里会展示当前账号的真实任务。</p>
-        </div>
+        <TaskList tasks={tasks.slice(0, 3)} state={tasksState} compact />
       </section>
       <section className="grid gap-4 md:grid-cols-2 child-animate-in child-delay-2">
         <div className="child-card bg-gradient-to-br from-sky/40 to-white">
@@ -285,7 +299,65 @@ function HomePage({
   );
 }
 
-function CheckInsPage() {
+function TaskList({
+  tasks,
+  state,
+  compact = false,
+}: Readonly<{ tasks: ChildTask[]; state: LoadState; compact?: boolean }>) {
+  if (state === 'loading' || state === 'error' || tasks.length === 0) {
+    const content = {
+      loading: ['正在读取今日任务', '加载完成后会显示分配给你的任务。'],
+      error: ['今日任务读取失败', '请刷新页面后重试。'],
+      empty: ['今天没有待办任务', '新的家庭任务会在分配后显示在这里。'],
+      live: ['', ''],
+    }[state];
+    return (
+      <div className="empty-state">
+        <BookOpen aria-hidden="true" size={34} />
+        <strong>{content[0]}</strong>
+        <p>{content[1]}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {tasks.map((task) => (
+        <article key={task.task_assignment_id} className="child-card">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-display text-subtitle">{task.name}</h3>
+                <span className="tag">
+                  {task.collaboration_mode === 'COLLAB' ? '协作' : '个人'}
+                </span>
+              </div>
+              {task.description && (
+                <p className="mt-1 font-bold text-brown-light">{task.description}</p>
+              )}
+            </div>
+            <strong className="whitespace-nowrap font-display text-orange">
+              +{task.points} 星
+            </strong>
+          </div>
+          {!compact && (
+            <div className="mt-3 flex flex-wrap gap-2 text-caption font-extrabold text-brown-light">
+              <span className="tag">
+                {task.check_type === 'TICK' ? '勾选打卡' : `${task.check_type} 打卡`}
+              </span>
+              <span className="tag">{task.verify_mode === 'AUTO' ? '自动验收' : '家长审核'}</span>
+              <span className="tag">待打卡</span>
+            </div>
+          )}
+          {!compact && task.submission_guide && (
+            <p className="notice mt-3">提交说明：{task.submission_guide}</p>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function CheckInsPage({ tasks, state }: Readonly<{ tasks: ChildTask[]; state: LoadState }>) {
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-orange child-animate-in">
@@ -294,20 +366,16 @@ function CheckInsPage() {
             <h1 className="font-display text-subtitle">今日打卡</h1>
             <span className="child-glass-chip">23:59 截止</span>
           </div>
-          <p className="mt-3 font-extrabold">任务聚合接口接入后显示真实截止时间与进度。</p>
+          <p className="mt-3 font-extrabold">今天有 {tasks.length} 项分配任务。</p>
         </div>
       </section>
       <section className="child-animate-in child-delay-1">
         <SectionHeading title="个人任务与协作任务" />
-        <div className="empty-state">
-          <Check aria-hidden="true" size={34} />
-          <strong>今日任务接口待接入</strong>
-          <p>当前页面不会使用预置任务提交打卡。</p>
-        </div>
+        <TaskList tasks={tasks} state={state} />
       </section>
       <div className="notice" role="note">
         <ShieldAlert aria-hidden="true" className="shrink-0 text-blue" />
-        <p>今日任务聚合接口将在核心闭环阶段接入，完成后将展示服务端任务状态和提交入口。</p>
+        <p>任务来自当前账号的真实分配。完整文字与媒体提交入口将在打卡表单接入后开放。</p>
       </div>
     </div>
   );
@@ -924,6 +992,11 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
     [],
   );
   const { data: rawWishes, setData: setWishes } = useApiData<Wish[]>('/wishes', 'wishes', []);
+  const { data: tasks, state: tasksState } = useApiData<ChildTask[]>(
+    `/tasks/me?date=${currentCalendarDate()}`,
+    'tasks',
+    [],
+  );
   const [reward, setReward] = useState<Reward | null>(null);
   const [switching, setSwitching] = useState(false);
   const [wishing, setWishing] = useState(false);
@@ -948,8 +1021,16 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
   const wishes = belongsToCurrentChild(rawWishes, level.user_id);
 
   const page = {
-    home: <HomePage level={level} levelState={levelState} wishes={wishes} />,
-    'check-ins': <CheckInsPage />,
+    home: (
+      <HomePage
+        level={level}
+        levelState={levelState}
+        wishes={wishes}
+        tasks={tasks}
+        tasksState={tasksState}
+      />
+    ),
+    'check-ins': <CheckInsPage tasks={tasks} state={tasksState} />,
     achievements: <AchievementsPage level={level} state={levelState} />,
     rewards: (
       <RewardsPage

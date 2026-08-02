@@ -79,6 +79,13 @@ export function belongsToCurrentChild<T extends { child_id: string }>(
   return records.filter((record) => record.child_id === childId);
 }
 
+export function currentCalendarDate(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function formatCountdown(totalSeconds: number): string {
   const seconds = Math.max(0, Math.ceil(totalSeconds));
   const minutes = Math.floor(seconds / 60);

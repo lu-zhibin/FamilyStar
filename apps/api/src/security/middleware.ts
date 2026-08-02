@@ -37,6 +37,7 @@ function requiredRole(method: string, path: string): RequiredRole | null {
   if (method === 'POST' && /^\/api\/v1\/wishes\/[^/]+\/adopt$/.test(path)) return 'parent';
   if (unsafeMethods.has(method) && /^\/api\/v1\/rewards(?:\/[^/]+)?$/.test(path)) return 'parent';
   if (path === '/api/v1/levels/me') return 'child';
+  if (method === 'GET' && path === '/api/v1/tasks/me') return 'child';
   if (/^\/api\/v1\/check-ins(?:\/[^/]+)?$/.test(path)) return 'child';
   if (/^\/api\/v1\/collaboration-rounds\/[^/]+\/submissions$/.test(path)) return 'child';
   if (method === 'POST' && /^\/api\/v1\/rewards\/[^/]+\/redemptions$/.test(path)) {

@@ -112,6 +112,23 @@ export class PrismaTaskRepository implements TaskRepository {
     return tasks.map(record);
   }
 
+  async listForChild(familyId: string, childId: string): Promise<readonly TaskRecord[]> {
+    const assignmentWhere = { familyId, childId, deletedAt: null };
+    const tasks = await this.prisma.task.findMany({
+      where: {
+        familyId,
+        status: 'ACTIVE',
+        deletedAt: null,
+        assignments: { some: assignmentWhere },
+      },
+      include: {
+        assignments: { where: assignmentWhere, orderBy: { createdAt: 'asc' } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return tasks.map(record);
+  }
+
   async findById(familyId: string, taskId: string): Promise<TaskRecord | null> {
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, familyId, deletedAt: null },

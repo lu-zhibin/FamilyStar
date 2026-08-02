@@ -56,6 +56,19 @@ export function buildSoloTaskDraft(form: Pick<FormData, 'get'>, startDate: strin
   };
 }
 
+export function buildTaskPatch(form: Pick<FormData, 'get'>) {
+  const description = String(form.get('description') ?? '').trim();
+
+  return {
+    task_type_id: String(form.get('task_type_id') ?? ''),
+    name: String(form.get('name') ?? '').trim(),
+    description: description || null,
+    check_type: String(form.get('check_type') ?? ''),
+    verify_mode: String(form.get('verify_mode') ?? ''),
+    base_points: Number(form.get('base_points')),
+  };
+}
+
 export function buildSubmissionReviewRequest(
   target: { target_type: ReviewTargetType; target_id: string; attempt_id: string },
   status: 'APPROVED' | 'REJECTED',

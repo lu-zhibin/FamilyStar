@@ -2,7 +2,7 @@
 
 ## 项目目的
 
-FamilyStar 提供家庭任务打卡、积分成长和奖励兑换能力。Phase 1 的 12 个实施阶段及真实运行缺陷修复任务 13、14 已完成，后续迭代继续沿用 `../specs/phase-1-mvp/tasklist.md` 的质量标准。
+FamilyStar 提供家庭任务打卡、积分成长和奖励兑换能力。Phase 1 的 12 个实施阶段及真实运行缺陷修复任务 13、14 已完成，任务 15 的实现与质量门禁已完成，后续迭代继续沿用 `../specs/phase-1-mvp/tasklist.md` 的质量标准。
 
 ## 前置条件
 
@@ -156,11 +156,11 @@ pnpm db:seed
 
 ## 测试状态
 
-任务 1.5 使用 Vitest 3.2.4 建立正式测试套件。任务 14 完成时单元测试共有 77 个测试文件和 496 项测试。测试覆盖基础设施、认证、任务打卡、媒体审核、家庭待审队列、积分等级、奖励库存、兑换状态机、愿望闭环、双端组件、安全边界、Worker 作业、容器静态契约、核心 HTTP 闭环及并发失败回滚。
+任务 1.5 使用 Vitest 3.2.4 建立正式测试套件。任务 15 实现完成时完整 Vitest 套件共有 82 个测试文件和 528 项测试。测试覆盖基础设施、认证、任务编辑、孩子本人任务读取、任务打卡、媒体审核、家庭待审队列、积分等级、奖励库存、兑换状态机、愿望闭环、双端组件、安全边界、Worker 作业、容器静态契约、核心 HTTP 闭环及并发失败回滚。
 
 `pnpm test:coverage` 使用 V8 检查核心源码，认证、家庭设置、任务、打卡、媒体、积分、等级、奖励、凭证、安全中间件和 Worker 均纳入统计，四项门禁均为 70%。阶段 12 最终验证中 statements 与 lines 为 80.59%、branches 为 78.11%、functions 为 90.19%。覆盖率产物位于 `coverage/unit/`，该目录不进入版本控制。
 
-任务 14 已通过完整单元测试、核心 HTTP 闭环集成测试、格式检查、零警告 Lint、全工作区类型检查、生产构建和 8 项 Playwright E2E。
+任务 15 已通过完整 Vitest 套件、核心 HTTP 闭环集成测试、覆盖率门禁、格式检查、零警告 Lint、全工作区类型检查、Prisma 契约、生产构建和 9 项 Playwright E2E。
 
 Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwright.config.cjs` 同时启动测试专用会话服务和临时 Next.js 服务，使服务端门户守卫经过真实 Cookie 与角色重定向路径；浏览器业务请求继续由每项测试的显式 API 契约夹具承接。九页家长巡检具有 120 秒独立预算，其余用例使用 60 秒预算。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
 
@@ -225,9 +225,11 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwri
 - 领域代码位于 `apps/api/src/tasks/`，任务类型、任务、分配、频率和协作调度均通过小型端口隔离 Prisma 与 HTTP。
 - HTTP 使用 snake_case，领域和 JSONB 频率使用 camelCase；频率新增变体时同步更新判别联合、路由映射、规范化和表驱动测试。
 - Task 与 TaskAssignment 在同一 Prisma 事务中写入；替换分配使用软删除和唯一键 upsert，支持恢复历史分配。
+- 家长编辑普通任务字段时省略 assignments 并保留既有分配；可选说明使用 `null` 表达显式清空。
+- `GET /api/v1/tasks/me` 从孩子会话获取家庭和主体边界，按请求自然日期过滤活动 assignment、日期范围和生效频率，并应用逐孩覆盖。
 - 协作调度按家庭自然日期生成参与者与奖励积分快照，数据库唯一键负责并发下的最终幂等保护。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/tasks`。
-- Web 任务创建请求体回归验证命令为 `pnpm exec vitest run apps/web/lib/parent-portal.test.ts apps/web/components/parent-portal.test.tsx apps/api/src/tasks/routes.test.ts apps/api/src/tasks/task-service.test.ts`。
+- Web 任务创建、编辑和孩子任务读取回归验证命令为 `pnpm exec vitest run apps/web/lib/parent-portal.test.ts apps/web/components/parent-portal.test.tsx apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/tasks/routes.test.ts apps/api/src/tasks/task-service.test.ts apps/api/src/tasks/prisma-task-repository.test.ts apps/api/src/security/middleware.test.ts`。
 
 ## 打卡与媒体开发
 
@@ -355,11 +357,11 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 
 - 孩子端入口位于 `apps/web/app/child/`，六个 section 由 `apps/web/lib/child-portal.ts` 的固定白名单映射。
 - `ChildShell` 提供身份提示、账号切换、通知占位和五项固定底部导航；记录页沿用“我的”激活状态。
-- `ChildPortal` 对等级、奖励、兑换、愿望和切换目标使用同源 API。缺少聚合读取接口的区域显示受限空态。
-- 当前孩子由等级接口的 `user_id` 与真实切换目标关联；兑换和愿望响应按该 ID 过滤本人记录。任务聚合读取接口接入后再开放打卡入口。
+- `ChildPortal` 对等级、奖励、兑换、愿望、切换目标和今日任务使用同源 API。缺少聚合读取接口的区域显示受限空态。
+- 当前孩子由等级接口的 `user_id` 与真实切换目标关联；兑换和愿望响应按该 ID 过滤本人记录。主页与今日打卡页使用浏览器本地自然日期读取 `/tasks/me`，完整打卡提交表单后续接入。
 - 兑换写请求生成作用域幂等键，成功后使用服务端记录更新视图；失败时保留已加载数据并显示错误。
 - 密码模式通过 `PATCH /api/v1/auth/child/password` 修改密码，成功后撤销该孩子全部会话并要求重新认证。
-- 聚焦验证命令为 `pnpm exec vitest run apps/web/lib/api-resource.test.ts apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/family-auth/child-service.test.ts apps/api/src/family-auth/child-routes.test.ts`。
+- 聚焦验证命令为 `pnpm exec vitest run apps/web/lib/api-resource.test.ts apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/family-auth/child-service.test.ts apps/api/src/family-auth/child-routes.test.ts apps/api/src/tasks/routes.test.ts apps/api/src/tasks/task-service.test.ts apps/api/src/tasks/prisma-task-repository.test.ts apps/api/src/security/middleware.test.ts`。
 
 ## TypeScript 基线
 

@@ -34,6 +34,7 @@ import { authApi, type SessionIdentity } from '../lib/auth';
 import {
   buildSoloTaskDraft,
   buildSubmissionReviewRequest,
+  buildTaskPatch,
   copyTextToClipboard,
   formatFrequency,
   parentApi,
@@ -48,7 +49,10 @@ type CopyState = 'idle' | 'copied' | 'error';
 type Child = { id: string; nickname: string; grade: string | null; gender: 'male' | 'female' };
 type Task = {
   id: string;
+  task_type_id: string;
   name: string;
+  description: string | null;
+  submission_guide: string | null;
   base_points: number;
   status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
   check_type: string;
@@ -306,6 +310,7 @@ function TasksPage() {
   const children = useApiData<Child[]>('/family/children', 'children', []);
   const [filter, setFilter] = useState('all');
   const [open, setOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [actionMessage, setActionMessage] = useState('');
   const tasks = resource.data.filter((task) => filter === 'all' || task.status === filter);
 
@@ -323,6 +328,24 @@ function TasksPage() {
       setOpen(false);
     } catch {
       setActionMessage('任务创建失败，请检查输入后重试。');
+    }
+  }
+
+  async function updateTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingTask) return;
+    setActionMessage('');
+    try {
+      const data = await parentApi<{ task: Task }>(`/family/tasks/${editingTask.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(buildTaskPatch(new FormData(event.currentTarget))),
+      });
+      resource.setData((items) =>
+        items.map((item) => (item.id === data.task.id ? data.task : item)),
+      );
+      setEditingTask(null);
+    } catch {
+      setActionMessage('任务更新失败，请检查输入后重试。');
     }
   }
   return (
@@ -397,7 +420,16 @@ function TasksPage() {
               <strong className="whitespace-nowrap font-display text-orange">
                 +{task.base_points} 星
               </strong>
-              <button className="icon-button" aria-label={`编辑${task.name}`}>
+              <button
+                className="icon-button"
+                aria-label={`编辑${task.name}`}
+                disabled={task.status === 'ARCHIVED'}
+                title={task.status === 'ARCHIVED' ? '归档任务不可编辑' : undefined}
+                onClick={() => {
+                  setActionMessage('');
+                  setEditingTask(task);
+                }}
+              >
                 <Pencil size={17} />
               </button>
             </article>
@@ -475,6 +507,84 @@ function TasksPage() {
             </div>
             <button className="primary-button w-full" type="submit">
               创建并启用
+            </button>
+          </form>
+        </Modal>
+      )}
+      {editingTask && (
+        <Modal title="编辑家庭任务" onClose={() => setEditingTask(null)}>
+          <form className="space-y-4" onSubmit={updateTask}>
+            <label className="field-label">
+              任务名称
+              <input
+                className="field"
+                name="name"
+                required
+                maxLength={120}
+                defaultValue={editingTask.name}
+              />
+            </label>
+            <label className="field-label">
+              任务说明
+              <textarea
+                className="field min-h-20 py-3"
+                name="description"
+                maxLength={10000}
+                defaultValue={editingTask.description ?? ''}
+              />
+            </label>
+            <div className="form-grid">
+              <label className="field-label">
+                任务类型
+                <select
+                  className="field"
+                  name="task_type_id"
+                  defaultValue={editingTask.task_type_id}
+                >
+                  {types.data.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field-label">
+                打卡方式
+                <select className="field" name="check_type" defaultValue={editingTask.check_type}>
+                  <option value="TICK">勾选</option>
+                  <option value="TEXT">文字</option>
+                  <option value="PHOTO">照片</option>
+                  <option value="VIDEO">视频</option>
+                  <option value="MIXED">混合</option>
+                </select>
+              </label>
+              <label className="field-label">
+                验收方式
+                <select className="field" name="verify_mode" defaultValue={editingTask.verify_mode}>
+                  <option value="AUTO">自动验收</option>
+                  <option value="MANUAL">人工审核</option>
+                </select>
+              </label>
+              <label className="field-label">
+                基础积分
+                <input
+                  className="field"
+                  name="base_points"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  defaultValue={editingTask.base_points}
+                  required
+                />
+              </label>
+            </div>
+            {actionMessage && (
+              <p className="notice text-red" role="alert">
+                {actionMessage}
+              </p>
+            )}
+            <button className="primary-button w-full" type="submit">
+              保存修改
             </button>
           </form>
         </Modal>

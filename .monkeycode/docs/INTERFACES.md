@@ -123,6 +123,14 @@
 
 Web 任务表单通过 `buildSoloTaskDraft()` 构造单人每日任务请求。可选 `description` 为空白时省略该字段；存在内容时先去除首尾空白，保持与 API 的“缺省或至少一个字符”Schema 一致。
 
+家长编辑表单通过 `buildTaskPatch()` 更新任务类型、名称、说明、打卡方式、验收方式和基础积分。PATCH 省略 `assignments` 时保留既有分配；`description` 与 `submission_guide` 接受 `null` 以显式清空可选文本。归档任务编辑返回 `409 CONFLICT`。
+
+### 孩子本人任务接口
+
+`GET /api/v1/tasks/me?date=YYYY-MM-DD` 要求孩子会话。`date` 可省略并默认使用服务端 UTC 自然日期；Web 显式发送浏览器本地自然日期。非法日期返回 `400 INVALID_REQUEST`，未认证请求返回 `401 UNAUTHORIZED`，家长会话返回 `403 FORBIDDEN`。
+
+服务端从会话获取家庭和孩子身份，只返回当前孩子在指定日期有效、任务状态为 `ACTIVE` 且频率到期的分配。成功数据包含请求 `date` 和 `tasks`；每项任务包含 `task_id`、`task_assignment_id`、名称、可空说明与提交说明、协作模式、有效频率、有效积分、有效打卡方式、有效验收方式及分配起止日期。响应不包含家庭 ID 或孩子 ID。
+
 ### 打卡接口
 
 `POST /api/v1/check-ins` 使用孩子会话提交单人打卡，请求头必须携带最多 128 字符的 `Idempotency-Key`。请求包含 `task_assignment_id`、可选 `check_date` 和 `content`；`content` 可包含最多 10000 字符文字与最多 10 个媒体 UUID。`GET /api/v1/check-ins/:id` 返回同家庭当前孩子可见的打卡及全部提交历史。
@@ -472,7 +480,7 @@ Next.js 将浏览器发往 `/api/:path*` 的请求转发至 `${API_INTERNAL_URL}
 
 ## 契约验证
 
-`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务，当前为 77 个文件、490 项测试。`pnpm test:integration` 运行 5 个 Phase 1 集成文件和 23 项核心闭环、并发回滚测试。`pnpm test:e2e` 运行 7 项 Playwright 浏览器测试，覆盖双端 15 个路由及关键交互。
+`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务。`pnpm test` 当前运行 82 个 Vitest 文件和 528 项测试；`pnpm test:integration` 聚焦 Phase 1 核心闭环与并发回滚聚合；`pnpm test:e2e` 运行 9 项 Playwright 浏览器测试，覆盖双端 15 个路由、家长任务编辑、孩子任务可见性及关键交互。
 
 ## 开发种子接口
 

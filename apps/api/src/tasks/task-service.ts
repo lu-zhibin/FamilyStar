@@ -1,7 +1,8 @@
 import type { CollaborationMode, TaskStatus, VerifyMode } from '@prisma/client';
 
-import { normalizeFrequency } from './frequency.js';
+import { isScheduledOnDate, normalizeFrequency } from './frequency.js';
 import type {
+  ChildTaskRecord,
   TaskCreateInput,
   TaskDependencies,
   TaskOperations,
@@ -13,6 +14,13 @@ export class TaskSessionRequiredError extends Error {
   constructor() {
     super('An active parent session is required.');
     this.name = 'TaskSessionRequiredError';
+  }
+}
+
+export class ChildTaskSessionRequiredError extends Error {
+  constructor() {
+    super('An active child session is required.');
+    this.name = 'ChildTaskSessionRequiredError';
   }
 }
 
@@ -94,10 +102,15 @@ function normalizePatch(input: TaskPatch): TaskPatch {
   if (Object.keys(input).length === 0) throw new InvalidTaskError();
   return {
     ...(input.name === undefined ? {} : { name: text(input.name, 120) }),
-    ...(input.description === undefined ? {} : { description: text(input.description, 10_000) }),
+    ...(input.description === undefined
+      ? {}
+      : { description: input.description === null ? null : text(input.description, 10_000) }),
     ...(input.submissionGuide === undefined
       ? {}
-      : { submissionGuide: text(input.submissionGuide, 10_000) }),
+      : {
+          submissionGuide:
+            input.submissionGuide === null ? null : text(input.submissionGuide, 10_000),
+        }),
     ...(input.basePoints === undefined ? {} : { basePoints: input.basePoints }),
     ...(input.taskTypeId === undefined ? {} : { taskTypeId: input.taskTypeId }),
     ...(input.checkType === undefined ? {} : { checkType: input.checkType }),
@@ -116,6 +129,42 @@ export class TaskService implements TaskOperations {
   async list(input: { sessionToken?: string }) {
     const familyId = await this.requireParentFamily(input.sessionToken);
     return { tasks: await this.dependencies.repository.list(familyId) };
+  }
+
+  async listMine(input: { sessionToken?: string; date: string }) {
+    const session = await this.requireChildSession(input.sessionToken);
+    const tasks = await this.dependencies.repository.listForChild(
+      session.familyId,
+      session.subjectId,
+    );
+    const visibleTasks: ChildTaskRecord[] = [];
+    for (const task of tasks) {
+      if (task.status !== 'ACTIVE') continue;
+      const assignment = task.assignments.find(
+        (value) =>
+          value.childId === session.subjectId &&
+          value.startDate <= input.date &&
+          (value.endDate === undefined || value.endDate >= input.date),
+      );
+      if (!assignment) continue;
+      const frequency = assignment.customFrequency ?? task.frequency;
+      if (!isScheduledOnDate(frequency, input.date)) continue;
+      visibleTasks.push({
+        taskId: task.id,
+        taskAssignmentId: assignment.id,
+        name: task.name,
+        description: task.description,
+        submissionGuide: task.submissionGuide,
+        collaborationMode: task.collaborationMode,
+        frequency,
+        points: assignment.customPoints ?? task.basePoints,
+        checkType: assignment.customCheckType ?? task.checkType,
+        verifyMode: assignment.customVerifyMode ?? task.verifyMode,
+        startDate: assignment.startDate,
+        endDate: assignment.endDate ?? null,
+      });
+    }
+    return { date: input.date, tasks: visibleTasks };
   }
 
   async create(input: { sessionToken?: string; task: TaskCreateInput }) {
@@ -178,5 +227,11 @@ export class TaskService implements TaskOperations {
     const session = token ? await this.dependencies.sessions.read(token) : null;
     if (!session || session.role !== 'parent') throw new TaskSessionRequiredError();
     return session.familyId;
+  }
+
+  private async requireChildSession(token?: string) {
+    const session = token ? await this.dependencies.sessions.read(token) : null;
+    if (!session || session.role !== 'child') throw new ChildTaskSessionRequiredError();
+    return session;
   }
 }

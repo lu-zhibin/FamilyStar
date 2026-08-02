@@ -36,4 +36,29 @@ describe('PrismaTaskRepository family boundaries', () => {
       select: { id: true },
     });
   });
+
+  it('queries active tasks with only the current child assignment', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const prisma = { task: { findMany } } as unknown as PrismaClient;
+
+    await new PrismaTaskRepository(prisma).listForChild('family-1', 'child-1');
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        familyId: 'family-1',
+        status: 'ACTIVE',
+        deletedAt: null,
+        assignments: {
+          some: { familyId: 'family-1', childId: 'child-1', deletedAt: null },
+        },
+      },
+      include: {
+        assignments: {
+          where: { familyId: 'family-1', childId: 'child-1', deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
 });

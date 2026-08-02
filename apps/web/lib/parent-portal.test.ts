@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSoloTaskDraft,
   buildSubmissionReviewRequest,
+  buildTaskPatch,
   canAccessParentPortal,
   copyTextToClipboard,
   formatFrequency,
@@ -74,6 +75,34 @@ describe('task creation payload', () => {
     expect(buildSoloTaskDraft(taskForm('  阅读第三章  '), '2026-08-01')).toMatchObject({
       description: '阅读第三章',
     });
+  });
+});
+
+describe('task update payload', () => {
+  function taskForm(description: string): FormData {
+    const form = new FormData();
+    form.set('task_type_id', 'type-2');
+    form.set('name', '  每天整理书桌  ');
+    form.set('description', description);
+    form.set('check_type', 'TICK');
+    form.set('verify_mode', 'AUTO');
+    form.set('base_points', '20');
+    return form;
+  }
+
+  it('builds the editable task fields without replacing assignments', () => {
+    expect(buildTaskPatch(taskForm('  完成后勾选  '))).toEqual({
+      task_type_id: 'type-2',
+      name: '每天整理书桌',
+      description: '完成后勾选',
+      check_type: 'TICK',
+      verify_mode: 'AUTO',
+      base_points: 20,
+    });
+  });
+
+  it('uses null to clear an optional description', () => {
+    expect(buildTaskPatch(taskForm('  '))).toMatchObject({ description: null });
   });
 });
 
