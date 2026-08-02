@@ -4,7 +4,7 @@
 
 - 记录 ID：`FS-REVIEW-QUEUE-FIX-001`
 - 分支：`dev`
-- 状态：本地实现与质量门禁完成，待开发环境部署验收
+- 状态：已提交并通过开发环境真实数据验收
 - 依据：Phase 1 任务 6.1、6.3、8.2、12.2 与新增任务 14；`../specs/decisions.md` §2、§4、§9、§10；PRD §4.1.5、§4.2、§4.5
 
 ### 实施结果
@@ -18,7 +18,34 @@
 - 审核领域与 Web 定向测试通过；完整单元测试 77 个文件、496 项通过；核心 HTTP 闭环集成测试 1 项通过。
 - Playwright 8 项通过，覆盖家长与孩子页面、服务端角色守卫、审核权威重拉、重新挂载、稳定幂等键、失败保留及现有核心浏览器状态。
 - 全工作区 TypeScript、零警告 ESLint、Prettier、生产构建和 `git diff --check` 通过。
-- 审核 Prisma 测试继续覆盖批准后单人积分 writer 与协作周期统一发分调用；积分 writer 测试覆盖 `PointsLog`、余额、累计积分、等级同步和 Outbox 同事务写入。开发环境真实数据闭环将在不可变镜像部署后验收。
+- 审核 Prisma 测试继续覆盖批准后单人积分 writer 与协作周期统一发分调用；积分 writer 测试覆盖 `PointsLog`、余额、累计积分、等级同步和 Outbox 同事务写入。实现提交 `b16c6fd` 已通过开发环境真实数据闭环，部署结果见 `FS-DEPLOY-DEV-005`。
+
+## 2026-08-02：部署家长审核队列开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-005`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `b16c6fd`
+- Wiki 提交：`7a456e9`
+
+### 发布结果
+
+- 从提交 `b16c6fd` 的独立源码归档构建并推送 `dev-20260802-b16c6fd-api`、`dev-20260802-b16c6fd-worker` 和 `dev-20260802-b16c6fd-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:1206c42758f9d645943fa8480800853ec2b699ad36ee00728eb155b96aa01dd9`、`sha256:fe6e2e979e1e6c8aa891f656959f6d1202e878384a337a02ffa8cecbe1c7d0ce` 和 `sha256:4c7d8364ba69e7835f9a7d4d7db50a83b53171ef8a4349c34a0312f643426f91`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-b16c6fd-20260802.dump`，文件大小 904729 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- Prisma 迁移容器成功退出；PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。运行中的 API、Worker 和 Web 均锁定到 `dev-20260802-b16c6fd-*`。
+- 公网首页返回 HTTP 200，同源 `/api/v1/health` 返回版本 `0.1.0` 和 `status: ok`。
+
+### 真实数据验收
+
+- 通过公开同源 API 创建新隔离家庭、孩子、单人每日人工审核任务和真实文字打卡；家长待审队列在提交后包含 1 条记录。
+- 家长批准后服务端权威队列变为空；重复使用绑定 attempt 与决定的幂等键批准，积分和等级保持不变；重新登录家长账号后队列仍为空。
+- 数据库确认打卡状态为 `APPROVED`、发放 30 积分且 streak 倍率为 1；孩子 `points_balance` 与 `points_earned_total` 均为 30，`current_level` 为 2。
+- 对应 attempt 仅有 1 条家长审核历史，对应打卡仅有 1 条积分流水；`points.balance.changed.v1` 和 `levels.level.advanced.v1` Outbox 各 1 条且均已发布。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260802-a7fd9b1-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-b16c6fd-20260802.dump`。
 
 ## 2026-08-02：部署门户会话与真实数据修复开发版本
 
