@@ -4,7 +4,7 @@
 
 - 记录 ID：`FS-TASK-VISIBILITY-FIX-001`
 - 分支：`dev`
-- 状态：实现和完整质量门禁已完成，等待开发环境部署与真实数据验收
+- 状态：已提交、通过完整质量门禁并完成开发环境真实数据验收
 - 依据：Phase 1 任务 4.2、4.3、8.2、9.2 与新增任务 15；`../specs/decisions.md` §4、§5、§9、§10；PRD §3.1、§3.2、§4.1、§4.5
 
 ### 问题与根因
@@ -33,6 +33,39 @@
 - 完整质量门禁通过：82 个测试文件、528 项测试通过，Statements、Branches、Functions 与 Lines 覆盖率门禁通过。
 - Playwright 9 项通过，覆盖家长编辑后刷新持久化与孩子主页、今日打卡页任务可见性。
 - Prisma Schema 与迁移契约、TypeScript、零警告 ESLint、Prettier、生产构建、设计系统、API 基础检查和 `git diff --check` 通过。
+- 实现提交 `e8f5e28` 已发布到开发环境并通过真实双端验收，部署结果见 `FS-DEPLOY-DEV-006`。
+
+## 2026-08-02：部署任务编辑与孩子任务可见性开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-006`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `e8f5e28`
+
+### 发布结果
+
+- 从提交 `e8f5e28` 的独立源码归档构建并推送 `dev-20260802-e8f5e28-api`、`dev-20260802-e8f5e28-worker` 和 `dev-20260802-e8f5e28-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:086ff52f4f7138056cef894c51aa257def87acebe7e3029eb8c6108fce43d940`、`sha256:5f051428b134d8cf980dd7c30dd348d828c21862c2a2ca2510013b55cce044bb` 和 `sha256:f3f65dc1f65f26f48be511c549f352845270af9322c54816af9bf32abfb827c1`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-e8f5e28-20260802.dump`，文件大小 1178678 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 12 项 Prisma 迁移均已应用且无待处理迁移；迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。
+- 公网首页返回 HTTP 200，同源 `/api/v1/health` 返回 `status: ok`；运行中的 API、Worker 和 Web 均锁定到 `dev-20260802-e8f5e28-*`。
+
+### 部署诊断
+
+- 首次 Compose 切换未显式加载 `/home/ubuntu/familystar-deploy/dev/.env.dev`，迁移容器因数据库认证失败退出。
+- 使用 `--env-file /home/ubuntu/familystar-deploy/dev/.env.dev` 重新执行后，命名 volume 中的数据保持完整，迁移和全部服务恢复健康。
+
+### 真实数据验收
+
+- 通过公开同源 API 创建随机隔离家庭、孩子和单人每日任务，并将任务真实分配给该孩子。
+- 家长在 `/tasks` 页面编辑任务名称、清空说明、切换为文字打卡并将基础积分改为 23；保存后刷新页面仍显示服务端持久化结果。
+- 家长任务 API 确认原 assignment ID、孩子归属和未编辑的提交说明保持不变，空任务说明持久化为 `null`。
+- 孩子通过家庭码和 PIN 建立全新会话后，`GET /api/v1/tasks/me` 返回逐孩生效的任务数据，且不包含家庭 ID 或孩子 ID。
+- 390 × 844 移动端 Chromium 验证 `/child` 与 `/child/check-ins` 均显示更新后的任务、23 星和文字打卡方式。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260802-b16c6fd-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-e8f5e28-20260802.dump`。
 
 ## 2026-08-02：补齐家长审核队列与刷新持久化闭环
 
