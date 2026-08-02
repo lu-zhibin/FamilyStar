@@ -4,7 +4,7 @@
 
 - 记录 ID：`FS-PARENT-SPACING-FIX-001`
 - 分支：`dev`
-- 状态：实现与本地预览验证已完成，正在部署开发环境
+- 状态：已提交、部署到开发环境并通过真实双端页面验收
 - 依据：Phase 1 任务 8.1、9.1、16；PRD §3.1、§3.2、§8.3
 
 ### 问题与根因
@@ -18,6 +18,32 @@
 - 家长门户组件测试增加公共 `<main>` 容器类断言，防止额外纵向间距再次进入共享布局。
 - 家长端和孩子端组件测试共 2 个文件、20 项通过；修改文件的零警告 ESLint、Prettier 和 `git diff --check` 通过。
 - 根级 `pnpm dev` 启动 Next.js 与 Hono，本地 Next.js 端口 `3000` 通过平台预览代理连通性检查。
+- 实现提交 `d636aa3` 已发布到开发环境并通过真实双端页面验收，部署结果见 `FS-DEPLOY-DEV-007`。
+
+## 2026-08-02：部署双端页面顶部间距修复开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-007`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `d636aa3`
+
+### 发布结果
+
+- 从提交 `d636aa3` 的独立源码归档构建并推送 `dev-20260802-d636aa3-api`、`dev-20260802-d636aa3-worker` 和 `dev-20260802-d636aa3-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:83e6425da5b0660951f83fc7718c401c6f5f8a8d4769208dea9b01883b0a1c11`、`sha256:adec48e764d4f5593b05273c88369484e7ed3e89c267b387f168c091c202e58f` 和 `sha256:458ff346007c8550752fa0d823d77c5da1a2a0d4698aed99e44427243a8e7121`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-d636aa3-20260802.dump`，文件大小 1209916 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 12 项 Prisma 迁移均已应用且无待处理迁移；迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。
+- 公网首页返回 HTTP 200，同源 `/api/v1/health` 返回 `status: ok`；运行中的 API、Worker 和 Web 均锁定到 `dev-20260802-d636aa3-*`。
+
+### 真实页面验收
+
+- 通过公开同源 API 创建随机隔离家庭、家长和孩子账号，并分别建立真实家长与孩子会话。
+- 九个家长页面在 1440 × 900 和 390 × 844 两种视口共完成 18 次浏览器检查，公共主内容容器类均为 `page-shell`，顶部内边距和首个内容节点偏移均为 0px。
+- 孩子主页在相同两种视口完成基线检查，公共主内容容器类、顶部内边距和首个内容节点偏移与家长端一致。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260802-e8f5e28-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-d636aa3-20260802.dump`。
 
 ## 2026-08-02：修复任务编辑与孩子分配任务可见性
 
