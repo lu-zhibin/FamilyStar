@@ -34,6 +34,9 @@ function application(role: 'parent' | 'child', auditWriter?: AuditWriter) {
   app.get('/api/v1/family/tasks', (context) =>
     context.json({ familyId: context.get('authSession')?.familyId }),
   );
+  app.get('/api/v1/family/submission-reviews/pending', (context) =>
+    context.json({ familyId: context.get('authSession')?.familyId }),
+  );
   app.post('/api/v1/family/tasks', (context) => context.json({ ok: true }, 201));
   app.post('/api/v1/check-ins', (context) => context.json({ ok: true }, 201));
   app.get('/api/v1/auth/session', (context) =>
@@ -91,6 +94,10 @@ describe('security middleware', () => {
 
     const child = application('child');
     expect((await child.app.request('/api/v1/family/tasks', { headers: cookie })).status).toBe(403);
+    expect(
+      (await child.app.request('/api/v1/family/submission-reviews/pending', { headers: cookie }))
+        .status,
+    ).toBe(403);
   });
 
   it('rejects a parent accessing a child-only route', async () => {

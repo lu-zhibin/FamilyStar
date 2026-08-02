@@ -21,7 +21,9 @@ function requiredRole(method: string, path: string): RequiredRole | null {
   }
   if (path === '/api/v1/auth/child/password') return 'child';
   if (
-    /^\/api\/v1\/family\/(?:children|settings|task-types|tasks|integrations)(?:\/.*)?$/.test(path)
+    /^\/api\/v1\/family\/(?:children|settings|task-types|tasks|integrations|submission-reviews)(?:\/.*)?$/.test(
+      path,
+    )
   ) {
     return 'parent';
   }

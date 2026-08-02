@@ -20,7 +20,26 @@ export type SubmissionReviewRecord = Readonly<{
   reviewedAt: Date;
 }>;
 
+export type PendingSubmissionReviewRecord = Readonly<{
+  targetType: ReviewTargetType;
+  targetId: string;
+  attemptId: string;
+  task: Readonly<{ id: string; name: string }>;
+  child: Readonly<{ id: string; nickname: string }>;
+  contentText: string | null;
+  media: readonly Readonly<{
+    id: string;
+    type: 'IMAGE' | 'VIDEO' | 'AUDIO';
+    mimeType: string;
+  }>[];
+  submittedAt: Date;
+}>;
+
 export type SubmissionReviewRepository = {
+  listPendingReviews(
+    familyId: string,
+    limit: number,
+  ): Promise<readonly PendingSubmissionReviewRecord[]>;
   findByIdempotencyKey(
     familyId: string,
     idempotencyKey: string,
@@ -92,6 +111,9 @@ type ReviewInput = {
 };
 
 export type SubmissionReviewOperations = {
+  listPendingReviews(input: { sessionToken?: string }): Promise<{
+    reviews: readonly PendingSubmissionReviewRecord[];
+  }>;
   reviewCheckIn(input: ReviewInput & { checkInId: string }): Promise<{
     review: SubmissionReviewRecord;
   }>;

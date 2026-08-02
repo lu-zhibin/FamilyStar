@@ -27,6 +27,7 @@ function record(overrides: Partial<SubmissionReviewRecord> = {}): SubmissionRevi
 
 function dependencies(role: 'parent' | 'child' = 'parent') {
   const repository: SubmissionReviewRepository = {
+    listPendingReviews: vi.fn().mockResolvedValue([]),
     findByIdempotencyKey: vi.fn().mockResolvedValue(null),
     reviewCheckIn: vi.fn(async (input) =>
       record({
@@ -85,6 +86,13 @@ function service(values = dependencies()) {
 }
 
 describe('SubmissionReviewService', () => {
+  it('lists only the authenticated parent family pending queue', async () => {
+    const values = dependencies();
+    await service(values).listPendingReviews({ sessionToken: 'session' });
+
+    expect(values.repository.listPendingReviews).toHaveBeenCalledWith('family-1', 100);
+  });
+
   it('reviews a pending check-in under an owner lock and releases the lock', async () => {
     const values = dependencies();
     const result = await service(values).reviewCheckIn({

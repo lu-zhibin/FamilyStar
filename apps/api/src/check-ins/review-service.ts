@@ -10,6 +10,7 @@ import type {
 } from './review-types.js';
 
 const REVIEW_LOCK_TTL_MILLISECONDS = 10_000;
+const PENDING_REVIEW_LIMIT = 100;
 
 export class SubmissionReviewError extends Error {
   constructor(
@@ -36,6 +37,16 @@ export class SubmissionReviewService implements SubmissionReviewOperations {
   constructor(private readonly dependencies: SubmissionReviewDependencies) {
     this.now = dependencies.now ?? (() => new Date());
     this.ownerTokenFactory = dependencies.ownerTokenFactory ?? randomUUID;
+  }
+
+  async listPendingReviews(input: Parameters<SubmissionReviewOperations['listPendingReviews']>[0]) {
+    const session = await this.requireParent(input.sessionToken);
+    return {
+      reviews: await this.dependencies.repository.listPendingReviews(
+        session.familyId,
+        PENDING_REVIEW_LIMIT,
+      ),
+    };
   }
 
   async reviewCheckIn(input: Parameters<SubmissionReviewOperations['reviewCheckIn']>[0]) {

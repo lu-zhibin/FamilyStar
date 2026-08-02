@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../app.js';
 import { SubmissionReviewError } from './review-service.js';
-import type { SubmissionReviewOperations, SubmissionReviewRecord } from './review-types.js';
+import type {
+  PendingSubmissionReviewRecord,
+  SubmissionReviewOperations,
+  SubmissionReviewRecord,
+} from './review-types.js';
 
 const review: SubmissionReviewRecord = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -18,8 +22,26 @@ const review: SubmissionReviewRecord = {
   reviewedAt: new Date('2026-07-31T12:00:00.000Z'),
 };
 
+const pendingReview: PendingSubmissionReviewRecord = {
+  targetType: 'CHECK_IN',
+  targetId: review.targetId,
+  attemptId: review.attemptId,
+  task: { id: '00000000-0000-4000-8000-000000000010', name: '晨读' },
+  child: { id: '00000000-0000-4000-8000-000000000011', nickname: '小星' },
+  contentText: '完成了两章',
+  media: [
+    {
+      id: '00000000-0000-4000-8000-000000000012',
+      type: 'IMAGE',
+      mimeType: 'image/jpeg',
+    },
+  ],
+  submittedAt: new Date('2026-07-31T11:00:00.000Z'),
+};
+
 function operations(): SubmissionReviewOperations {
   return {
+    listPendingReviews: vi.fn().mockResolvedValue({ reviews: [pendingReview] }),
     reviewCheckIn: vi.fn().mockResolvedValue({ review }),
     reviewCollaborationSubmission: vi.fn().mockResolvedValue({
       review: {
@@ -36,6 +58,53 @@ function operations(): SubmissionReviewOperations {
 describe('submission review HTTP routes', () => {
   beforeEach(() => vi.spyOn(console, 'info').mockImplementation(() => undefined));
   afterEach(() => vi.restoreAllMocks());
+
+  it('lists the authenticated family pending review queue', async () => {
+    const submissionReviewOperations = operations();
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      submissionReviewOperations,
+    });
+    const response = await app.request('/api/v1/family/submission-reviews/pending', {
+      headers: { cookie: 'familystar_session=parent-session' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(submissionReviewOperations.listPendingReviews).toHaveBeenCalledWith({
+      sessionToken: 'parent-session',
+    });
+    expect(await response.json()).toMatchObject({
+      data: {
+        reviews: [
+          {
+            target_type: 'CHECK_IN',
+            target_id: review.targetId,
+            task: { name: '晨读' },
+            child: { nickname: '小星' },
+            content_text: '完成了两章',
+            media: [{ type: 'IMAGE', mime_type: 'image/jpeg' }],
+            submitted_at: '2026-07-31T11:00:00.000Z',
+          },
+        ],
+      },
+    });
+  });
+
+  it('returns an empty pending review queue as a successful response', async () => {
+    const submissionReviewOperations = operations();
+    vi.mocked(submissionReviewOperations.listPendingReviews).mockResolvedValue({ reviews: [] });
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      submissionReviewOperations,
+    });
+
+    const response = await app.request('/api/v1/family/submission-reviews/pending', {
+      headers: { cookie: 'familystar_session=parent-session' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { reviews: [] } });
+  });
 
   it('accepts a check-in review and returns snake_case history data', async () => {
     const submissionReviewOperations = operations();

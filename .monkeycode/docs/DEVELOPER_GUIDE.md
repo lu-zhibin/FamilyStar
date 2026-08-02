@@ -2,7 +2,7 @@
 
 ## 项目目的
 
-FamilyStar 提供家庭任务打卡、积分成长和奖励兑换能力。Phase 1 的 12 个实施阶段已完成，后续迭代继续沿用 `../specs/phase-1-mvp/tasklist.md` 的质量标准。
+FamilyStar 提供家庭任务打卡、积分成长和奖励兑换能力。Phase 1 的 12 个实施阶段及真实运行缺陷修复任务 13、14 已完成，后续迭代继续沿用 `../specs/phase-1-mvp/tasklist.md` 的质量标准。
 
 ## 前置条件
 
@@ -156,13 +156,13 @@ pnpm db:seed
 
 ## 测试状态
 
-任务 1.5 使用 Vitest 3.2.4 建立正式测试套件。阶段 12 的单元测试共有 73 个测试文件和 452 项测试；集成命令运行 5 个文件和 23 项测试；完整覆盖率运行共有 78 个文件和 475 项测试。测试覆盖基础设施、认证、任务打卡、媒体审核、积分等级、奖励库存、兑换状态机、愿望闭环、双端组件、安全边界、Worker 作业、容器静态契约、核心 HTTP 闭环及并发失败回滚。
+任务 1.5 使用 Vitest 3.2.4 建立正式测试套件。任务 14 完成时单元测试共有 77 个测试文件和 496 项测试。测试覆盖基础设施、认证、任务打卡、媒体审核、家庭待审队列、积分等级、奖励库存、兑换状态机、愿望闭环、双端组件、安全边界、Worker 作业、容器静态契约、核心 HTTP 闭环及并发失败回滚。
 
 `pnpm test:coverage` 使用 V8 检查核心源码，认证、家庭设置、任务、打卡、媒体、积分、等级、奖励、凭证、安全中间件和 Worker 均纳入统计，四项门禁均为 70%。阶段 12 最终验证中 statements 与 lines 为 80.59%、branches 为 78.11%、functions 为 90.19%。覆盖率产物位于 `coverage/unit/`，该目录不进入版本控制。
 
-阶段 12 的 `pnpm quality` 已按顺序通过格式检查、零警告 Lint、全工作区类型检查、Prisma 与迁移契约、覆盖率、生产构建、设计系统、API 基础契约和 7 项 Playwright E2E。
+任务 14 已通过完整单元测试、核心 HTTP 闭环集成测试、格式检查、零警告 Lint、全工作区类型检查、生产构建和 8 项 Playwright E2E。
 
-Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwright.config.cjs` 启动临时 Next.js 服务。九页家长巡检具有 120 秒独立预算，其余用例使用 60 秒预算。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
+Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwright.config.cjs` 同时启动测试专用会话服务和临时 Next.js 服务，使服务端门户守卫经过真实 Cookie 与角色重定向路径；浏览器业务请求继续由每项测试的显式 API 契约夹具承接。九页家长巡检具有 120 秒独立预算，其余用例使用 60 秒预算。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
 
 ## Worker 开发
 
@@ -241,12 +241,14 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 ## 提交审核开发
 
 - 审核代码位于 `apps/api/src/check-ins/review-types.ts`、`review-service.ts`、`review-timeout-service.ts`、`review-prisma-repository.ts` 和 `review-routes.ts`。
+- `GET /api/v1/family/submission-reviews/pending` 合并本家庭单人和协作 `PENDING` 聚合，返回任务、孩子、latest attempt 内容、媒体摘要和提交时间，并以稳定顺序限制为 100 条。
 - HTTP 和领域层要求家长会话；拒绝原因去除首尾空白后必须非空，请求 reason 上限为 2000 字符。
 - 所有审核写入要求 `Idempotency-Key`；同一家庭和目标的重试返回既有结果，跨目标复用同一键返回冲突。
 - `keys.reviewLock()` 构造目标级 Redis 键，服务通过 10 秒 owner-lock 串行化同一提交的审核，并在锁内复查幂等记录。
 - Prisma 仓储在一个事务中条件更新 `PENDING` 聚合并创建关联最新 attempt 的 `SubmissionReview`；数据库唯一约束处理最终竞争。
 - `SubmissionReviewTimeoutService.runBatch()` 每次只读取一个有界候选批次，按家庭设置和最新 attempt 提交时间判断到期，并使用 `timeout:<targetType>:<attemptId>` 作为确定性幂等键。
 - 超时审核与家长审核复用目标锁；自动事务再次核对最新 attempt 和 `PENDING`，冲突与重复执行返回安全跳过。独立 Worker 按分钟运行键周期调用单批执行器。
+- 家长 Web 审核请求使用 `review:<attemptId>:<decision>` 稳定幂等键；写入成功后重新读取权威队列，失败时保留当前记录。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/check-ins/review-service.test.ts apps/api/src/check-ins/review-prisma-repository.test.ts apps/api/src/check-ins/review-timeout-service.test.ts apps/api/src/check-ins/review-routes.test.ts`。
 
 ## 积分事务开发

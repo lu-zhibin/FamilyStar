@@ -33,10 +33,12 @@ import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resourc
 import { authApi, type SessionIdentity } from '../lib/auth';
 import {
   buildSoloTaskDraft,
+  buildSubmissionReviewRequest,
   copyTextToClipboard,
   formatFrequency,
   parentApi,
   type ParentSection,
+  type ReviewTargetType,
 } from '../lib/parent-portal';
 import { ParentShell } from './parent-shell';
 
@@ -87,6 +89,16 @@ type FamilySettings = {
   auto_approve_quota: number;
   streak_multipliers: Array<{ days: 3 | 7 | 14 | 30 | 60 | 100; multiplier: number }>;
 };
+type PendingReview = {
+  target_type: ReviewTargetType;
+  target_id: string;
+  attempt_id: string;
+  task: { id: string; name: string };
+  child: { id: string; nickname: string };
+  content_text: string | null;
+  media: Array<{ id: string; type: 'IMAGE' | 'VIDEO' | 'AUDIO'; mime_type: string }>;
+  submitted_at: string;
+};
 
 const defaultSettings: FamilySettings = {
   time_zone: 'Asia/Shanghai',
@@ -122,7 +134,18 @@ function useApiData<T>(path: string, key: string, initialValue: T) {
       active = false;
     };
   }, [key, path]);
-  return { data, setData, state };
+  async function refresh(): Promise<void> {
+    try {
+      const payload = await parentApi<Record<string, unknown>>(path);
+      const value = readApiField<T>(payload, key);
+      setData(value);
+      setState(loadedState(value));
+    } catch (error) {
+      setState('error');
+      throw error;
+    }
+  }
+  return { data, setData, state, refresh };
 }
 
 function PageHeader({
@@ -460,24 +483,169 @@ function TasksPage() {
   );
 }
 
+function ReviewMedia({ media }: { media: PendingReview['media'][number] }) {
+  const [url, setUrl] = useState('');
+  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+
+  async function loadUrl() {
+    setState('loading');
+    try {
+      const result = await parentApi<{ url: string }>(`/media/${media.id}/access-url`);
+      setUrl(result.url);
+      setState('idle');
+    } catch {
+      setState('error');
+    }
+  }
+
+  if (url) {
+    return (
+      <a className="secondary-button" href={url} target="_blank" rel="noreferrer">
+        <ImageIcon size={15} />
+        打开{media.type === 'IMAGE' ? '图片' : media.type === 'VIDEO' ? '视频' : '音频'}凭证
+      </a>
+    );
+  }
+  return (
+    <button className="secondary-button" disabled={state === 'loading'} onClick={loadUrl}>
+      <ImageIcon size={15} />
+      {state === 'loading' ? '读取凭证中' : state === 'error' ? '重试凭证' : '查看凭证'}
+    </button>
+  );
+}
+
 function ReviewsPage() {
+  const reviews = useApiData<PendingReview[]>('/family/submission-reviews/pending', 'reviews', []);
+  const [busyTarget, setBusyTarget] = useState('');
+  const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [actionMessage, setActionMessage] = useState('');
+
+  async function submitReview(item: PendingReview, status: 'APPROVED' | 'REJECTED') {
+    const reason = reasons[item.target_id]?.trim();
+    if (status === 'REJECTED' && !reason) {
+      setActionMessage('打回前请填写原因。');
+      return;
+    }
+    const request = buildSubmissionReviewRequest(item, status, reason);
+    setBusyTarget(item.target_id);
+    setActionMessage('');
+    let submitted = false;
+    try {
+      await parentApi(request.path, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': request.idempotencyKey },
+        body: JSON.stringify(request.body),
+      });
+      submitted = true;
+      await reviews.refresh();
+      setActionMessage(status === 'APPROVED' ? '审核通过，积分已按规则处理。' : '已打回提交。');
+    } catch {
+      setActionMessage(
+        submitted ? '审核已提交，队列刷新失败，请刷新页面确认。' : '审核失败，当前记录已保留。',
+      );
+    } finally {
+      setBusyTarget('');
+    }
+  }
+
   return (
     <>
       <PageHeader
         eyebrow="及时回应每一次认真"
         title="打卡审核"
         description="查看凭证、填写反馈，并在超时前完成审核。"
+        state={reviews.state}
       />
       <div className="notice">
         <Clock3 size={20} />
-        <span>手动审核默认在 48 小时后自动通过；当前审核队列聚合接口尚待补齐。</span>
+        <span>待审提交按时间排列；家庭审核超时规则会继续自动处理到期记录。</span>
       </div>
+      {actionMessage && (
+        <p className="notice mt-4" role="alert">
+          {actionMessage}
+        </p>
+      )}
       <Panel className="mt-5">
-        <EmptyState
-          title="审核队列接口待接入"
-          detail="聚合接口完成后，这里会展示当前家庭的真实待审核提交。"
-          icon={<CheckCircle2 size={30} />}
-        />
+        <SectionTitle>待审核提交</SectionTitle>
+        {reviews.state === 'loading' && (
+          <EmptyState title="正在读取待审核提交" detail="正在同步当前家庭的真实审核队列。" />
+        )}
+        {reviews.state === 'error' && reviews.data.length === 0 && (
+          <EmptyState title="审核队列读取失败" detail="请刷新页面后重试。" icon={<CloudOff />} />
+        )}
+        {reviews.state === 'empty' && (
+          <EmptyState
+            title="暂无待审核打卡"
+            detail="孩子提交需要人工验收的任务后会显示在这里。"
+            icon={<CheckCircle2 size={30} />}
+          />
+        )}
+        <div className="space-y-4">
+          {reviews.data.map((item) => {
+            const busy = busyTarget === item.target_id;
+            return (
+              <article className="soft-card" key={`${item.target_type}:${item.target_id}`}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-display text-lg text-brown">{item.task.name}</h3>
+                      <span className="tag tag-orange">
+                        {item.target_type === 'CHECK_IN' ? '单人打卡' : '协作提交'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-caption font-bold text-brown-light">
+                      {item.child.nickname} · {new Date(item.submitted_at).toLocaleString('zh-CN')}
+                    </p>
+                  </div>
+                  <span className="status-chip bg-orange/10 text-orange-dark">等待审核</span>
+                </div>
+                <p className="mt-4 whitespace-pre-wrap rounded-card bg-white/70 p-4 font-semibold text-brown">
+                  {item.content_text ?? '本次提交没有文字说明。'}
+                </p>
+                {item.media.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2" aria-label="提交凭证">
+                    {item.media.map((media) => (
+                      <ReviewMedia key={media.id} media={media} />
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
+                  <label className="field-label">
+                    打回原因
+                    <input
+                      className="field"
+                      value={reasons[item.target_id] ?? ''}
+                      maxLength={2000}
+                      placeholder="打回时必填，例如：请补充清晰照片"
+                      onChange={(event) =>
+                        setReasons((current) => ({
+                          ...current,
+                          [item.target_id]: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={() => submitReview(item, 'REJECTED')}
+                  >
+                    <X size={17} />
+                    打回
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={busy}
+                    onClick={() => submitReview(item, 'APPROVED')}
+                  >
+                    <Check size={17} />
+                    {busy ? '处理中' : '通过并发分'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </Panel>
     </>
   );

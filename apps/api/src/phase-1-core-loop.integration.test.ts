@@ -431,6 +431,7 @@ class CoreLoopFixture implements FamilyAuthRepository {
         return { reviews: this.state.review ? [this.state.review] : [] };
       },
       listCollaborationSubmissionReviews: async () => this.unused('list collaboration reviews'),
+      listPendingReviews: async () => this.unused('list pending reviews'),
     };
   }
 

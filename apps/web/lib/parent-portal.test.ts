@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSoloTaskDraft,
+  buildSubmissionReviewRequest,
   canAccessParentPortal,
   copyTextToClipboard,
   formatFrequency,
@@ -9,6 +10,39 @@ import {
   parentSectionPaths,
   parentSections,
 } from './parent-portal';
+
+describe('submission review requests', () => {
+  const target = {
+    target_type: 'CHECK_IN' as const,
+    target_id: 'check-in-1',
+    attempt_id: 'attempt-2',
+  };
+
+  it('uses a stable attempt-scoped idempotency key and target route', () => {
+    expect(buildSubmissionReviewRequest(target, 'APPROVED')).toEqual({
+      path: '/check-ins/check-in-1/reviews',
+      idempotencyKey: 'review:attempt-2:APPROVED',
+      body: { status: 'APPROVED' },
+    });
+    expect(buildSubmissionReviewRequest(target, 'APPROVED').idempotencyKey).toBe(
+      buildSubmissionReviewRequest(target, 'APPROVED').idempotencyKey,
+    );
+  });
+
+  it('routes collaboration reviews and trims rejection reasons', () => {
+    expect(
+      buildSubmissionReviewRequest(
+        { ...target, target_type: 'COLLABORATION_SUBMISSION', target_id: 'submission-1' },
+        'REJECTED',
+        '  请补充照片  ',
+      ),
+    ).toEqual({
+      path: '/collaboration-submissions/submission-1/reviews',
+      idempotencyKey: 'review:attempt-2:REJECTED',
+      body: { status: 'REJECTED', reason: '请补充照片' },
+    });
+  });
+});
 
 describe('task creation payload', () => {
   function taskForm(description: string): FormData {

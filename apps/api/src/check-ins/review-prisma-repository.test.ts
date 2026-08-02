@@ -42,6 +42,74 @@ function pointsWriter(transaction: object, earnCheckIn = vi.fn().mockResolvedVal
 }
 
 describe('PrismaSubmissionReviewRepository', () => {
+  it('merges the authenticated family pending submissions using latest attempts', async () => {
+    const prisma = {
+      checkIn: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'check-in-1',
+            task: { id: 'task-1', name: '晨读' },
+            child: { id: 'child-1', nickname: '小星' },
+            attempts: [
+              {
+                id: 'check-attempt-2',
+                contentText: '完成两章',
+                submittedAt: new Date('2026-07-31T11:00:00.000Z'),
+              },
+            ],
+            media: [
+              {
+                mediaAsset: { id: 'media-1', type: 'IMAGE', mimeType: 'image/jpeg' },
+              },
+            ],
+          },
+        ]),
+      },
+      collaborationSubmission: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'submission-1',
+            round: { task: { id: 'task-2', name: '整理房间' } },
+            child: { id: 'child-2', nickname: '小月' },
+            attempts: [
+              {
+                id: 'collaboration-attempt-1',
+                contentText: null,
+                submittedAt: new Date('2026-07-31T10:00:00.000Z'),
+              },
+            ],
+            media: [],
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    const result = await new PrismaSubmissionReviewRepository(prisma).listPendingReviews(
+      'family-1',
+      100,
+    );
+
+    expect(result.map(({ targetId }) => targetId)).toEqual(['submission-1', 'check-in-1']);
+    expect(result[1]).toMatchObject({
+      attemptId: 'check-attempt-2',
+      task: { name: '晨读' },
+      child: { nickname: '小星' },
+      media: [{ id: 'media-1', type: 'IMAGE' }],
+    });
+    expect(prisma.checkIn.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ familyId: 'family-1', status: 'PENDING' }),
+        take: 100,
+      }),
+    );
+    expect(prisma.collaborationSubmission.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ familyId: 'family-1', status: 'PENDING' }),
+        take: 100,
+      }),
+    );
+  });
+
   it('updates only a pending check-in and creates its review in one transaction', async () => {
     const transaction = {
       submissionReview: {

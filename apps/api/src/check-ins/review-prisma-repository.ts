@@ -6,6 +6,7 @@ import type { PointsAwardPort, PointsTransactionWriter } from '../points/types.j
 import { SubmissionReviewError } from './review-service.js';
 import type {
   PendingReviewCandidate,
+  PendingSubmissionReviewRecord,
   SubmissionReviewRecord,
   SubmissionReviewRepository,
   SubmissionReviewTimeoutRepository,
@@ -75,6 +76,109 @@ export class PrismaSubmissionReviewRepository
     private readonly prisma: PrismaClient,
     private readonly points: PointsTransactionWriter = new PrismaPointsTransactionWriter(prisma),
   ) {}
+
+  async listPendingReviews(
+    familyId: string,
+    limit: number,
+  ): Promise<readonly PendingSubmissionReviewRecord[]> {
+    const [checkIns, collaborationSubmissions] = await Promise.all([
+      this.prisma.checkIn.findMany({
+        where: {
+          familyId,
+          status: 'PENDING',
+          deletedAt: null,
+          family: { deletedAt: null },
+          task: { deletedAt: null },
+          child: { role: 'CHILD', deletedAt: null },
+        },
+        select: {
+          id: true,
+          task: { select: { id: true, name: true } },
+          child: { select: { id: true, nickname: true } },
+          attempts: {
+            orderBy: { attemptNumber: 'desc' },
+            take: 1,
+            select: { id: true, contentText: true, submittedAt: true },
+          },
+          media: {
+            where: { mediaAsset: { uploadStatus: 'READY', deletedAt: null } },
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              mediaAsset: { select: { id: true, type: true, mimeType: true } },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: limit,
+      }),
+      this.prisma.collaborationSubmission.findMany({
+        where: {
+          familyId,
+          status: 'PENDING',
+          family: { deletedAt: null },
+          round: { task: { deletedAt: null } },
+          child: { role: 'CHILD', deletedAt: null },
+        },
+        select: {
+          id: true,
+          round: { select: { task: { select: { id: true, name: true } } } },
+          child: { select: { id: true, nickname: true } },
+          attempts: {
+            orderBy: { attemptNumber: 'desc' },
+            take: 1,
+            select: { id: true, contentText: true, submittedAt: true },
+          },
+          media: {
+            where: { mediaAsset: { uploadStatus: 'READY', deletedAt: null } },
+            orderBy: { sortOrder: 'asc' },
+            select: {
+              mediaAsset: { select: { id: true, type: true, mimeType: true } },
+            },
+          },
+        },
+        orderBy: [{ submittedAt: 'asc' }, { id: 'asc' }],
+        take: limit,
+      }),
+    ]);
+
+    const reviews: PendingSubmissionReviewRecord[] = [];
+    for (const checkIn of checkIns) {
+      const attempt = checkIn.attempts[0];
+      if (!attempt) continue;
+      reviews.push({
+        targetType: 'CHECK_IN',
+        targetId: checkIn.id,
+        attemptId: attempt.id,
+        task: checkIn.task,
+        child: checkIn.child,
+        contentText: attempt.contentText,
+        media: checkIn.media.map(({ mediaAsset }) => mediaAsset),
+        submittedAt: attempt.submittedAt,
+      });
+    }
+    for (const submission of collaborationSubmissions) {
+      const attempt = submission.attempts[0];
+      if (!attempt) continue;
+      reviews.push({
+        targetType: 'COLLABORATION_SUBMISSION',
+        targetId: submission.id,
+        attemptId: attempt.id,
+        task: submission.round.task,
+        child: submission.child,
+        contentText: attempt.contentText,
+        media: submission.media.map(({ mediaAsset }) => mediaAsset),
+        submittedAt: attempt.submittedAt,
+      });
+    }
+    return reviews
+      .sort(
+        (left, right) =>
+          left.submittedAt.getTime() - right.submittedAt.getTime() ||
+          left.targetType.localeCompare(right.targetType) ||
+          left.targetId.localeCompare(right.targetId),
+      )
+      .slice(0, limit);
+  }
 
   async findByIdempotencyKey(familyId: string, idempotencyKey: string) {
     const value = await this.prisma.submissionReview.findUnique({

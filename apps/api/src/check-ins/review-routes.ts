@@ -7,7 +7,11 @@ import { SESSION_TTL_SECONDS } from '../family-auth/constants.js';
 import { createErrorResponse, createSuccessResponse } from '../http/responses.js';
 import type { AppEnvironment } from '../http/types.js';
 import { SubmissionReviewError } from './review-service.js';
-import type { SubmissionReviewOperations, SubmissionReviewRecord } from './review-types.js';
+import type {
+  PendingSubmissionReviewRecord,
+  SubmissionReviewOperations,
+  SubmissionReviewRecord,
+} from './review-types.js';
 
 const reviewSchema = z
   .object({
@@ -60,6 +64,23 @@ function output(review: SubmissionReviewRecord) {
   };
 }
 
+function pendingOutput(review: PendingSubmissionReviewRecord) {
+  return {
+    target_type: review.targetType,
+    target_id: review.targetId,
+    attempt_id: review.attemptId,
+    task: review.task,
+    child: review.child,
+    content_text: review.contentText,
+    media: review.media.map((item) => ({
+      id: item.id,
+      type: item.type,
+      mime_type: item.mimeType,
+    })),
+    submitted_at: review.submittedAt.toISOString(),
+  };
+}
+
 function mapError(context: Context<AppEnvironment>, error: unknown) {
   if (!(error instanceof SubmissionReviewError)) throw error;
   const status = {
@@ -84,6 +105,21 @@ export function registerSubmissionReviewRoutes(
   operations: SubmissionReviewOperations,
   secureCookies: boolean,
 ): void {
+  api.get('/family/submission-reviews/pending', async (context) => {
+    try {
+      const result = await operations.listPendingReviews(sessionInput(context));
+      renew(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          { reviews: result.reviews.map(pendingOutput) },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
   const register = (
     path: string,
     review: (

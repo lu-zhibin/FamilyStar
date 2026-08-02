@@ -2,7 +2,7 @@
 
 ## 概述
 
-FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段已完成，家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
+FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段及真实运行缺陷修复任务 13、14 已完成，家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
 
 浏览器界面由 Next.js 14 App Router 提供。REST API 使用 Hono 并通过 `@hono/node-server` 运行在 Node.js 上。跨应用类型从 `@familystar/shared` 导入，减少 Web 与 API 之间的契约漂移。
 
@@ -97,7 +97,7 @@ FamilyStar/
 - 家长认证：`src/family-auth/` 提供默认数据、密码策略、领域服务、Prisma 仓储、Redis 会话和 Hono 路由。
 - 家庭设置：`src/family-settings/` 提供规则规范化、家长权限、JSONB 仓储和 Hono 路由。
 - 任务领域：`src/tasks/` 提供家庭任务类型、任务与分配、频率计算、协作调度、Prisma 仓储和 Hono 路由。
-- 提交审核：`src/check-ins/review-*` 提供家长审核、单批超时审核、Redis owner-lock、Prisma 事务仓储和 Hono 路由。
+- 提交审核：`src/check-ins/review-*` 提供家庭待审队列、家长审核、单批超时审核、Redis owner-lock、Prisma 事务仓储和 Hono 路由。
 - 等级领域：`src/levels/` 提供累计积分等级派生、只升不降读取、当前权益与下级进度，以及孩子本人和家长家庭范围 HTTP 路由。
 - 奖励领域：`src/rewards/` 提供奖励 CRUD、资格和库存、幂等兑换预扣、审批兑现退款、愿望槽位与采纳，以及家长和孩子角色路由。
 
@@ -151,6 +151,7 @@ FamilyStar/
 
 ### 提交审核
 
+- 家长通过家庭范围队列读取单人打卡与协作提交的当前 `PENDING` 聚合。队列附带任务、孩子、最新 attempt 内容、媒体摘要和提交时间，合并后按提交时间稳定排序并限制为 100 条。
 - 家长可对单人打卡和协作提交执行 `APPROVED` 或 `REJECTED` 决策，并按提交聚合读取按审核时间升序排列的历史。
 - 拒绝决策要求去除首尾空白后仍有内容的原因；HTTP 请求使用最长 128 字符的 `Idempotency-Key`。
 - 服务先检查家庭级幂等记录，再获取目标级 10 秒 Redis owner-lock，获取锁后复查幂等记录。
@@ -159,6 +160,7 @@ FamilyStar/
 - 超时单批执行器读取有限候选，按每条候选所属家庭的 `reviewTimeoutHours` 和最新 attempt `submittedAt` 判断到期；值为 0 时跳过自动审核，默认值为 48 小时。
 - 到期候选使用与家长审核相同的目标锁，事务内再次核对 latest attempt 和 `PENDING` 状态；锁竞争、家长抢先审核、重复执行和唯一冲突均安全跳过。
 - API 与 Worker 共享可复用的 `submissionReviewTimeoutBatch`；Worker 按分钟运行键负责周期调用。
+- 家长审核页在写入成功后重新读取服务端权威队列；写入失败时保留当前记录，写入成功但刷新失败时提示重新确认服务端状态。
 
 ### 数据层
 

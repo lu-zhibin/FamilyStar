@@ -131,11 +131,13 @@ Web 任务表单通过 `buildSoloTaskDraft()` 构造单人每日任务请求。�
 
 ### 提交审核接口
 
+`GET /api/v1/family/submission-reviews/pending` 由家长读取当前家庭最多 100 条待审记录。服务合并当前状态仍为 `PENDING` 的单人打卡与协作提交，按 `submitted_at`、目标类型和目标 ID 稳定排序。每条记录包含 `target_type`、`target_id`、`attempt_id`、任务 `id/name`、孩子 `id/nickname`、最新 attempt 的 `content_text`、媒体 `id/type` 摘要和 `submitted_at`。空队列返回 `{ "reviews": [] }`。
+
 `POST /api/v1/check-ins/:id/reviews` 和 `POST /api/v1/collaboration-submissions/:id/reviews` 由家长审核单人或协作提交。两个接口要求有效家长 Cookie 和最长 128 字符的 `Idempotency-Key`，请求体严格包含 `status: "APPROVED" | "REJECTED"` 与可选 `reason`；reason 最长 2000 字符，拒绝时必须包含非空原因。
 
 `GET /api/v1/check-ins/:id/reviews` 和 `GET /api/v1/collaboration-submissions/:id/reviews` 由家长读取本家庭目标的审核历史，结果按 `reviewed_at` 升序返回。审核对象包含 `id`、`target_type`、`target_id`、`attempt_id`、`status`、`source`、`reason`、`reviewer_id` 和 `reviewed_at`。人工记录的 `source` 为 `PARENT` 且包含 reviewer，超时记录的 `source` 为 `TIMEOUT` 且 `reviewer_id` 为 `null`。
 
-成功审核返回 `200` 并续期会话 Cookie。缺少有效会话返回 `401 UNAUTHORIZED`，孩子会话返回 `403 FORBIDDEN`，非法请求返回 `400 INVALID_REQUEST`，审核写入中的不可见目标返回 `404 NOT_FOUND`，锁竞争、状态竞争或幂等键冲突返回 `409 CONFLICT`。同一家庭、同一幂等键和同一目标的重试返回既有审核记录；历史查询对无记录目标返回空数组。
+待审队列和成功审核返回 `200` 并续期会话 Cookie。缺少有效会话返回 `401 UNAUTHORIZED`，孩子会话返回 `403 FORBIDDEN`，非法请求返回 `400 INVALID_REQUEST`，审核写入中的不可见目标返回 `404 NOT_FOUND`，锁竞争、状态竞争或幂等键冲突返回 `409 CONFLICT`。同一家庭、同一幂等键和同一目标的重试返回既有审核记录；历史查询对无记录目标返回空数组。
 
 ### 等级接口
 

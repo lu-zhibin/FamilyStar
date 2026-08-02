@@ -13,6 +13,7 @@ export const parentSections = [
 ] as const;
 
 export type ParentSection = (typeof parentSections)[number];
+export type ReviewTargetType = 'CHECK_IN' | 'COLLABORATION_SUBMISSION';
 
 export const parentSectionPaths: Record<ParentSection, string> = {
   dashboard: '/dashboard',
@@ -52,6 +53,25 @@ export function buildSoloTaskDraft(form: Pick<FormData, 'get'>, startDate: strin
         start_date: startDate,
       },
     ],
+  };
+}
+
+export function buildSubmissionReviewRequest(
+  target: { target_type: ReviewTargetType; target_id: string; attempt_id: string },
+  status: 'APPROVED' | 'REJECTED',
+  reason?: string,
+) {
+  const normalizedReason = reason?.trim();
+  return {
+    path:
+      target.target_type === 'CHECK_IN'
+        ? `/check-ins/${target.target_id}/reviews`
+        : `/collaboration-submissions/${target.target_id}/reviews`,
+    idempotencyKey: `review:${target.attempt_id}:${status}`,
+    body: {
+      status,
+      ...(normalizedReason ? { reason: normalizedReason } : {}),
+    },
   };
 }
 
