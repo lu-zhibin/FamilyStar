@@ -1,25 +1,61 @@
 # FamilyStar 开发记录
 
+## 2026-08-03：修复孩子端顶部页边距遗漏
+
+- 记录 ID：`FS-CHILD-SPACING-REGRESSION-001`
+- 分支与修复提交：`dev` / `2b7b7be`
+- 状态：已部署并通过真实页面验收
+
+### 回归与修复
+
+- 用户提供的 `8098` 截图定位到孩子端 `/child`；`ChildShell` 主内容容器仍为纯 `page-shell`，Header 底边与首个内容元素之间的实际距离为 0px。
+- 前次 `224d59f` 只恢复了家长端，遗漏孩子端共享壳层；文档中“孩子端通过头部内边距形成相应视觉留白”的描述与实际 DOM 不符。
+- `2b7b7be` 将孩子端共享主内容容器改为 `page-shell py-7 mobile:py-5`，并在六个孩子端页面的组件测试中锁定该响应式类。
+
+### 验证结果
+
+- 双端壳层组件测试 2 个文件、20 项通过；完整 Vitest 套件 82 个文件、528 项通过；Web TypeScript、零警告 ESLint、Prettier、生产构建和 `git diff --check` 通过。
+- 开发环境真实会话覆盖九个家长页面和六个孩子页面，在桌面与手机视口分别执行 18 次和 12 次检查；双端顶部页边距均为桌面 28px、手机 20px。
+- 孩子端手机视口中 Header 底边为 y=140，首个内容元素为 y=160，实际顶部间距为 20px。
+
+## 2026-08-03：部署双端顶部页边距完整修复版本
+
+- 记录 ID：`FS-DEPLOY-DEV-009`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `2b7b7be`
+
+### 发布结果
+
+- 从提交 `2b7b7be` 的独立源码归档构建并推送 `dev-20260803-2b7b7be-api`、`dev-20260803-2b7b7be-worker` 和 `dev-20260803-2b7b7be-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:eab0d13d70d8f322722edddad5dc86a2289e9f6d31bdb53de8fb82adcb006a86`、`sha256:7978cd9763122e2e31dafafb091a21f6a73ae4c8a571ffdf5df071209e7a96a0` 和 `sha256:ea1ba403960c7dbd87a48b023e720a9c090ac1c01d25ccdb01dd2fee1bd437b4`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-2b7b7be-20260803.dump`，文件大小 1576019 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy；公网首页返回 HTTP 200，同源健康接口返回 `status: ok`。
+
+### 回滚点
+
+- 上一运行版本：`dev-20260802-224d59f-*`，该版本仅恢复家长端顶部页边距，孩子端仍为 0px。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-2b7b7be-20260803.dump`。
+
 ## 2026-08-02：统一家长端与孩子端页面顶部间距
 
 - 记录 ID：`FS-PARENT-SPACING-FIX-001`
 - 分支：`dev`
-- 状态：初次修复引入家长端顶部留白回归，已由 `224d59f` 恢复并重新验收
+- 状态：初次修复引入家长端顶部留白回归；`224d59f` 恢复家长端，`2b7b7be` 补齐孩子端
 - 依据：Phase 1 任务 8.1、9.1、16；PRD §3.1、§3.2、§8.3
 
 ### 问题与根因
 
 - 家长端九个页面共用的 `ParentShell` 在主内容容器上设置 `py-7 mobile:py-5`，桌面端和移动端分别形成 28px 与 20px 的额外顶部留白。
-- 孩子端 `ChildShell` 的主内容容器仅使用 `page-shell`，双端公共页面起始位置因此产生差异。
+- 孩子端 `ChildShell` 的主内容容器曾仅使用 `page-shell`，双端公共页面起始位置因此产生差异。
 
 ### 实施与验证结果
 
 - 初次修复提交 `d636aa3` 将家长端主内容容器从 `page-shell py-7 mobile:py-5` 改为纯 `page-shell`，导致九个家长页面贴近顶部边缘。
 - 初次验收仅检查 `<main>` 自身和首个内容节点均为 0px，未比较双端完整视觉起始位置，因此得出了错误的一致性结论。
-- 纠正提交 `224d59f` 恢复家长端原有 `py-7 mobile:py-5`，即桌面端 28px、移动端 20px 顶部页边距；回归断言同步锁定该响应式类。
+- 纠正提交 `224d59f` 恢复家长端原有响应式顶部页边距，后续提交 `2b7b7be` 为孩子端补齐相同类；双端回归断言均锁定该结构。
 - 家长端和孩子端组件测试共 2 个文件、20 项通过；修改文件的零警告 ESLint、Prettier 和 `git diff --check` 通过。
 - 根级 `pnpm dev` 启动 Next.js 与 Hono，本地 Next.js 端口 `3000` 通过平台预览代理连通性检查。
-- 纠正提交 `224d59f` 已发布到开发环境并通过真实页面验收，部署结果见 `FS-DEPLOY-DEV-008`。
+- 完整纠正提交 `2b7b7be` 已发布到开发环境并通过双端真实页面验收，部署结果见 `FS-DEPLOY-DEV-009`。
 
 ## 2026-08-02：纠正家长端顶部页边距回归
 
