@@ -22,6 +22,7 @@ describe('ParentPortal', () => {
 
     expect(markup).toContain(titles[parentSections.indexOf(section)]);
     expect(markup).toContain('<main class="page-shell py-7 mobile:py-5">');
+    expect(markup).toContain('min-h-screen pb-28 pt-7 mobile:pb-24 mobile:pt-5');
     expect(markup).toContain('家长端模块导航');
     expect(markup).toContain('aria-label="退出家长端"');
     expect(markup).toContain('aria-current="page"');

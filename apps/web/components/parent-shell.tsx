@@ -58,7 +58,7 @@ export function ParentShell({
   }
 
   return (
-    <div className="min-h-screen pb-28 mobile:pb-24">
+    <div className="min-h-screen pb-28 pt-7 mobile:pb-24 mobile:pt-5">
       <header className="sticky top-0 z-30 border-b border-wood/80 bg-cream/90 backdrop-blur-xl">
         <div className="page-shell flex h-16 items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-3" aria-label="FamilyStar 家长端首页">
