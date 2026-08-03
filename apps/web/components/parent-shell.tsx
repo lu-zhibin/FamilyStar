@@ -114,7 +114,7 @@ export function ParentShell({
         className="fixed inset-x-0 bottom-0 z-40 border-t border-wood bg-white/95 shadow-[0_-8px_28px_rgba(93,64,55,0.10)] backdrop-blur-xl"
         aria-label="家长端模块导航"
       >
-        <div className="nav-scroll mx-auto flex max-w-content items-center gap-1 overflow-x-auto px-3 py-2">
+        <div className="nav-scroll mx-auto flex max-w-content items-center gap-1 overflow-x-auto px-3 py-2 mobile:grid mobile:grid-cols-9 mobile:gap-0 mobile:overflow-x-visible mobile:px-1">
           {navItems.map(({ key, label, icon: Icon }) => {
             const active = section === key;
             return (
@@ -125,7 +125,12 @@ export function ParentShell({
                 aria-current={active ? 'page' : undefined}
                 className={`nav-item ${active ? 'nav-item-active' : ''}`}
               >
-                <Icon aria-hidden="true" size={20} strokeWidth={active ? 2.8 : 2} />
+                <Icon
+                  aria-hidden="true"
+                  className="mobile:size-[17px]"
+                  size={20}
+                  strokeWidth={active ? 2.8 : 2}
+                />
                 <span>{label}</span>
               </Link>
             );

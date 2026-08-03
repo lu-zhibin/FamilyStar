@@ -161,7 +161,7 @@ export function AuthLanding() {
       <div className="relative mx-auto grid min-h-[calc(100vh-4rem)] max-w-[1120px] overflow-hidden rounded-[28px] border border-wood bg-white/90 shadow-warm-lg backdrop-blur md:grid-cols-[0.9fr_1.1fr] mobile:min-h-[calc(100vh-2rem)]">
         <WelcomePanel />
         <section
-          className="flex items-center justify-center p-8 mobile:p-5"
+          className="flex items-start justify-center p-8 mobile:p-5"
           aria-label="FamilyStar 登录"
         >
           <div className="w-full max-w-[470px]">

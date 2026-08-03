@@ -26,6 +26,9 @@ describe('ParentPortal', () => {
     expect(markup).toContain('家长端模块导航');
     expect(markup).toContain('aria-label="退出家长端"');
     expect(markup).toContain('aria-current="page"');
+    expect(markup).toContain('mobile:grid-cols-9');
+    expect(markup).toContain('mobile:overflow-x-visible');
+    expect(markup.match(/class="nav-item/g)).toHaveLength(9);
   });
 
   it('renders responsive forms and explicit limited states', () => {

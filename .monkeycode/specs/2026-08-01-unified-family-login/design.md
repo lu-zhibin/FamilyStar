@@ -1,7 +1,7 @@
 # 统一家庭登录入口技术设计
 
 Feature Name: unified-family-login
-Updated: 2026-08-01
+Updated: 2026-08-03
 
 ## Description
 
@@ -28,8 +28,11 @@ flowchart LR
 
 - `app/page.tsx`：渲染统一登录组件。
 - `components/auth-landing.tsx`：身份切换、家长登录/注册、家庭码查找、孩子选择、PIN 登录、错误和加载状态。
+- `components/auth-landing.tsx` 的登录内容使用顶部对齐锚点，使表单高度变化仅向下扩展并保持标题位置稳定。
 - `lib/auth.ts`：统一认证 API 请求、响应类型和错误映射。
 - `components/parent-portal.tsx`：家庭成员页读取会话信息并展示家庭码。
+- `components/parent-shell.tsx`：移动端使用九等分底部导航；图标、文字、内边距和选中背景在 320px 至 767px 范围内采用紧凑尺寸。
+- `app/globals.css`：桌面导航维持弹性最小宽度，移动导航项取消最小宽度并限制到所属网格列。
 
 ### API
 
@@ -65,6 +68,8 @@ flowchart LR
 5. 失败孩子登录沿用乐观版本更新，避免并发失败计数丢失。
 6. 根路径只根据服务端有效会话角色跳转。
 7. 每个持久化家庭码匹配 `^[0-9]{6}$`。
+8. 身份切换不改变登录页标题区域的顶部锚点。
+9. 移动端家长导航始终包含九个等宽网格列，导航容器不产生横向溢出。
 
 ## Error Handling
 
@@ -81,6 +86,8 @@ flowchart LR
 - Prisma 契约测试覆盖 `VARCHAR(6)` 字段、唯一索引、迁移替换和格式约束。
 - HTTP 测试覆盖会话读取、家庭查询、孩子登录 Cookie、无效家庭码、锁定和限流。
 - Web 组件测试覆盖身份切换、家长登录/注册、孩子两步登录、错误状态和已有会话跳转。
+- Web 壳层测试覆盖登录内容顶部对齐、移动端九列导航、紧凑导航项和九个可访问链接。
+- 浏览器回归在 320px、375px 和桌面视口验证身份切换前后的标题坐标，以及家长导航的可见性和页面横向滚动宽度。
 - 运行 `pnpm quality` 验证格式、Lint、类型、Prisma、覆盖率、构建、设计系统、API 契约与 Playwright。
 
 ## References

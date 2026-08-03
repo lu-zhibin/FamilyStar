@@ -81,3 +81,15 @@ FamilyStar 根路径提供家长与孩子共用的身份入口。家长使用邮
 2. WHEN 系统创建认证会话, 系统 SHALL 使用 HttpOnly、SameSite=Lax 和 30 天 Max-Age Cookie。
 3. WHILE 生产环境使用 HTTPS, 系统 SHALL 为会话 Cookie 启用 Secure 属性。
 4. IF 登录失败, 系统 SHALL 避免返回密码哈希、PIN 哈希、会话令牌和 Redis 键。
+
+### Requirement 7：响应式界面稳定性
+
+**User Story:** AS 家庭成员, I want 身份切换和家长端导航保持稳定, so that 我可以在桌面与移动设备上快速定位操作。
+
+#### Acceptance Criteria
+
+1. WHEN 用户在家长与孩子身份之间切换, 统一登录页 SHALL 保持欢迎语、主标题和副标题的顶部位置不变。
+2. WHILE 所选身份表单高度发生变化, 统一登录页 SHALL 将高度变化限制在身份切换控件下方。
+3. WHILE 视口宽度处于 320px 至 767px, 家长门户 SHALL 在单行内完整展示九个模块导航项。
+4. WHILE 视口宽度处于 320px 至 767px, 家长门户 SHALL 保持页面横向滚动宽度等于视口宽度。
+5. WHEN 家长切换模块, 家长门户 SHALL 以颜色和背景高亮当前模块且保持九个导航项尺寸不变。

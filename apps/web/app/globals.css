@@ -108,7 +108,7 @@
   }
 
   .nav-item {
-    @apply flex min-w-[72px] flex-1 flex-col items-center gap-0.5 rounded-card px-3 py-1.5 text-label font-extrabold text-brown-light transition hover:bg-sand;
+    @apply flex min-w-[72px] flex-1 flex-col items-center gap-0.5 rounded-card px-3 py-1.5 text-label font-extrabold text-brown-light transition hover:bg-sand mobile:min-w-0 mobile:gap-0 mobile:overflow-hidden mobile:rounded-lg mobile:px-0 mobile:py-1 mobile:text-[10px] mobile:leading-3;
   }
 
   .nav-item-active {

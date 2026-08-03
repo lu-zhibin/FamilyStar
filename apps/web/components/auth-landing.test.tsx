@@ -15,6 +15,13 @@ describe('AuthLanding', () => {
     expect(markup).toContain('aria-live="polite"');
   });
 
+  it('anchors dynamic identity forms below a stable heading', () => {
+    const source = AuthLanding.toString();
+
+    expect(source).toContain('items-start justify-center');
+    expect(source).toContain('今天以谁的身份出发？');
+  });
+
   it('renders parent login and registration fields', () => {
     const login = renderToStaticMarkup(
       <ParentForm mode="login" pending={false} onModeChange={vi.fn()} onSubmit={vi.fn()} />,

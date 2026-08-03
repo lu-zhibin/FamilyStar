@@ -147,6 +147,56 @@ async function mockApi(page, handler, role = 'parent') {
 }
 
 test.describe('FamilyStar portal routes', () => {
+  test('keeps the login heading anchored when identity forms change', async ({ page }) => {
+    await page.route('**/api/v1/auth/session', (route) => route.fulfill(envelope({}, 401)));
+
+    for (const viewport of [
+      { width: 390, height: 844 },
+      { width: 1280, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/');
+
+      const heading = page.getByRole('heading', { name: '今天以谁的身份出发？' });
+      await expect(heading).toBeVisible();
+      const parentPosition = await heading.boundingBox();
+
+      await page.getByRole('tab', { name: '我是孩子' }).click();
+      await expect(page.getByText('找到你的家庭', { exact: true })).toBeVisible();
+      const childPosition = await heading.boundingBox();
+
+      expect(parentPosition).not.toBeNull();
+      expect(childPosition).not.toBeNull();
+      expect(childPosition.y).toBe(parentPosition.y);
+    }
+  });
+
+  test('fits all nine parent navigation items without mobile overflow', async ({ page }) => {
+    await mockApi(page);
+
+    for (const width of [320, 375]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.goto('/dashboard');
+
+      const navigation = page.getByRole('navigation', { name: '家长端模块导航' });
+      const links = navigation.getByRole('link');
+      await expect(links).toHaveCount(9);
+      for (const link of await links.all()) await expect(link).toBeVisible();
+
+      const dimensions = await page.evaluate(() => {
+        const navigationContent = document.querySelector('.nav-scroll');
+        return {
+          documentClientWidth: document.documentElement.clientWidth,
+          documentScrollWidth: document.documentElement.scrollWidth,
+          navigationClientWidth: navigationContent?.clientWidth,
+          navigationScrollWidth: navigationContent?.scrollWidth,
+        };
+      });
+      expect(dimensions.documentScrollWidth).toBe(dimensions.documentClientWidth);
+      expect(dimensions.navigationScrollWidth).toBe(dimensions.navigationClientWidth);
+    }
+  });
+
   test('renders all nine parent pages with current navigation state', async ({ page }) => {
     test.setTimeout(120_000);
     await mockApi(page);
