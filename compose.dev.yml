@@ -53,7 +53,14 @@ services:
       target: api
       cache_from:
         - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-api
-    command: [pnpm, --filter, '@familystar/api', prisma:migrate:deploy]
+    command:
+      [
+        /app/apps/api/node_modules/.bin/prisma,
+        migrate,
+        deploy,
+        --schema,
+        apps/api/prisma/schema.prisma,
+      ]
     environment: *backend-environment
     depends_on:
       postgres:
