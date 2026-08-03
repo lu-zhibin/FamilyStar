@@ -1,5 +1,41 @@
 # FamilyStar 开发记录
 
+## 2026-08-03：稳定登录标题与移动端家长导航
+
+- 记录 ID：`FS-WEB-RESPONSIVE-STABILITY-001`
+- 分支与修复提交：`dev` / `9ef173c`
+- 状态：已部署并通过浏览器验收
+
+### 问题与修复
+
+- 登录页右侧内容使用垂直居中，家长与孩子表单高度差会带动欢迎语、主标题和副标题上下移动；登录内容改为顶部对齐，使动态高度只在身份切换控件下方展开。
+- 家长端底部导航每项原有 72px 最小宽度，九项在手机视口产生横向滚动；移动断点改为九等分网格，并收紧图标、文字、间距、圆角和激活背景尺寸。
+- 统一家庭登录需求与技术设计已补充响应式稳定性验收标准，覆盖 320px 至 767px 导航和身份切换标题锚点。
+
+### 验证结果
+
+- 完整 Vitest 套件 82 个文件、529 项通过；Web TypeScript、零警告 ESLint、Prettier、设计系统检查、生产构建和 `git diff --check` 通过。
+- Playwright 11 项完整回归通过；390px 与 1280px 视口切换身份前后标题 y 坐标一致，320px 与 375px 视口的九项家长导航完整可见，导航和页面滚动宽度均等于可见宽度。
+- 开发环境真实浏览器验证 390px 标题 y=511.34375、1280px 标题 y=85，两种视口切换前后坐标均保持不变。
+
+## 2026-08-03：部署界面稳定性修复版本
+
+- 记录 ID：`FS-DEPLOY-DEV-011`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `9ef173c`
+
+### 发布结果
+
+- 从提交 `9ef173c` 的独立源码归档构建并推送 `dev-20260803-9ef173c-api`、`dev-20260803-9ef173c-worker` 和 `dev-20260803-9ef173c-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:7d87f6a3cab13364dfe993615dfb5f4a3f5c517c9c5c9d74a26db1799150478c`、`sha256:4662509dbd42bf9dcdeefc35f1a04792bfdfc3f2ccac6f496a1b906c175849f7` 和 `sha256:46f98b42de3c1d593046f5bfa23373b44a84b9e63b692c451619d6738c6734fd`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-9ef173c-20260803.dump`，文件大小 1641704 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy；公网首页返回 HTTP 200，同源健康接口返回 `status: ok`。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260803-a832dcc-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-9ef173c-20260803.dump`。
+
 ## 2026-08-03：纠正家长端页面顶部留白验收对象
 
 - 记录 ID：`FS-PARENT-HEADER-SPACING-001`
