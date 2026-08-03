@@ -6,7 +6,7 @@
 
 阶段 8 在 Next.js 14 App Router 中实现 `/dashboard`、`/tasks`、`/reviews`、`/rewards`、`/levels`、`/stats`、`/records`、`/family` 和 `/settings` 九个家长端页面。动态路由只接受固定白名单，未知页面进入 Next.js 404。
 
-`ParentShell` 提供品牌顶栏、退出入口和固定底部九 Tab 导航。家长动态路由在服务端校验有效家长会话；导航在宽屏均分，在窄屏横向滚动，当前页面使用 `aria-current="page"` 并自动滚入视野。家长端与孩子端主内容区均使用 `page-shell py-7 mobile:py-5`，统一保留桌面端 28px、移动端 20px 的顶部页边距。
+`ParentShell` 提供品牌顶栏、退出入口和固定底部九 Tab 导航。家长动态路由在服务端校验有效家长会话；导航在宽屏均分，在窄屏横向滚动，当前页面使用 `aria-current="page"` 并自动滚入视野。家长端外层使用 `pt-7 mobile:pt-5`，使页面顶部到 Header 顶边保留桌面 28px、手机 20px 留白；主内容区继续使用 `page-shell py-7 mobile:py-5`。孩子端保持原有 `page-shell` 主内容容器。
 
 阶段 9 实现 `/child`、`/child/check-ins`、`/child/achievements`、`/child/rewards`、`/child/records` 和 `/child/profile` 六个孩子端页面。`ChildShell` 提供账号切换、退出入口、身份提示、年龄友好控件、FamilyStar 进入动画和五项固定底部导航；孩子路由在服务端校验有效孩子会话，“我的记录”从“我的信息”进入并保持“我的”导航激活。
 
@@ -32,4 +32,4 @@
 
 ## 验证
 
-家长端与孩子端组件测试分别服务端渲染九个和六个页面，并验证认证门户不输出预置身份与业务数据；双端测试均锁定 `page-shell py-7 mobile:py-5` 响应式主内容容器。`api-resource` 测试覆盖空数组有效状态和缺失必需字段错误；任务请求测试覆盖创建字段规范化、编辑字段规范化与清空说明；审核测试覆盖权威重拉、稳定幂等键和失败保留。当前全仓测试为 82 个文件、528 项，Playwright 浏览器回归为 9 项，TypeScript、零警告 ESLint、Prettier、覆盖率门禁和生产构建均通过。开发环境真实浏览器验收覆盖九个家长页面和六个孩子页面的桌面与移动视口，确认双端顶部页边距均为桌面 28px、手机 20px，并留存双端手机截图核对完整视觉起始位置。
+家长端与孩子端组件测试分别服务端渲染九个和六个页面，并验证认证门户不输出预置身份与业务数据；家长端测试锁定外层 `pt-7 mobile:pt-5` 和主内容 `page-shell py-7 mobile:py-5`，孩子端保持原有壳层。`api-resource` 测试覆盖空数组有效状态和缺失必需字段错误；任务请求测试覆盖创建字段规范化、编辑字段规范化与清空说明；审核测试覆盖权威重拉、稳定幂等键和失败保留。当前全仓测试为 82 个文件、528 项，Playwright 浏览器回归为 9 项，TypeScript、零警告 ESLint、Prettier、覆盖率门禁和生产构建均通过。开发环境真实浏览器验收覆盖九个家长页面的桌面与移动视口，确认页面顶部到 Header 顶边的距离分别为 28px 和 20px。

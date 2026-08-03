@@ -14,7 +14,7 @@ Web 使用 Next.js standalone 产物，构建阶段将 rewrite 目标固定为 D
 
 ## 开发编排
 
-`compose.dev.yml` 组合 PostgreSQL 16、Redis 7、一次性迁移服务、API、Worker 和 Web。PostgreSQL 与 Redis 先通过健康检查，迁移服务成功退出后 API 与 Worker 启动，Web 再等待 API 健康。
+`compose.dev.yml` 组合 PostgreSQL 16、Redis 7、一次性迁移服务、API、Worker 和 Web。PostgreSQL 与 Redis 先通过健康检查，迁移服务直接执行镜像内 API 工作区的 Prisma CLI，成功退出后 API 与 Worker 启动，Web 再等待 API 健康；运行时无需通过 Corepack 下载 pnpm。
 
 开发环境仅将 `0.0.0.0:8098` 映射到 Web 3000。Web 通过内部地址 `http://api:3001` 转发 `/api`，其余服务仅连接 `internal` bridge 网络。开发镜像允许本地构建，并支持 `CACHE_TAG` 复用远端缓存。
 
