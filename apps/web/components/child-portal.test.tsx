@@ -15,6 +15,7 @@ describe('ChildPortal', () => {
       expect(markup).toContain('aria-label="退出孩子端"');
       expect(markup).toContain('aria-current="page"');
       expect(markup).toContain('child-bottom-nav');
+      expect(markup).toContain('<main class="page-shell py-7 mobile:py-5">');
     },
   );
 

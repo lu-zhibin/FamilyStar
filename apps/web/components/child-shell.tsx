@@ -87,7 +87,7 @@ export function ChildShell({
         </p>
       )}
 
-      <main className="page-shell">{children}</main>
+      <main className="page-shell py-7 mobile:py-5">{children}</main>
 
       <nav className="child-bottom-nav" aria-label="孩子端主导航">
         <div className="mx-auto flex max-w-[720px] items-center justify-around px-2">
