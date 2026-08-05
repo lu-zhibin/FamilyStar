@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildChildCredentialPatch,
+  buildChildProfilePatch,
   buildSoloTaskDraft,
   buildSubmissionReviewRequest,
   buildTaskPatch,
@@ -11,6 +13,61 @@ import {
   parentSectionPaths,
   parentSections,
 } from './parent-portal';
+
+describe('child management payloads', () => {
+  it('normalizes editable profile fields and preserves an uploaded avatar', () => {
+    const form = new FormData();
+    form.set('nickname', '  小星  ');
+    form.set('gender', 'female');
+    form.set('birthday', '2020-02-29');
+    form.set('grade', '  一年级  ');
+
+    expect(buildChildProfilePatch(form, '2fb8569c-4b39-4adc-956e-e5da1edbdf4c')).toEqual({
+      nickname: '小星',
+      gender: 'female',
+      birthday: '2020-02-29',
+      grade: '一年级',
+      avatar_media_id: '2fb8569c-4b39-4adc-956e-e5da1edbdf4c',
+    });
+  });
+
+  it('uses null to clear optional profile fields', () => {
+    const form = new FormData();
+    form.set('nickname', '小树');
+    form.set('gender', 'male');
+    form.set('birthday', '');
+    form.set('grade', '  ');
+
+    expect(buildChildProfilePatch(form, null)).toMatchObject({
+      birthday: null,
+      grade: null,
+      avatar_media_id: null,
+    });
+  });
+
+  it('builds PIN and password resets and rejects invalid credentials', () => {
+    const pin = new FormData();
+    pin.set('credential_type', 'pin');
+    pin.set('credential', '123456');
+    pin.set('credential_confirmation', '123456');
+    expect(buildChildCredentialPatch(pin)).toEqual({
+      credential_type: 'pin',
+      credential: '123456',
+    });
+
+    pin.set('credential_confirmation', '654321');
+    expect(() => buildChildCredentialPatch(pin)).toThrow('两次输入的凭据不一致');
+
+    const password = new FormData();
+    password.set('credential_type', 'password');
+    password.set('credential', '123456');
+    password.set('credential_confirmation', '123456');
+    expect(() => buildChildCredentialPatch(password)).toThrow('需要包含字母');
+
+    password.set('credential_type', 'unknown');
+    expect(() => buildChildCredentialPatch(password)).toThrow('请选择有效的登录凭据模式');
+  });
+});
 
 describe('submission review requests', () => {
   const target = {

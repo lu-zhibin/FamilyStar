@@ -14,6 +14,16 @@ export const parentSections = [
 
 export type ParentSection = (typeof parentSections)[number];
 export type ReviewTargetType = 'CHECK_IN' | 'COLLABORATION_SUBMISSION';
+export type ChildCredentialType = 'pin' | 'password';
+export type ParentChild = Readonly<{
+  id: string;
+  nickname: string;
+  credentialType: ChildCredentialType;
+  gender: 'male' | 'female';
+  birthday: string | null;
+  grade: string | null;
+  avatarMediaId: string | null;
+}>;
 
 export const parentSectionPaths: Record<ParentSection, string> = {
   dashboard: '/dashboard',
@@ -33,6 +43,37 @@ export function isParentSection(value: string): value is ParentSection {
 
 export function canAccessParentPortal(role: string | null): boolean {
   return role === null || role === 'parent';
+}
+
+type ChildFormData = Pick<FormData, 'get'>;
+
+export function buildChildProfilePatch(form: ChildFormData, avatarMediaId?: string | null) {
+  const birthday = String(form.get('birthday') ?? '').trim();
+  const grade = String(form.get('grade') ?? '').trim();
+  return {
+    nickname: String(form.get('nickname') ?? '').trim(),
+    gender: String(form.get('gender') ?? '') as ParentChild['gender'],
+    birthday: birthday || null,
+    grade: grade || null,
+    ...(avatarMediaId === undefined ? {} : { avatar_media_id: avatarMediaId }),
+  };
+}
+
+export function buildChildCredentialPatch(form: ChildFormData) {
+  const credentialType = String(form.get('credential_type') ?? '');
+  const credential = String(form.get('credential') ?? '');
+  const confirmation = String(form.get('credential_confirmation') ?? '');
+  if (credentialType !== 'pin' && credentialType !== 'password') {
+    throw new Error('请选择有效的登录凭据模式。');
+  }
+  if (credential !== confirmation) throw new Error('两次输入的凭据不一致。');
+  if (credentialType === 'pin' && !/^\d{4,6}$/.test(credential)) {
+    throw new Error('PIN 需要填写 4 至 6 位数字。');
+  }
+  if (credentialType === 'password' && (credential.length < 6 || !/[A-Za-z]/.test(credential))) {
+    throw new Error('密码至少 6 位，并且需要包含字母。');
+  }
+  return { credential_type: credentialType, credential };
 }
 
 export function buildSoloTaskDraft(form: Pick<FormData, 'get'>, startDate: string) {

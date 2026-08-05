@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
+  Trash2,
   TrendingUp,
   Trophy,
   UserPlus,
@@ -32,21 +33,25 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
 import { authApi, type SessionIdentity } from '../lib/auth';
 import {
+  buildChildCredentialPatch,
+  buildChildProfilePatch,
   buildSoloTaskDraft,
   buildSubmissionReviewRequest,
   buildTaskPatch,
   copyTextToClipboard,
   formatFrequency,
   parentApi,
+  type ParentChild,
   type ParentSection,
   type ReviewTargetType,
 } from '../lib/parent-portal';
+import { uploadMediaFile } from '../lib/media-upload';
 import { ParentShell } from './parent-shell';
 
 type LoadState = ApiLoadState;
 type FamilyCodeLoadState = 'loading' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'error';
-type Child = { id: string; nickname: string; grade: string | null; gender: 'male' | 'female' };
+type Child = ParentChild;
 type Task = {
   id: string;
   task_type_id: string;
@@ -1077,11 +1082,17 @@ function RecordsPage() {
 
 function FamilyPage() {
   const children = useApiData<Child[]>('/family/children', 'children', []);
-  const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingChild, setEditingChild] = useState<Child | null>(null);
+  const [credentialChild, setCredentialChild] = useState<Child | null>(null);
+  const [deactivatingChild, setDeactivatingChild] = useState<Child | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [familyCode, setFamilyCode] = useState('');
   const [familyCodeState, setFamilyCodeState] = useState<FamilyCodeLoadState>('loading');
   const [copyState, setCopyState] = useState<CopyState>('idle');
-  const [actionMessage, setActionMessage] = useState('');
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error'; message: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     let active = true;
@@ -1107,26 +1118,107 @@ function FamilyPage() {
     }
   }
 
+  async function refreshAfterWrite(successMessage: string): Promise<void> {
+    try {
+      await children.refresh();
+      setFeedback({ tone: 'success', message: successMessage });
+    } catch {
+      setFeedback({ tone: 'error', message: '操作已提交，成员列表刷新失败，请刷新页面确认。' });
+    }
+  }
+
+  function errorMessage(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
+  }
+
   async function createChild(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setActionMessage('');
+    if (busyAction) return;
     const form = new FormData(event.currentTarget);
-    const draft = {
-      nickname: String(form.get('nickname')),
-      credential_type: 'pin',
-      credential: String(form.get('credential')),
-      gender: String(form.get('gender')),
-      grade: String(form.get('grade')) || null,
-    };
+    setBusyAction('create');
+    setFeedback(null);
     try {
-      const data = await parentApi<{ child: Child }>('/family/children', {
+      await parentApi<{ child: Child }>('/family/children', {
         method: 'POST',
-        body: JSON.stringify(draft),
+        body: JSON.stringify({
+          nickname: String(form.get('nickname') ?? '').trim(),
+          gender: form.get('gender'),
+          birthday: form.get('birthday') || undefined,
+          grade: String(form.get('grade') ?? '').trim() || undefined,
+          ...buildChildCredentialPatch(form),
+        }),
       });
-      children.setData((items) => [...items, data.child]);
-      setOpen(false);
-    } catch {
-      setActionMessage('孩子档案创建失败，请检查信息后重试。');
+      setCreateOpen(false);
+      await refreshAfterWrite('孩子档案已创建。');
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '创建孩子档案失败。') });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function updateChild(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingChild || busyAction) return;
+    const form = new FormData(event.currentTarget);
+    setBusyAction(`profile:${editingChild.id}`);
+    setFeedback(null);
+    try {
+      const avatar = form.get('avatar');
+      let avatarMediaId: string | null | undefined;
+      if (avatar instanceof File && avatar.size > 0) {
+        avatarMediaId = await uploadMediaFile(avatar, {
+          idempotencyKey: `child-avatar-${editingChild.id}-${crypto.randomUUID()}`,
+        });
+      } else if (form.get('clear_avatar') === 'true') {
+        avatarMediaId = null;
+      }
+      await parentApi<{ child: Child }>(`/family/children/${editingChild.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(buildChildProfilePatch(form, avatarMediaId)),
+      });
+      setEditingChild(null);
+      await refreshAfterWrite('孩子档案已更新。');
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '更新孩子档案失败。') });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function resetCredential(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!credentialChild || busyAction) return;
+    const form = new FormData(event.currentTarget);
+    setBusyAction(`credential:${credentialChild.id}`);
+    setFeedback(null);
+    try {
+      await parentApi<{ child: Child }>(`/family/children/${credentialChild.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(buildChildCredentialPatch(form)),
+      });
+      setCredentialChild(null);
+      await refreshAfterWrite('登录凭据已重置，孩子的旧会话已撤销。');
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '重置登录凭据失败。') });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deactivateChild() {
+    if (!deactivatingChild || busyAction) return;
+    const child = deactivatingChild;
+    setBusyAction(`deactivate:${child.id}`);
+    setFeedback(null);
+    try {
+      await parentApi<{ childId: string }>(`/family/children/${child.id}`, { method: 'DELETE' });
+      setDeactivatingChild(null);
+      await refreshAfterWrite(`${child.nickname}的档案已停用，历史记录继续保留。`);
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '停用孩子档案失败。') });
+    } finally {
+      setBusyAction(null);
     }
   }
   return (
@@ -1137,15 +1229,25 @@ function FamilyPage() {
         description="管理孩子档案、双家长协作和家庭基础信息。"
         state={children.state}
         action={
-          <button className="primary-button" onClick={() => setOpen(true)}>
+          <button
+            className="primary-button"
+            disabled={Boolean(busyAction)}
+            onClick={() => {
+              setFeedback(null);
+              setCreateOpen(true);
+            }}
+          >
             <UserPlus size={17} />
             添加孩子
           </button>
         }
       />
-      {actionMessage && (
-        <p className="notice mb-4 text-red" role="alert">
-          {actionMessage}
+      {feedback && (
+        <p
+          className={`notice mb-4 ${feedback.tone === 'error' ? 'text-red' : 'text-leaf-dark'}`}
+          role={feedback.tone === 'error' ? 'alert' : 'status'}
+        >
+          {feedback.message}
         </p>
       )}
       <FamilyCodeCard
@@ -1165,10 +1267,46 @@ function FamilyPage() {
                 <p className="text-caption font-bold text-brown-light">
                   {child.grade ?? '未设置年级'} · {child.gender === 'female' ? '女孩' : '男孩'}
                 </p>
-                <button className="mt-3 text-button">
-                  <Pencil size={15} />
-                  编辑档案
-                </button>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button
+                    className="text-button"
+                    type="button"
+                    disabled={Boolean(busyAction)}
+                    onClick={() => {
+                      setFeedback(null);
+                      setEditingChild(child);
+                    }}
+                  >
+                    <Pencil size={15} />
+                    编辑档案
+                  </button>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title="重置登录凭据"
+                    aria-label={`重置${child.nickname}的登录凭据`}
+                    disabled={Boolean(busyAction)}
+                    onClick={() => {
+                      setFeedback(null);
+                      setCredentialChild(child);
+                    }}
+                  >
+                    <KeyRound size={17} />
+                  </button>
+                  <button
+                    className="icon-button text-red"
+                    type="button"
+                    title="停用档案"
+                    aria-label={`停用${child.nickname}的档案`}
+                    disabled={Boolean(busyAction)}
+                    onClick={() => {
+                      setFeedback(null);
+                      setDeactivatingChild(child);
+                    }}
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
               </div>
             </article>
           ))}
@@ -1194,12 +1332,23 @@ function FamilyPage() {
           />
         </Panel>
       </div>
-      {open && (
-        <Modal title="添加孩子" onClose={() => setOpen(false)}>
-          <form className="space-y-4" onSubmit={createChild}>
+      {createOpen && (
+        <Modal title="添加孩子" onClose={() => !busyAction && setCreateOpen(false)}>
+          {feedback?.tone === 'error' && (
+            <p className="notice mb-4 text-red" role="alert">
+              {feedback.message}
+            </p>
+          )}
+          <form className="space-y-4" onSubmit={createChild} aria-busy={busyAction === 'create'}>
             <label className="field-label">
               昵称
-              <input className="field" name="nickname" required placeholder="孩子昵称" />
+              <input
+                className="field"
+                name="nickname"
+                maxLength={80}
+                required
+                placeholder="孩子昵称"
+              />
             </label>
             <div className="grid grid-cols-2 gap-3">
               <label className="field-label">
@@ -1215,22 +1364,197 @@ function FamilyPage() {
               </label>
             </div>
             <label className="field-label">
-              登录 PIN
+              生日（可选）
+              <input className="field" name="birthday" type="date" />
+            </label>
+            <label className="field-label">
+              登录凭据模式
+              <select className="field" name="credential_type" defaultValue="pin">
+                <option value="pin">PIN（4 至 6 位数字）</option>
+                <option value="password">密码（至少 6 位并包含字母）</option>
+              </select>
+            </label>
+            <label className="field-label">
+              初始登录凭据
+              <input className="field" name="credential" autoComplete="new-password" required />
+            </label>
+            <label className="field-label">
+              再次输入
               <input
                 className="field"
-                name="credential"
-                inputMode="numeric"
-                pattern="[0-9]{4,6}"
-                minLength={4}
-                maxLength={6}
+                name="credential_confirmation"
+                autoComplete="new-password"
                 required
-                placeholder="4-6 位数字"
               />
             </label>
-            <button className="primary-button w-full justify-center" type="submit">
-              创建孩子档案
+            <button
+              className="primary-button w-full justify-center"
+              type="submit"
+              disabled={Boolean(busyAction)}
+            >
+              {busyAction === 'create' ? '正在创建...' : '创建孩子档案'}
             </button>
           </form>
+        </Modal>
+      )}
+      {editingChild && (
+        <Modal
+          title={`编辑${editingChild.nickname}的档案`}
+          onClose={() => !busyAction && setEditingChild(null)}
+        >
+          {feedback?.tone === 'error' && (
+            <p className="notice mb-4 text-red" role="alert">
+              {feedback.message}
+            </p>
+          )}
+          <form
+            key={editingChild.id}
+            className="space-y-4"
+            onSubmit={updateChild}
+            aria-busy={busyAction === `profile:${editingChild.id}`}
+          >
+            <label className="field-label">
+              昵称
+              <input
+                className="field"
+                name="nickname"
+                defaultValue={editingChild.nickname}
+                maxLength={80}
+                required
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="field-label">
+                性别
+                <select className="field" name="gender" defaultValue={editingChild.gender}>
+                  <option value="female">女孩</option>
+                  <option value="male">男孩</option>
+                </select>
+              </label>
+              <label className="field-label">
+                年级
+                <input
+                  className="field"
+                  name="grade"
+                  maxLength={80}
+                  defaultValue={editingChild.grade ?? ''}
+                />
+              </label>
+            </div>
+            <label className="field-label">
+              生日（可选）
+              <input
+                className="field"
+                name="birthday"
+                type="date"
+                defaultValue={editingChild.birthday ?? ''}
+              />
+            </label>
+            <label className="field-label">
+              更换头像（可选）
+              <input
+                className="field"
+                name="avatar"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+              />
+            </label>
+            {editingChild.avatarMediaId && (
+              <label className="flex items-center gap-2 font-bold text-brown-light">
+                <input type="checkbox" name="clear_avatar" value="true" />
+                移除当前头像
+              </label>
+            )}
+            <button
+              className="primary-button w-full justify-center"
+              type="submit"
+              disabled={Boolean(busyAction)}
+            >
+              {busyAction === `profile:${editingChild.id}` ? '正在保存...' : '保存档案'}
+            </button>
+          </form>
+        </Modal>
+      )}
+      {credentialChild && (
+        <Modal
+          title={`重置${credentialChild.nickname}的登录凭据`}
+          onClose={() => !busyAction && setCredentialChild(null)}
+        >
+          <p className="notice mb-4">保存后将撤销该孩子在所有设备上的现有登录会话。</p>
+          {feedback?.tone === 'error' && (
+            <p className="notice mb-4 text-red" role="alert">
+              {feedback.message}
+            </p>
+          )}
+          <form
+            key={credentialChild.id}
+            className="space-y-4"
+            onSubmit={resetCredential}
+            aria-busy={busyAction === `credential:${credentialChild.id}`}
+          >
+            <label className="field-label">
+              凭据模式
+              <select
+                className="field"
+                name="credential_type"
+                defaultValue={credentialChild.credentialType}
+              >
+                <option value="pin">PIN（4 至 6 位数字）</option>
+                <option value="password">密码（至少 6 位并包含字母）</option>
+              </select>
+            </label>
+            <label className="field-label">
+              新登录凭据
+              <input className="field" name="credential" autoComplete="new-password" required />
+            </label>
+            <label className="field-label">
+              再次输入
+              <input
+                className="field"
+                name="credential_confirmation"
+                autoComplete="new-password"
+                required
+              />
+            </label>
+            <button
+              className="primary-button w-full justify-center"
+              type="submit"
+              disabled={Boolean(busyAction)}
+            >
+              {busyAction === `credential:${credentialChild.id}` ? '正在重置...' : '确认重置'}
+            </button>
+          </form>
+        </Modal>
+      )}
+      {deactivatingChild && (
+        <Modal title="确认停用孩子档案" onClose={() => !busyAction && setDeactivatingChild(null)}>
+          <p className="font-semibold text-brown-light">
+            停用后，{deactivatingChild.nickname}
+            将立即退出所有设备。任务、打卡、积分和成长记录会继续保留。
+          </p>
+          {feedback?.tone === 'error' && (
+            <p className="notice mt-4 text-red" role="alert">
+              {feedback.message}
+            </p>
+          )}
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={Boolean(busyAction)}
+              onClick={() => setDeactivatingChild(null)}
+            >
+              取消
+            </button>
+            <button
+              className="primary-button bg-red"
+              type="button"
+              disabled={Boolean(busyAction)}
+              onClick={deactivateChild}
+            >
+              {busyAction === `deactivate:${deactivatingChild.id}` ? '正在停用...' : '确认停用'}
+            </button>
+          </div>
         </Modal>
       )}
     </>
