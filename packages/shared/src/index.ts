@@ -48,6 +48,11 @@ export type ApiResponseMeta = {
   timestamp: string;
 };
 
+export type CursorPage = {
+  next_cursor: string | null;
+  has_more: boolean;
+};
+
 export type ApiSuccessResponse<T> = {
   success: true;
   data: T;
