@@ -129,6 +129,12 @@ describe('family auth HTTP routes', () => {
       async accept() {
         throw new Error('Unexpected acceptance call.');
       },
+      async resend() {
+        throw new Error('Unexpected resend call.');
+      },
+      async revoke() {
+        throw new Error('Unexpected revoke call.');
+      },
     };
     const app = createApp({
       publicBaseUrl: 'http://localhost:3000',
@@ -174,6 +180,12 @@ describe('family auth HTTP routes', () => {
           sessionToken: 'second-parent-session',
         };
       },
+      async resend() {
+        throw new Error('Unexpected resend call.');
+      },
+      async revoke() {
+        throw new Error('Unexpected revoke call.');
+      },
     };
     const app = createApp({
       publicBaseUrl: 'http://localhost:3000',
@@ -198,6 +210,81 @@ describe('family auth HTTP routes', () => {
       success: true,
       data: { parent: { id: 'parent-2', familyId: 'family-1' } },
     });
+  });
+
+  it('resends and revokes a family invitation from the creator session', async () => {
+    const invitationId = '00000000-0000-4000-8000-000000000003';
+    const invitations: InvitationOperations = {
+      async create() {
+        throw new Error('Unexpected creation call.');
+      },
+      async accept() {
+        throw new Error('Unexpected acceptance call.');
+      },
+      async resend(input) {
+        expect(input).toMatchObject({
+          sessionToken: 'parent-session',
+          invitationId,
+        });
+        return {
+          invitation: {
+            id: invitationId,
+            email: 'second@example.com',
+            expiresAt: '2026-08-12T12:00:00.000Z',
+          },
+          delivery: 'email',
+        };
+      },
+      async revoke(input) {
+        expect(input).toEqual({ sessionToken: 'parent-session', invitationId });
+        return { invitation: { id: invitationId, status: 'expired' } };
+      },
+    };
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      familyAuthService: createService(),
+      invitationService: invitations,
+    });
+    const headers = { cookie: 'familystar_session=parent-session' };
+
+    const resend = await app.request(`/api/v1/family/invitations/${invitationId}/resend`, {
+      method: 'POST',
+      headers,
+    });
+    expect(resend.status).toBe(200);
+    expect(resend.headers.get('set-cookie')).toContain('familystar_session=parent-session');
+    expect(await resend.json()).toMatchObject({
+      data: { delivery: 'email', invitation: { id: invitationId } },
+    });
+
+    const revoke = await app.request(`/api/v1/family/invitations/${invitationId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    expect(revoke.status).toBe(200);
+    expect(await revoke.json()).toMatchObject({
+      data: { invitation: { id: invitationId, status: 'expired' } },
+    });
+  });
+
+  it('rejects malformed invitation management identifiers', async () => {
+    const invitations: InvitationOperations = {
+      create: vi.fn(),
+      accept: vi.fn(),
+      resend: vi.fn(),
+      revoke: vi.fn(),
+    };
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      familyAuthService: createService(),
+      invitationService: invitations,
+    });
+
+    const response = await app.request('/api/v1/family/invitations/not-a-uuid/resend', {
+      method: 'POST',
+    });
+    expect(response.status).toBe(400);
+    expect(invitations.resend).not.toHaveBeenCalled();
   });
 
   it('reads and rolls a valid session cookie', async () => {

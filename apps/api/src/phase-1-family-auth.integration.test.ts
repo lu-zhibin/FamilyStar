@@ -37,6 +37,8 @@ import type {
   FamilyInvitationRepository,
   InvitationCreation,
   ParentIdentity,
+  RefreshInvitationInput,
+  RevokeInvitationInput,
 } from './family-auth/types.js';
 import { createRedisKeyspace } from './infrastructure/redis/keys.js';
 import type { RedisCommandPort } from './infrastructure/redis/primitives.js';
@@ -62,7 +64,7 @@ type InvitationRecord = {
   email: string;
   tokenHash: string;
   expiresAt: Date;
-  status: 'pending' | 'accepted';
+  status: 'pending' | 'accepted' | 'expired';
 };
 
 type ChildRecord = ChildIdentity & { deletedAt: Date | null };
@@ -259,6 +261,50 @@ class MemoryFamilyStore
       },
       emailConfigured: family.emailConfigured,
     };
+  }
+
+  async refresh(
+    transaction: FamilyAuthState,
+    input: RefreshInvitationInput,
+  ): Promise<InvitationCreation> {
+    const family = transaction.families.find((candidate) => candidate.id === input.familyId);
+    if (!family || family.createdById !== input.actorId) {
+      throw new InvitationCreatorRequiredError();
+    }
+    const invitation = transaction.invitations.find(
+      (candidate) => candidate.id === input.invitationId && candidate.familyId === input.familyId,
+    );
+    if (!invitation || invitation.status !== 'pending') throw new InvitationUnavailableError();
+    if (invitation.expiresAt <= input.now) throw new InvitationExpiredError();
+    invitation.tokenHash = input.tokenHash;
+    invitation.expiresAt = new Date(input.expiresAt);
+    invitation.invitedById = input.actorId;
+    return {
+      invitation: {
+        id: invitation.id,
+        familyId: invitation.familyId,
+        invitedById: invitation.invitedById,
+        email: invitation.email,
+        expiresAt: new Date(invitation.expiresAt),
+      },
+      emailConfigured: family.emailConfigured,
+    };
+  }
+
+  async revoke(
+    transaction: FamilyAuthState,
+    input: RevokeInvitationInput,
+  ): Promise<{ id: string }> {
+    const family = transaction.families.find((candidate) => candidate.id === input.familyId);
+    if (!family || family.createdById !== input.actorId) {
+      throw new InvitationCreatorRequiredError();
+    }
+    const invitation = transaction.invitations.find(
+      (candidate) => candidate.id === input.invitationId && candidate.familyId === input.familyId,
+    );
+    if (!invitation || invitation.status === 'accepted') throw new InvitationUnavailableError();
+    invitation.status = 'expired';
+    return { id: invitation.id };
   }
 
   async accept(

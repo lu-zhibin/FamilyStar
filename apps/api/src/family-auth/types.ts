@@ -67,10 +67,28 @@ export type AcceptInvitationInput = {
   now: Date;
 };
 
+export type RefreshInvitationInput = {
+  actorId: string;
+  familyId: string;
+  invitationId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  now: Date;
+};
+
+export type RevokeInvitationInput = {
+  actorId: string;
+  familyId: string;
+  invitationId: string;
+  now: Date;
+};
+
 export type FamilyInvitationRepository<Transaction> = {
   createOrRefresh(
     transaction: Transaction,
     input: CreateInvitationInput,
   ): Promise<InvitationCreation>;
+  refresh(transaction: Transaction, input: RefreshInvitationInput): Promise<InvitationCreation>;
+  revoke(transaction: Transaction, input: RevokeInvitationInput): Promise<{ id: string }>;
   accept(transaction: Transaction, input: AcceptInvitationInput): Promise<ParentIdentity>;
 };

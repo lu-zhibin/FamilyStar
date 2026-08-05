@@ -34,6 +34,23 @@ function createHarness(options: { emailConfigured?: boolean; session?: AuthSessi
         emailConfigured: options.emailConfigured ?? false,
       };
     },
+    async refresh(_transaction, input) {
+      writes.push(input);
+      return {
+        invitation: {
+          id: input.invitationId,
+          familyId,
+          invitedById: input.actorId,
+          email: 'second@example.com',
+          expiresAt: input.expiresAt,
+        },
+        emailConfigured: options.emailConfigured ?? false,
+      };
+    },
+    async revoke(_transaction, input) {
+      writes.push(input);
+      return { id: input.invitationId };
+    },
     async accept(_transaction, input) {
       writes.push(input);
       return {
@@ -181,6 +198,45 @@ describe('FamilyInvitationService', () => {
         email: 'second@example.com',
       },
       sessionToken: 'new-session',
+    });
+  });
+
+  it('resends an invitation with a rotated token and queues email in the same transaction', async () => {
+    const harness = createHarness({ emailConfigured: true });
+
+    const result = await harness.service.resend({
+      sessionToken: 'parent-session',
+      invitationId,
+      correlationId: 'request-resend',
+    });
+
+    expect(harness.writes[0]).toMatchObject({
+      actorId: parentId,
+      familyId,
+      invitationId,
+      expiresAt: new Date(fixedNow.getTime() + INVITATION_TTL_MILLISECONDS),
+    });
+    expect(harness.writes[0]).not.toMatchObject({ tokenHash: 'plain-invitation-token' });
+    expect(result).toMatchObject({ delivery: 'email', invitation: { id: invitationId } });
+    expect(harness.events).toHaveLength(1);
+    expect(harness.events[0]).toMatchObject({
+      event_name: INVITATION_EMAIL_REQUESTED_EVENT,
+      correlation_id: 'request-resend',
+      payload: { invitation_id: invitationId },
+    });
+  });
+
+  it('revokes a pending invitation through the creator family session', async () => {
+    const harness = createHarness();
+
+    await expect(
+      harness.service.revoke({ sessionToken: 'parent-session', invitationId }),
+    ).resolves.toEqual({ invitation: { id: invitationId, status: 'expired' } });
+    expect(harness.writes[0]).toMatchObject({
+      actorId: parentId,
+      familyId,
+      invitationId,
+      now: fixedNow,
     });
   });
 });

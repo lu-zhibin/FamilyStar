@@ -120,6 +120,92 @@ describe('PrismaFamilyAuthRepository', () => {
     expect(queryRaw).toHaveBeenCalledTimes(3);
   });
 
+  it('rotates a pending invitation token and expiry for the family creator', async () => {
+    const now = new Date('2026-07-30T12:00:00.000Z');
+    const expiresAt = new Date('2026-08-06T12:00:00.000Z');
+    const invitationUpdate = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([{ id: 'family-1', createdById: 'parent-1' }])
+        .mockResolvedValueOnce([
+          {
+            id: 'invitation-1',
+            familyId: 'family-1',
+            invitedById: 'parent-1',
+            email: 'second@example.com',
+            status: 'pending',
+            expiresAt,
+          },
+        ]),
+      invitation: { update: invitationUpdate },
+      familyIntegrationSetting: {
+        findUnique: vi.fn().mockResolvedValue({ status: 'VERIFIED' }),
+      },
+    } as unknown as Prisma.TransactionClient;
+    const repository = new PrismaFamilyAuthRepository({} as PrismaClient);
+
+    await expect(
+      repository.refresh(transaction, {
+        actorId: 'parent-1',
+        familyId: 'family-1',
+        invitationId: 'invitation-1',
+        tokenHash: 'rotated-token-hash',
+        expiresAt,
+        now,
+      }),
+    ).resolves.toMatchObject({
+      invitation: { id: 'invitation-1', expiresAt },
+      emailConfigured: true,
+    });
+    expect(invitationUpdate).toHaveBeenCalledWith({
+      where: { id: 'invitation-1' },
+      data: {
+        tokenHash: 'rotated-token-hash',
+        expiresAt,
+        invitedById: 'parent-1',
+        updatedAt: now,
+      },
+    });
+  });
+
+  it('revokes a pending invitation and treats the expired terminal state idempotently', async () => {
+    const now = new Date('2026-07-30T12:00:00.000Z');
+    const pending = {
+      id: 'invitation-1',
+      familyId: 'family-1',
+      invitedById: 'parent-1',
+      email: 'second@example.com',
+      status: 'pending',
+      expiresAt: new Date('2026-08-06T12:00:00.000Z'),
+    };
+    const invitationUpdate = vi.fn().mockResolvedValue(undefined);
+    const transaction = {
+      $queryRaw: vi
+        .fn()
+        .mockResolvedValueOnce([{ id: 'family-1', createdById: 'parent-1' }])
+        .mockResolvedValueOnce([pending])
+        .mockResolvedValueOnce([{ id: 'family-1', createdById: 'parent-1' }])
+        .mockResolvedValueOnce([{ ...pending, status: 'expired' }]),
+      invitation: { update: invitationUpdate },
+    } as unknown as Prisma.TransactionClient;
+    const repository = new PrismaFamilyAuthRepository({} as PrismaClient);
+    const input = {
+      actorId: 'parent-1',
+      familyId: 'family-1',
+      invitationId: 'invitation-1',
+      now,
+    };
+
+    await expect(repository.revoke(transaction, input)).resolves.toEqual({ id: 'invitation-1' });
+    await expect(repository.revoke(transaction, input)).resolves.toEqual({ id: 'invitation-1' });
+    expect(invitationUpdate).toHaveBeenCalledOnce();
+    expect(invitationUpdate).toHaveBeenCalledWith({
+      where: { id: 'invitation-1' },
+      data: { status: 'EXPIRED', updatedAt: now },
+    });
+  });
+
   it('accepts an invitation and marks it with the second parent in one transaction', async () => {
     const now = new Date('2026-07-30T12:00:00.000Z');
     const invitation = {

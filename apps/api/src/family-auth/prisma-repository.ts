@@ -21,6 +21,8 @@ import type {
   FamilyInvitationRepository,
   InvitationCreation,
   ParentIdentity,
+  RefreshInvitationInput,
+  RevokeInvitationInput,
 } from './types.js';
 
 function mapParent(
@@ -45,6 +47,9 @@ type InvitationRow = {
   invitedById: string;
   email: string;
   expiresAt: Date;
+};
+type ManagedInvitationRow = InvitationRow & {
+  status: 'pending' | 'accepted' | 'expired';
 };
 
 export class PrismaFamilyAuthRepository
@@ -207,6 +212,95 @@ export class PrismaFamilyAuthRepository
       },
       emailConfigured: emailSetting?.status === 'VERIFIED',
     };
+  }
+
+  async refresh(
+    transaction: Prisma.TransactionClient,
+    input: RefreshInvitationInput,
+  ): Promise<InvitationCreation> {
+    const families = await transaction.$queryRaw<FamilyRow[]>(Prisma.sql`
+      SELECT "id", "created_by" AS "createdById", "family_code" AS "familyCode"
+      FROM "families"
+      WHERE "id" = ${input.familyId}::uuid AND "deleted_at" IS NULL
+      FOR UPDATE
+    `);
+    const family = families[0];
+    if (!family || family.createdById !== input.actorId) {
+      throw new InvitationCreatorRequiredError();
+    }
+
+    const invitations = await transaction.$queryRaw<ManagedInvitationRow[]>(Prisma.sql`
+      SELECT "id", "family_id" AS "familyId", "invited_by" AS "invitedById",
+             "email", "status", "expires_at" AS "expiresAt"
+      FROM "invitations"
+      WHERE "id" = ${input.invitationId}::uuid AND "family_id" = ${input.familyId}::uuid
+      FOR UPDATE
+    `);
+    const invitation = invitations[0];
+    if (!invitation || invitation.status !== 'pending') throw new InvitationUnavailableError();
+    if (invitation.expiresAt <= input.now) throw new InvitationExpiredError();
+
+    await transaction.invitation.update({
+      where: { id: invitation.id },
+      data: {
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+        invitedById: input.actorId,
+        updatedAt: input.now,
+      },
+    });
+    const emailSetting = await transaction.familyIntegrationSetting.findUnique({
+      where: {
+        familyId_integrationType: {
+          familyId: input.familyId,
+          integrationType: 'EMAIL',
+        },
+      },
+      select: { status: true },
+    });
+    return {
+      invitation: {
+        id: invitation.id,
+        familyId: invitation.familyId,
+        invitedById: input.actorId,
+        email: invitation.email,
+        expiresAt: input.expiresAt,
+      },
+      emailConfigured: emailSetting?.status === 'VERIFIED',
+    };
+  }
+
+  async revoke(
+    transaction: Prisma.TransactionClient,
+    input: RevokeInvitationInput,
+  ): Promise<{ id: string }> {
+    const families = await transaction.$queryRaw<FamilyRow[]>(Prisma.sql`
+      SELECT "id", "created_by" AS "createdById", "family_code" AS "familyCode"
+      FROM "families"
+      WHERE "id" = ${input.familyId}::uuid AND "deleted_at" IS NULL
+      FOR UPDATE
+    `);
+    const family = families[0];
+    if (!family || family.createdById !== input.actorId) {
+      throw new InvitationCreatorRequiredError();
+    }
+
+    const invitations = await transaction.$queryRaw<ManagedInvitationRow[]>(Prisma.sql`
+      SELECT "id", "family_id" AS "familyId", "invited_by" AS "invitedById",
+             "email", "status", "expires_at" AS "expiresAt"
+      FROM "invitations"
+      WHERE "id" = ${input.invitationId}::uuid AND "family_id" = ${input.familyId}::uuid
+      FOR UPDATE
+    `);
+    const invitation = invitations[0];
+    if (!invitation || invitation.status === 'accepted') throw new InvitationUnavailableError();
+    if (invitation.status === 'pending') {
+      await transaction.invitation.update({
+        where: { id: invitation.id },
+        data: { status: 'EXPIRED', updatedAt: input.now },
+      });
+    }
+    return { id: invitation.id };
   }
 
   async accept(

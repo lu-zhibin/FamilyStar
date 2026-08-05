@@ -39,6 +39,7 @@ const loginSchema = z
   })
   .strict();
 const createInvitationSchema = z.object({ email: z.email().max(320) }).strict();
+const invitationIdSchema = z.string().uuid();
 const acceptInvitationSchema = z
   .object({
     token: z.string().min(32).max(256),
@@ -228,6 +229,93 @@ export function registerFamilyAuthRoutes(
         );
       }
       if (error instanceof FamilyParentLimitError || error instanceof ParentEmailConflictError) {
+        return context.json(
+          createErrorResponse(ERROR_CODES.CONFLICT, error.message, context.get('requestId')),
+          409,
+        );
+      }
+      throw error;
+    }
+  });
+
+  api.post('/family/invitations/:id/resend', async (context) => {
+    const invitationId = invitationIdSchema.safeParse(context.req.param('id'));
+    if (!invitationId.success) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.INVALID_REQUEST,
+          'Invalid invitation identifier.',
+          context.get('requestId'),
+        ),
+        400,
+      );
+    }
+    try {
+      const sessionToken = getCookie(context, 'familystar_session');
+      const result = await invitationService.resend({
+        ...(sessionToken === undefined ? {} : { sessionToken }),
+        invitationId: invitationId.data,
+        correlationId: context.get('requestId'),
+      });
+      if (sessionToken) attachSessionCookie(context, sessionToken, secureCookies);
+      return context.json(createSuccessResponse(result, context.get('requestId')));
+    } catch (error) {
+      if (error instanceof InvitationAuthenticationError) {
+        return context.json(
+          createErrorResponse(ERROR_CODES.UNAUTHORIZED, error.message, context.get('requestId')),
+          401,
+        );
+      }
+      if (error instanceof InvitationCreatorRequiredError) {
+        return context.json(
+          createErrorResponse(ERROR_CODES.FORBIDDEN, error.message, context.get('requestId')),
+          403,
+        );
+      }
+      if (error instanceof InvitationExpiredError || error instanceof InvitationUnavailableError) {
+        return context.json(
+          createErrorResponse(ERROR_CODES.CONFLICT, error.message, context.get('requestId')),
+          409,
+        );
+      }
+      throw error;
+    }
+  });
+
+  api.delete('/family/invitations/:id', async (context) => {
+    const invitationId = invitationIdSchema.safeParse(context.req.param('id'));
+    if (!invitationId.success) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.INVALID_REQUEST,
+          'Invalid invitation identifier.',
+          context.get('requestId'),
+        ),
+        400,
+      );
+    }
+    try {
+      const sessionToken = getCookie(context, 'familystar_session');
+      const result = await invitationService.revoke({
+        ...(sessionToken === undefined ? {} : { sessionToken }),
+        invitationId: invitationId.data,
+      });
+      if (sessionToken) attachSessionCookie(context, sessionToken, secureCookies);
+      return context.json(createSuccessResponse(result, context.get('requestId')));
+    } catch (error) {
+      if (error instanceof InvitationAuthenticationError) {
+        return context.json(
+          createErrorResponse(ERROR_CODES.UNAUTHORIZED, error.message, context.get('requestId')),
+          401,
+        );
+      }
+      if (error instanceof InvitationCreatorRequiredError) {
+        return context.json(
+          createErrorResponse(ERROR_CODES.FORBIDDEN, error.message, context.get('requestId')),
+          403,
+        );
+      }
+      if (error instanceof InvitationUnavailableError) {
         return context.json(
           createErrorResponse(ERROR_CODES.CONFLICT, error.message, context.get('requestId')),
           409,
