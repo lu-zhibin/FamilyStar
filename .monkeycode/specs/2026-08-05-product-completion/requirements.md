@@ -140,9 +140,9 @@
 #### Acceptance Criteria
 
 1. WHEN 浏览器支持 PWA，Web 应用 SHALL 提供有效 manifest、图标和可安装入口。
-2. WHEN已访问页面处于离线状态，Service Worker SHALL 提供应用壳和明确离线反馈。
+2. WHEN 已访问页面处于离线状态，Service Worker SHALL 提供应用壳和明确离线反馈。
 3. WHEN TICK 或 TEXT 打卡在离线状态提交，Web 应用 SHALL 将请求保存到当前设备队列并在恢复网络后按原幂等键重放。
-4. WHEN媒体打卡处于离线状态，Web 应用 SHALL 保留本地草稿并在恢复网络后请求用户确认上传。
+4. WHEN 媒体打卡处于离线状态，Web 应用 SHALL 保留本地草稿并在恢复网络后请求用户确认上传。
 5. IF 离线重放产生业务冲突，Web 应用 SHALL 展示服务端权威状态并保留可审计失败结果。
 
 ### Requirement 12：模块开关与主题
