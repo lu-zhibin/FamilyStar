@@ -25,6 +25,29 @@ describe('query validation', () => {
     });
   });
 
+  it('property: family day bounds map back to the requested date across IANA zones', () => {
+    const timeZones = [
+      'UTC',
+      'Asia/Shanghai',
+      'Asia/Kathmandu',
+      'Pacific/Kiritimati',
+      'America/New_York',
+      'Europe/London',
+    ];
+
+    for (const timeZone of timeZones) {
+      for (let month = 1; month <= 12; month += 1) {
+        const date = `2026-${String(month).padStart(2, '0')}-15`;
+        const bounds = familyDayBounds(date, timeZone);
+        expect(familyCalendarDate(bounds.startAt, timeZone)).toBe(date);
+        expect(bounds.endAtExclusive.getTime()).toBeGreaterThan(bounds.startAt.getTime());
+        const hours = (bounds.endAtExclusive.getTime() - bounds.startAt.getTime()) / 3_600_000;
+        expect(hours).toBeGreaterThanOrEqual(23);
+        expect(hours).toBeLessThanOrEqual(25);
+      }
+    }
+  });
+
   it('resolves spring daylight saving time as a 23 hour family day', () => {
     const bounds = familyDayBounds('2026-03-08', 'America/New_York');
 
@@ -78,6 +101,30 @@ describe('query validation', () => {
     ).toThrow('The date range cannot exceed 7 days.');
   });
 
+  it('property: accepts the maximum natural-day span and rejects its successor', () => {
+    for (const maxDays of [1, 7, 31, 366]) {
+      const end = new Date(Date.UTC(2026, 0, maxDays)).toISOString().slice(0, 10);
+      expect(
+        parseFamilyDateRange({
+          startDate: '2026-01-01',
+          endDate: end,
+          timeZone: 'Asia/Kathmandu',
+          maxDays,
+        }).dayCount,
+      ).toBe(maxDays);
+
+      const over = new Date(Date.UTC(2026, 0, maxDays + 1)).toISOString().slice(0, 10);
+      expect(() =>
+        parseFamilyDateRange({
+          startDate: '2026-01-01',
+          endDate: over,
+          timeZone: 'Asia/Kathmandu',
+          maxDays,
+        }),
+      ).toThrow(InvalidQueryFilterError);
+    }
+  });
+
   it('validates IANA time zones and invalid reference times', () => {
     expect(isIanaTimeZone('Pacific/Kiritimati')).toBe(true);
     expect(isIanaTimeZone('Mars/Olympus')).toBe(false);
@@ -91,6 +138,13 @@ describe('query validation', () => {
       '01989a58-c542-7abc-8def-0123456789ab',
     );
     expect(() => parseUuidFilter('child-1', 'child_id')).toThrow('child_id must be a UUID.');
+  });
+
+  it('property: normalizes generated RFC UUID versions without changing their identity', () => {
+    for (let version = 1; version <= 8; version += 1) {
+      const value = `01989A58-C542-${version}ABC-8DEF-${String(version).repeat(12)}`;
+      expect(parseUuidFilter(value, 'child_id')).toBe(value.toLowerCase());
+    }
   });
 
   it('parses an optional value from a controlled enum', () => {

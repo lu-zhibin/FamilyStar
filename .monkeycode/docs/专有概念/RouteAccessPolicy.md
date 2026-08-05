@@ -38,6 +38,8 @@ FamilyStar 在 `apps/api/src/security/access-policy.ts` 集中声明受保护 AP
 
 ## 验证
 
+属性样本验证任意未登记版本化路径都要求认证，并对 Header、查询参数和 JSON 家庭标识的组合执行会话家庭权威性测试。规划端点使用表驱动断言固定角色和模块归属。
+
 ```bash
 pnpm exec vitest run apps/api/src/security/access-policy.test.ts apps/api/src/security/middleware.test.ts packages/shared/src/errors.test.ts
 ```

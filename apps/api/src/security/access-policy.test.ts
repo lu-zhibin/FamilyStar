@@ -43,6 +43,15 @@ describe('route access policy', () => {
     });
   });
 
+  it('property: arbitrary unregistered versioned paths never become public', () => {
+    for (let index = 0; index < 100; index += 1) {
+      const path = `/api/v1/future-${index}/resource-${index}`;
+      for (const method of ['GET', 'POST', 'PATCH', 'DELETE']) {
+        expect(resolveRouteAccessPolicy(method, path)?.role).toBe('authenticated');
+      }
+    }
+  });
+
   it('uses exact methods for public and role-specific routes', () => {
     expect(resolveRouteAccessPolicy('DELETE', '/api/v1/health')?.role).toBe('authenticated');
     expect(resolveRouteAccessPolicy('POST', '/api/v1/tasks/me')?.role).toBe('authenticated');

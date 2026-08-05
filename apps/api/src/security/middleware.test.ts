@@ -168,6 +168,26 @@ describe('security middleware', () => {
     expect(response.status).toBe(403);
   });
 
+  it('property: every client family source remains subordinate to the session family', async () => {
+    const sources = [
+      { path: '/api/v1/family/tasks?family_id=another-family', headers: cookie },
+      { path: '/api/v1/family/tasks?familyId=another-family', headers: cookie },
+      {
+        path: '/api/v1/family/tasks',
+        headers: { ...cookie, 'X-Family-Id': 'another-family' },
+      },
+      {
+        path: `/api/v1/family/tasks?family_id=${familyId}&familyId=another-family`,
+        headers: { ...cookie, 'X-Family-Id': familyId },
+      },
+    ];
+
+    for (const source of sources) {
+      const { app } = application('parent');
+      expect((await app.request(source.path, { headers: source.headers })).status).toBe(403);
+    }
+  });
+
   it('requires authentication for an unregistered versioned route', async () => {
     const { app } = application('child');
 
