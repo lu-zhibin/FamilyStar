@@ -29,6 +29,7 @@ import type { AppEnvironment } from './http/types.js';
 import type { SessionStore } from './family-auth/types.js';
 import type { AuditWriter } from './security/audit.js';
 import { createSecurityMiddleware } from './security/middleware.js';
+import type { FamilyModuleStatusPort } from './security/module-access.js';
 import { registerIntegrationSettingsRoutes } from './infrastructure/credentials/integration-routes.js';
 import type { IntegrationSettingsOperations } from './infrastructure/credentials/integration-service.js';
 
@@ -52,6 +53,7 @@ export type CreateAppOptions = {
   rewardOperations?: RewardOperations;
   sessionStore?: SessionStore;
   auditWriter?: AuditWriter;
+  familyModuleStatus?: FamilyModuleStatusPort;
   integrationSettingsOperations?: IntegrationSettingsOperations;
   secureCookies?: boolean;
 };
@@ -71,6 +73,7 @@ export function createApp({
   rewardOperations,
   sessionStore,
   auditWriter,
+  familyModuleStatus,
   integrationSettingsOperations,
   secureCookies = false,
 }: CreateAppOptions) {
@@ -92,6 +95,7 @@ export function createApp({
         publicBaseUrl,
         sessions: sessionStore,
         ...(auditWriter === undefined ? {} : { auditWriter }),
+        ...(familyModuleStatus === undefined ? {} : { familyModuleStatus }),
       }),
     );
   }

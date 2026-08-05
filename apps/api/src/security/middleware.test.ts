@@ -5,11 +5,16 @@ import { requestContext } from '../http/request-context.js';
 import type { AppEnvironment } from '../http/types.js';
 import type { AuditWriter } from './audit.js';
 import { createSecurityMiddleware } from './middleware.js';
+import type { FamilyModuleStatusPort } from './module-access.js';
 
 const familyId = '10000000-0000-4000-8000-000000000001';
 const actorId = '20000000-0000-4000-8000-000000000001';
 
-function application(role: 'parent' | 'child', auditWriter?: AuditWriter) {
+function application(
+  role: 'parent' | 'child',
+  auditWriter?: AuditWriter,
+  familyModuleStatus?: FamilyModuleStatusPort,
+) {
   const sessions = {
     create: vi.fn(),
     read: vi.fn().mockResolvedValue({
@@ -29,6 +34,7 @@ function application(role: 'parent' | 'child', auditWriter?: AuditWriter) {
       publicBaseUrl: 'http://localhost:3000',
       sessions,
       ...(auditWriter === undefined ? {} : { auditWriter }),
+      ...(familyModuleStatus === undefined ? {} : { familyModuleStatus }),
     }),
   );
   app.get('/api/v1/family/tasks', (context) =>
@@ -47,6 +53,10 @@ function application(role: 'parent' | 'child', auditWriter?: AuditWriter) {
   );
   app.post('/api/v1/auth/child/family', (context) => context.json({ ok: true }));
   app.post('/api/v1/auth/child/login', (context) => context.json({ ok: true }));
+  app.get('/api/v1/family/analytics', (context) => context.json({ ok: true }));
+  app.get('/api/v1/future-capability', (context) =>
+    context.json({ familyId: context.get('authSession')?.familyId }),
+  );
   return { app, sessions };
 }
 
@@ -146,6 +156,49 @@ describe('security middleware', () => {
     expect([headerResponse.status, queryResponse.status, bodyResponse.status]).toEqual([
       403, 403, 403,
     ]);
+  });
+
+  it('rejects any conflicting family id when multiple sources are supplied', async () => {
+    const { app } = application('parent');
+    const response = await app.request(
+      `/api/v1/family/tasks?family_id=${familyId}&familyId=another-family`,
+      { headers: { ...cookie, 'X-Family-Id': familyId } },
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it('requires authentication for an unregistered versioned route', async () => {
+    const { app } = application('child');
+
+    expect((await app.request('/api/v1/future-capability')).status).toBe(401);
+    const response = await app.request('/api/v1/future-capability', { headers: cookie });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ familyId });
+  });
+
+  it('guards optional modules using only the authenticated family session', async () => {
+    const isEnabled = vi.fn().mockResolvedValue(false);
+    const { app } = application('parent', undefined, { isEnabled });
+    const response = await app.request('/api/v1/family/analytics?family_id=another-family', {
+      headers: { ...cookie, 'X-Family-Id': familyId },
+    });
+
+    expect(response.status).toBe(403);
+    expect(isEnabled).not.toHaveBeenCalled();
+
+    const disabled = await app.request(`/api/v1/family/analytics?family_id=${familyId}`, {
+      headers: cookie,
+    });
+    const disabledBody = await disabled.json();
+    expect(disabled.status).toBe(403);
+    expect(disabledBody).toMatchObject({
+      error: { code: 'MODULE_DISABLED', message: 'This family module is disabled.' },
+    });
+    expect(isEnabled).toHaveBeenCalledWith({
+      session: expect.objectContaining({ familyId }),
+      module: 'analytics',
+    });
   });
 
   it('rejects cross-site writes and permits the configured origin', async () => {

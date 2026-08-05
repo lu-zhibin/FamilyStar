@@ -7,6 +7,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@familystar/shared': fileURLToPath(
+        new URL('./packages/shared/src/index.ts', import.meta.url),
+      ),
       '@familystar/business-modules': fileURLToPath(
         new URL('./modules/src/index.ts', import.meta.url),
       ),

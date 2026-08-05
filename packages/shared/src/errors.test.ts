@@ -3,12 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { ERROR_CODES } from './errors.js';
 
 describe('ERROR_CODES', () => {
-  it('exports the stable Phase 1 error code set', () => {
+  it('exports the stable error code set', () => {
     expect(Object.values(ERROR_CODES).sort()).toEqual([
       'CONFLICT',
       'FORBIDDEN',
       'INTERNAL_ERROR',
       'INVALID_REQUEST',
+      'MODULE_DISABLED',
       'NOT_FOUND',
       'RATE_LIMITED',
       'UNAUTHORIZED',

@@ -5,65 +5,22 @@ import { getCookie } from 'hono/cookie';
 import type { SessionStore } from '../family-auth/types.js';
 import { createErrorResponse } from '../http/responses.js';
 import type { AppEnvironment } from '../http/types.js';
+import { resolveRouteAccessPolicy } from './access-policy.js';
 import type { AuditWriter } from './audit.js';
-
-type RequiredRole = 'parent' | 'child' | 'authenticated';
+import type { FamilyModuleStatusPort } from './module-access.js';
 
 const unsafeMethods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function requiredRole(method: string, path: string): RequiredRole | null {
-  if (method === 'GET' && path === '/api/v1/auth/session') return 'authenticated';
-  if (method === 'POST' && path === '/api/v1/auth/logout') return 'authenticated';
-  if (method === 'POST' && path === '/api/v1/auth/parent/invitations') return 'parent';
-  if (path === '/api/v1/auth/switch-targets' || path === '/api/v1/auth/child/switch') {
-    return 'authenticated';
-  }
-  if (path === '/api/v1/auth/child/password') return 'child';
-  if (
-    /^\/api\/v1\/family\/(?:children|settings|task-types|tasks|integrations|submission-reviews)(?:\/.*)?$/.test(
-      path,
-    )
-  ) {
-    return 'parent';
-  }
-  if (/^\/api\/v1\/family\/children\/[^/]+\/level$/.test(path)) return 'parent';
-  if (/^\/api\/v1\/(?:check-ins|collaboration-submissions)\/[^/]+\/reviews$/.test(path)) {
-    return 'parent';
-  }
-  if (/^\/api\/v1\/redemptions\/[^/]+\/(?:approve|fulfill|reject)$/.test(path)) {
-    return 'parent';
-  }
-  if (method === 'POST' && /^\/api\/v1\/wishes\/[^/]+\/adopt$/.test(path)) return 'parent';
-  if (unsafeMethods.has(method) && /^\/api\/v1\/rewards(?:\/[^/]+)?$/.test(path)) return 'parent';
-  if (path === '/api/v1/levels/me') return 'child';
-  if (method === 'GET' && path === '/api/v1/tasks/me') return 'child';
-  if (/^\/api\/v1\/check-ins(?:\/[^/]+)?$/.test(path)) return 'child';
-  if (/^\/api\/v1\/collaboration-rounds\/[^/]+\/submissions$/.test(path)) return 'child';
-  if (method === 'POST' && /^\/api\/v1\/rewards\/[^/]+\/redemptions$/.test(path)) {
-    return 'child';
-  }
-  if (
-    method === 'POST' &&
-    (path === '/api/v1/wishes' || /^\/api\/v1\/wishes\/[^/]+\/cancel$/.test(path))
-  ) {
-    return 'child';
-  }
-  if (/^\/api\/v1\/media(?:\/.*)?$/.test(path)) return 'authenticated';
-  if (method === 'GET' && /^\/api\/v1\/(?:rewards|redemptions|wishes)(?:\/[^/]+)?$/.test(path)) {
-    return 'authenticated';
-  }
-  return null;
+function forbidden(
+  context: Context<AppEnvironment>,
+  message: string,
+  code: (typeof ERROR_CODES)[keyof typeof ERROR_CODES] = ERROR_CODES.FORBIDDEN,
+) {
+  return context.json(createErrorResponse(code, message, context.get('requestId')), 403);
 }
 
-function forbidden(context: Context<AppEnvironment>, message: string) {
-  return context.json(
-    createErrorResponse(ERROR_CODES.FORBIDDEN, message, context.get('requestId')),
-    403,
-  );
-}
-
-async function requestFamilyId(context: Context<AppEnvironment>): Promise<string | undefined> {
+async function requestFamilyIds(context: Context<AppEnvironment>): Promise<readonly string[]> {
   const candidates = [
     context.req.header('X-Family-Id'),
     context.req.query('family_id'),
@@ -83,7 +40,7 @@ async function requestFamilyId(context: Context<AppEnvironment>): Promise<string
       // Route-level schemas produce the stable invalid JSON response.
     }
   }
-  return candidates[0];
+  return candidates;
 }
 
 function auditTarget(path: string): { entityType: string; entityId?: string } {
@@ -132,11 +89,12 @@ export function createSecurityMiddleware(options: {
   publicBaseUrl: string;
   sessions: SessionStore;
   auditWriter?: AuditWriter;
+  familyModuleStatus?: FamilyModuleStatusPort;
 }): MiddlewareHandler<AppEnvironment> {
   const allowedOrigin = new URL(options.publicBaseUrl).origin;
   return async (context, next) => {
-    const role = requiredRole(context.req.method, context.req.path);
-    if (role === null) {
+    const policy = resolveRouteAccessPolicy(context.req.method, context.req.path);
+    if (policy === null) {
       await next();
       return;
     }
@@ -165,15 +123,24 @@ export function createSecurityMiddleware(options: {
     context.set('authSession', session);
     context.set('sessionToken', token);
 
-    if (role !== 'authenticated' && session.role !== role) {
+    if (policy.role !== 'authenticated' && session.role !== policy.role) {
       await writeAudit(context, options.auditWriter, 403);
       return forbidden(context, 'The current role cannot perform this operation.');
     }
 
-    const suppliedFamilyId = await requestFamilyId(context);
-    if (suppliedFamilyId !== undefined && suppliedFamilyId !== session.familyId) {
+    const suppliedFamilyIds = await requestFamilyIds(context);
+    if (suppliedFamilyIds.some((familyId) => familyId !== session.familyId)) {
       await writeAudit(context, options.auditWriter, 403);
       return forbidden(context, 'The supplied family does not match the authenticated family.');
+    }
+
+    if (
+      policy.module !== undefined &&
+      options.familyModuleStatus !== undefined &&
+      !(await options.familyModuleStatus.isEnabled({ session, module: policy.module }))
+    ) {
+      await writeAudit(context, options.auditWriter, 403);
+      return forbidden(context, 'This family module is disabled.', ERROR_CODES.MODULE_DISABLED);
     }
 
     await next();
