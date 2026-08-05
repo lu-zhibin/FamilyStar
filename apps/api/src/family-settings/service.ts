@@ -1,5 +1,13 @@
 import { DEFAULT_FAMILY_SETTINGS, resolveFamilyTimeZone } from '../family-auth/constants.js';
-import type { FamilySettings, FamilySettingsDependencies, FamilySettingsPatch } from './types.js';
+import type {
+  FamilyProfile,
+  FamilyProfilePatch,
+  FamilyProfileRecord,
+  FamilySettings,
+  FamilySettingsDependencies,
+  FamilySettingsPatch,
+  ParentFamilySession,
+} from './types.js';
 
 const STREAK_DAYS = DEFAULT_FAMILY_SETTINGS.streakMultipliers.map(({ days }) => days);
 
@@ -21,6 +29,20 @@ export class InvalidFamilySettingsError extends Error {
   constructor() {
     super('Invalid family settings.');
     this.name = 'InvalidFamilySettingsError';
+  }
+}
+
+export class FamilyCreatorRequiredError extends Error {
+  constructor() {
+    super('Only the family creator can update the family name.');
+    this.name = 'FamilyCreatorRequiredError';
+  }
+}
+
+export class InvalidFamilyProfileError extends Error {
+  constructor() {
+    super('Invalid family profile.');
+    this.name = 'InvalidFamilyProfileError';
   }
 }
 
@@ -105,8 +127,45 @@ function validatePatch(patch: FamilySettingsPatch): void {
   }
 }
 
+function validateProfilePatch(patch: FamilyProfilePatch): FamilyProfilePatch {
+  if (Object.keys(patch).length === 0) throw new InvalidFamilyProfileError();
+  const normalized: FamilyProfilePatch = {};
+  if (patch.name !== undefined) {
+    const name = patch.name.trim();
+    if (name.length === 0 || name.length > 120) throw new InvalidFamilyProfileError();
+    normalized.name = name;
+  }
+  if (patch.timeZone !== undefined) {
+    if (!isTimeZone(patch.timeZone)) throw new InvalidFamilyProfileError();
+    normalized.timeZone = patch.timeZone;
+  }
+  return normalized;
+}
+
+function profilePermissions(record: FamilyProfileRecord, actorId: string) {
+  const isCreator = record.createdById === actorId;
+  return {
+    canUpdateName: isCreator,
+    canManageInvitations: isCreator,
+  };
+}
+
+function familyProfile(record: FamilyProfileRecord, actorId: string): FamilyProfile {
+  return {
+    id: record.id,
+    name: record.name,
+    timeZone: normalizeFamilySettings(record.settings).timeZone,
+    parents: record.parents,
+    invitations: record.invitations,
+    permissions: profilePermissions(record, actorId),
+  };
+}
+
 export class FamilySettingsService {
-  constructor(private readonly dependencies: FamilySettingsDependencies) {}
+  constructor(
+    private readonly dependencies: FamilySettingsDependencies,
+    private readonly clock: () => Date = () => new Date(),
+  ) {}
 
   async get(input: { sessionToken?: string }): Promise<{ settings: FamilySettings }> {
     const familyId = await this.requireParentFamily(input.sessionToken);
@@ -133,9 +192,73 @@ export class FamilySettingsService {
     return { settings };
   }
 
-  private async requireParentFamily(token?: string): Promise<string> {
+  async getProfile(input: { sessionToken?: string }): Promise<{ profile: FamilyProfile }> {
+    const session = await this.requireParent(input.sessionToken);
+    const record = await this.dependencies.repository.findActiveProfile(
+      session.familyId,
+      this.clock(),
+    );
+    if (!record) throw new FamilySettingsNotFoundError();
+    return { profile: familyProfile(record, session.subjectId) };
+  }
+
+  async updateProfile(input: {
+    sessionToken?: string;
+    profile: FamilyProfilePatch;
+  }): Promise<{ profile: FamilyProfile }> {
+    const patch = validateProfilePatch(input.profile);
+    const session = await this.requireParent(input.sessionToken);
+    const record = await this.dependencies.repository.findActiveProfile(
+      session.familyId,
+      this.clock(),
+    );
+    if (!record) throw new FamilySettingsNotFoundError();
+    if (patch.name !== undefined && record.createdById !== session.subjectId) {
+      throw new FamilyCreatorRequiredError();
+    }
+
+    const updated = await this.dependencies.repository.updateActiveProfile(session.familyId, {
+      ...(patch.name === undefined ? {} : { name: patch.name }),
+      ...(patch.timeZone === undefined
+        ? {}
+        : { settings: { ...record.settings, timeZone: patch.timeZone } }),
+    });
+    if (!updated) throw new FamilySettingsNotFoundError();
+
+    return {
+      profile: familyProfile(
+        {
+          ...record,
+          ...(patch.name === undefined ? {} : { name: patch.name }),
+          ...(patch.timeZone === undefined
+            ? {}
+            : { settings: { ...record.settings, timeZone: patch.timeZone } }),
+        },
+        session.subjectId,
+      ),
+    };
+  }
+
+  async listParents(input: { sessionToken?: string }): Promise<{
+    parents: FamilyProfile['parents'];
+    invitations: FamilyProfile['invitations'];
+    permissions: FamilyProfile['permissions'];
+  }> {
+    const { profile } = await this.getProfile(input);
+    return {
+      parents: profile.parents,
+      invitations: profile.invitations,
+      permissions: profile.permissions,
+    };
+  }
+
+  private async requireParent(token?: string): Promise<ParentFamilySession> {
     const session = token ? await this.dependencies.sessions.read(token) : null;
     if (!session || session.role !== 'parent') throw new FamilySettingsSessionRequiredError();
-    return session.familyId;
+    return { ...session, role: 'parent' };
+  }
+
+  private async requireParentFamily(token?: string): Promise<string> {
+    return (await this.requireParent(token)).familyId;
   }
 }

@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_FAMILY_SETTINGS } from '../family-auth/constants.js';
 import type { AuthSession, SessionStore } from '../family-auth/types.js';
 import {
+  FamilyCreatorRequiredError,
   FamilySettingsNotFoundError,
   FamilySettingsService,
   FamilySettingsSessionRequiredError,
+  InvalidFamilyProfileError,
   InvalidFamilySettingsError,
 } from './service.js';
-import type { FamilySettingsRepository } from './types.js';
+import type { FamilyProfileRecord, FamilySettingsRepository } from './types.js';
 
 const parentSession: AuthSession = {
   subjectId: 'parent-1',
@@ -17,10 +19,40 @@ const parentSession: AuthSession = {
   issuedAt: '2026-07-30T00:00:00.000Z',
 };
 
-function dependencies(raw: Record<string, unknown> | null = {}) {
+const profile: FamilyProfileRecord = {
+  id: 'family-1',
+  name: '星星家',
+  settings: { timeZone: 'Asia/Shanghai', broadcastEnabled: false },
+  createdById: 'parent-1',
+  parents: [
+    {
+      id: 'parent-1',
+      nickname: '妈妈',
+      email: 'parent@example.com',
+      isCreator: true,
+      joinedAt: new Date('2026-07-30T00:00:00.000Z'),
+    },
+  ],
+  invitations: [
+    {
+      id: 'invite-1',
+      email: 'second@example.com',
+      status: 'pending',
+      expiresAt: new Date('2026-08-10T00:00:00.000Z'),
+      createdAt: new Date('2026-08-03T00:00:00.000Z'),
+    },
+  ],
+};
+
+function dependencies(
+  raw: Record<string, unknown> | null = {},
+  familyProfile: FamilyProfileRecord | null = profile,
+) {
   const repository: FamilySettingsRepository = {
     findActiveSettings: vi.fn().mockResolvedValue(raw),
     updateActiveSettings: vi.fn().mockResolvedValue(true),
+    findActiveProfile: vi.fn().mockResolvedValue(familyProfile),
+    updateActiveProfile: vi.fn().mockResolvedValue(true),
   };
   const sessions: SessionStore = {
     create: vi.fn(),
@@ -93,5 +125,81 @@ describe('FamilySettingsService', () => {
         InvalidFamilySettingsError,
       );
     }
+  });
+
+  it('returns a family profile and creator permissions from the active parent session', async () => {
+    const service = new FamilySettingsService(dependencies());
+
+    await expect(service.getProfile({ sessionToken: 'token' })).resolves.toEqual({
+      profile: {
+        id: 'family-1',
+        name: '星星家',
+        timeZone: 'Asia/Shanghai',
+        parents: profile.parents,
+        invitations: profile.invitations,
+        permissions: { canUpdateName: true, canManageInvitations: true },
+      },
+    });
+  });
+
+  it('allows the creator to update the name and preserves unrelated settings', async () => {
+    const deps = dependencies();
+    const service = new FamilySettingsService(deps);
+
+    await expect(
+      service.updateProfile({
+        sessionToken: 'token',
+        profile: { name: ' 新家庭 ', timeZone: 'America/New_York' },
+      }),
+    ).resolves.toMatchObject({
+      profile: { name: '新家庭', timeZone: 'America/New_York' },
+    });
+    expect(deps.repository.updateActiveProfile).toHaveBeenCalledWith('family-1', {
+      name: '新家庭',
+      settings: {
+        timeZone: 'America/New_York',
+        broadcastEnabled: false,
+      },
+    });
+  });
+
+  it('allows a co-parent to update the time zone and exposes restricted permissions', async () => {
+    const deps = dependencies(undefined, { ...profile, createdById: 'another-parent' });
+    const service = new FamilySettingsService(deps);
+
+    await expect(
+      service.updateProfile({ sessionToken: 'token', profile: { timeZone: 'Europe/Berlin' } }),
+    ).resolves.toMatchObject({
+      profile: {
+        timeZone: 'Europe/Berlin',
+        permissions: { canUpdateName: false, canManageInvitations: false },
+      },
+    });
+  });
+
+  it('rejects co-parent name updates and invalid profile patches', async () => {
+    const coParentService = new FamilySettingsService(
+      dependencies(undefined, { ...profile, createdById: 'another-parent' }),
+    );
+    await expect(
+      coParentService.updateProfile({ sessionToken: 'token', profile: { name: '受限修改' } }),
+    ).rejects.toBeInstanceOf(FamilyCreatorRequiredError);
+
+    const service = new FamilySettingsService(dependencies());
+    for (const invalidProfile of [{}, { name: ' ' }, { timeZone: 'Mars/Olympus' }]) {
+      await expect(
+        service.updateProfile({ sessionToken: 'token', profile: invalidProfile }),
+      ).rejects.toBeInstanceOf(InvalidFamilyProfileError);
+    }
+  });
+
+  it('lists parents and invitation summaries with the same family permissions', async () => {
+    const service = new FamilySettingsService(dependencies());
+
+    await expect(service.listParents({ sessionToken: 'token' })).resolves.toEqual({
+      parents: profile.parents,
+      invitations: profile.invitations,
+      permissions: { canUpdateName: true, canManageInvitations: true },
+    });
   });
 });

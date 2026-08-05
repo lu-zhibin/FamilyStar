@@ -7,11 +7,19 @@ import { SESSION_TTL_SECONDS } from '../family-auth/constants.js';
 import { createErrorResponse, createSuccessResponse } from '../http/responses.js';
 import type { AppEnvironment } from '../http/types.js';
 import {
+  FamilyCreatorRequiredError,
   FamilySettingsNotFoundError,
   FamilySettingsSessionRequiredError,
+  InvalidFamilyProfileError,
   InvalidFamilySettingsError,
 } from './service.js';
-import type { FamilySettings, FamilySettingsOperations } from './types.js';
+import type {
+  FamilyInvitationSummary,
+  FamilyParent,
+  FamilyProfile,
+  FamilySettings,
+  FamilySettingsOperations,
+} from './types.js';
 
 const nonNegativeInteger = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const streakTierSchema = z
@@ -31,6 +39,13 @@ const settingsPatchSchema = z
     review_timeout_hours: nonNegativeInteger.optional(),
     auto_approve_quota: nonNegativeInteger.optional(),
     streak_multipliers: z.array(streakTierSchema).length(6).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0);
+const profilePatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    time_zone: z.string().min(1).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0);
@@ -75,6 +90,44 @@ function responseSettings(settings: FamilySettings) {
   };
 }
 
+function responseParent(parent: FamilyParent) {
+  return {
+    id: parent.id,
+    nickname: parent.nickname,
+    email: parent.email,
+    is_creator: parent.isCreator,
+    joined_at: parent.joinedAt.toISOString(),
+  };
+}
+
+function responseInvitation(invitation: FamilyInvitationSummary) {
+  return {
+    id: invitation.id,
+    email: invitation.email,
+    status: invitation.status,
+    expires_at: invitation.expiresAt.toISOString(),
+    created_at: invitation.createdAt.toISOString(),
+  };
+}
+
+function responsePermissions(permissions: FamilyProfile['permissions']) {
+  return {
+    can_update_name: permissions.canUpdateName,
+    can_manage_invitations: permissions.canManageInvitations,
+  };
+}
+
+function responseProfile(profile: FamilyProfile) {
+  return {
+    id: profile.id,
+    name: profile.name,
+    time_zone: profile.timeZone,
+    parents: profile.parents.map(responseParent),
+    invitations: profile.invitations.map(responseInvitation),
+    permissions: responsePermissions(profile.permissions),
+  };
+}
+
 function mapError(context: Context<AppEnvironment>, error: unknown) {
   if (error instanceof FamilySettingsSessionRequiredError) {
     return context.json(
@@ -94,6 +147,18 @@ function mapError(context: Context<AppEnvironment>, error: unknown) {
       400,
     );
   }
+  if (error instanceof InvalidFamilyProfileError) {
+    return context.json(
+      createErrorResponse(ERROR_CODES.INVALID_REQUEST, error.message, context.get('requestId')),
+      400,
+    );
+  }
+  if (error instanceof FamilyCreatorRequiredError) {
+    return context.json(
+      createErrorResponse(ERROR_CODES.FORBIDDEN, error.message, context.get('requestId')),
+      403,
+    );
+  }
   throw error;
 }
 
@@ -102,6 +167,72 @@ export function registerFamilySettingsRoutes(
   service: FamilySettingsOperations,
   secureCookies: boolean,
 ): void {
+  api.get('/family/profile', async (context) => {
+    try {
+      const result = await service.getProfile(sessionInput(context));
+      renewSession(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          { profile: responseProfile(result.profile) },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
+  api.patch('/family/profile', async (context) => {
+    const parsed = profilePatchSchema.safeParse(await readJson(context));
+    if (!parsed.success) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.INVALID_REQUEST,
+          'Invalid family profile request.',
+          context.get('requestId'),
+        ),
+        400,
+      );
+    }
+    try {
+      const result = await service.updateProfile({
+        ...sessionInput(context),
+        profile: {
+          ...(parsed.data.name === undefined ? {} : { name: parsed.data.name }),
+          ...(parsed.data.time_zone === undefined ? {} : { timeZone: parsed.data.time_zone }),
+        },
+      });
+      renewSession(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          { profile: responseProfile(result.profile) },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
+  api.get('/family/parents', async (context) => {
+    try {
+      const result = await service.listParents(sessionInput(context));
+      renewSession(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          {
+            parents: result.parents.map(responseParent),
+            invitations: result.invitations.map(responseInvitation),
+            permissions: responsePermissions(result.permissions),
+          },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
   api.get('/family/settings', async (context) => {
     try {
       const result = await service.get(sessionInput(context));
