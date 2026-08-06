@@ -11,6 +11,43 @@ export const childSections = [
 
 export type ChildSection = (typeof childSections)[number];
 
+export type CheckInFile = Readonly<{
+  type: string;
+  size: number;
+  name?: string;
+}>;
+
+const mediaMimeTypesByExtension: Readonly<Record<string, string>> = {
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.m4v': 'video/x-m4v',
+  '.mov': 'video/quicktime',
+  '.mp4': 'video/mp4',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
+
+export function normalizedMediaMimeType(file: Pick<CheckInFile, 'name' | 'type'>): string {
+  const declaredType = file.type.toLowerCase();
+  if (
+    [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'video/mp4',
+      'video/quicktime',
+      'video/x-m4v',
+    ].includes(declaredType)
+  ) {
+    return declaredType;
+  }
+  const fileName = file.name?.toLowerCase() ?? '';
+  const extension = Object.keys(mediaMimeTypesByExtension).find((value) =>
+    fileName.endsWith(value),
+  );
+  return extension ? mediaMimeTypesByExtension[extension]! : declaredType;
+}
+
 export const childSectionPaths: Record<ChildSection, string> = {
   home: '/child',
   'check-ins': '/child/check-ins',
