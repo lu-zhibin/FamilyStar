@@ -229,6 +229,14 @@ enum BadgeConditionType {
   @@map("badge_condition_type")
 }
 
+enum GrowthRecordType {
+  CHECK_IN  @map("check_in")
+  NOTE      @map("note")
+  MILESTONE @map("milestone")
+
+  @@map("growth_record_type")
+}
+
 model Family {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   familyCode  String    @unique @map("family_code") @db.VarChar(6)
@@ -270,6 +278,8 @@ model Family {
   badgeTemplates                  BadgeTemplate[]
   badgeAwards                     BadgeAward[]
   badgeProgress                   BadgeProgress[]
+  growthRecords                   GrowthRecord[]
+  growthRecordMedia               GrowthRecordMedia[]
 
   @@index([deletedAt])
   @@map("families")
@@ -326,6 +336,8 @@ model User {
   badgeAwards                     BadgeAward[]                     @relation("BadgeAwardChild")
   badgeAwardsGranted              BadgeAward[]                     @relation("BadgeAwardGranter")
   badgeProgress                   BadgeProgress[]                  @relation("BadgeProgressChild")
+  growthRecords                   GrowthRecord[]                   @relation("GrowthRecordChild")
+  growthRecordsCreated            GrowthRecord[]                   @relation("GrowthRecordCreator")
 
   @@index([familyId, role, deletedAt])
   @@index([familyId, currentLevel])
@@ -416,6 +428,7 @@ model Task {
   assignments         TaskAssignment[]
   collaborationRounds CollaborationRound[]
   checkIns            CheckIn[]
+  growthRecords       GrowthRecord[]
 
   @@index([familyId, status, deletedAt])
   @@index([familyId, taskTypeId])
@@ -643,13 +656,14 @@ model MediaAsset {
   updatedAt    DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
   deletedAt    DateTime?         @map("deleted_at") @db.Timestamptz(3)
 
-  family           Family                         @relation(fields: [familyId], references: [id], onDelete: Restrict)
-  userAvatars      User[]                         @relation("UserAvatar")
-  rewardImages     Reward[]                       @relation("RewardImage")
-  levelRewardIcons LevelReward[]                  @relation("LevelRewardIcon")
-  checkInLinks     CheckInMedia[]
-  submissionLinks  CollaborationSubmissionMedia[]
-  uploadSession    MediaUploadSession?
+  family            Family                         @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  userAvatars       User[]                         @relation("UserAvatar")
+  rewardImages      Reward[]                       @relation("RewardImage")
+  levelRewardIcons  LevelReward[]                  @relation("LevelRewardIcon")
+  checkInLinks      CheckInMedia[]
+  submissionLinks   CollaborationSubmissionMedia[]
+  growthRecordLinks GrowthRecordMedia[]
+  uploadSession     MediaUploadSession?
 
   @@unique([familyId, objectKey])
   @@index([familyId, uploadStatus, deletedAt])
@@ -886,6 +900,55 @@ model Wish {
 
   @@index([familyId, childId, status, deletedAt])
   @@map("wishes")
+}
+
+model GrowthRecord {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId     String           @map("family_id") @db.Uuid
+  childId      String           @map("child_id") @db.Uuid
+  taskId       String?          @map("task_id") @db.Uuid
+  type         GrowthRecordType
+  title        String           @db.VarChar(120)
+  contentText  String?          @map("content_text") @db.Text
+  occurredOn   DateTime         @map("occurred_on") @db.Date
+  sourceType   String?          @map("source_type") @db.VarChar(40)
+  sourceId     String?          @map("source_id") @db.Uuid
+  pointsEarned Int?             @map("points_earned")
+  createdById  String?          @map("created_by") @db.Uuid
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  family    Family              @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  child     User                @relation("GrowthRecordChild", fields: [childId], references: [id], onDelete: Restrict)
+  task      Task?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  createdBy User?               @relation("GrowthRecordCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  media     GrowthRecordMedia[]
+
+  @@unique([familyId, sourceType, sourceId])
+  @@index([familyId, deletedAt, occurredOn, id])
+  @@index([familyId, childId, deletedAt, occurredOn, id])
+  @@index([familyId, taskId, deletedAt, occurredOn, id])
+  @@index([familyId, type, deletedAt, occurredOn, id])
+  @@map("growth_records")
+}
+
+model GrowthRecordMedia {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId       String   @map("family_id") @db.Uuid
+  growthRecordId String   @map("growth_record_id") @db.Uuid
+  mediaAssetId   String   @map("media_asset_id") @db.Uuid
+  sortOrder      Int      @default(0) @map("sort_order")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family       Family       @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  growthRecord GrowthRecord @relation(fields: [growthRecordId], references: [id], onDelete: Cascade)
+  mediaAsset   MediaAsset   @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@unique([growthRecordId, mediaAssetId])
+  @@unique([growthRecordId, sortOrder])
+  @@index([familyId, mediaAssetId])
+  @@map("growth_record_media")
 }
 
 model BadgeTemplate {

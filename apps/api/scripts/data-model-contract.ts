@@ -30,6 +30,8 @@ const CORE_MODELS = [
   'OutboxEvent',
   'FamilyIntegrationSetting',
   'WorkerJobRun',
+  'GrowthRecord',
+  'GrowthRecordMedia',
 ] as const;
 
 const TENANT_MODELS = CORE_MODELS.filter(
@@ -46,6 +48,7 @@ const SOFT_DELETE_MODELS = [
   'MediaAsset',
   'Reward',
   'Wish',
+  'GrowthRecord',
 ] as const;
 
 const MIGRATION_GUARDS = [
@@ -89,6 +92,11 @@ const MIGRATION_GUARDS = [
   'worker_job_runs_job_name_run_key_key',
   'families_family_code_key',
   'families_family_code_format_check',
+  'growth_records_source_pair_check',
+  'growth_records_points_earned_check',
+  'growth_records_family_id_source_type_source_id_key',
+  'growth_records_family_id_deleted_at_occurred_on_id_idx',
+  'growth_record_media_sort_order_check',
 ] as const;
 
 function modelBlock(schema: string, model: string): string {
@@ -163,6 +171,22 @@ export function verifyDataModelContract(schema: string, migration: string): void
   assert.match(
     modelBlock(schema, 'FamilyIntegrationSetting'),
     /@@unique\(\[familyId, integrationType\]\)/,
+  );
+  assert.match(
+    modelBlock(schema, 'GrowthRecord'),
+    /@@unique\(\[familyId, sourceType, sourceId\]\)/,
+  );
+  assert.match(
+    modelBlock(schema, 'GrowthRecord'),
+    /@@index\(\[familyId, deletedAt, occurredOn, id\]\)/,
+  );
+  assert.match(
+    modelBlock(schema, 'GrowthRecordMedia'),
+    /@@unique\(\[growthRecordId, mediaAssetId\]\)/,
+  );
+  assert.match(
+    modelBlock(schema, 'GrowthRecordMedia'),
+    /@@unique\(\[growthRecordId, sortOrder\]\)/,
   );
 
   for (const guard of MIGRATION_GUARDS) {

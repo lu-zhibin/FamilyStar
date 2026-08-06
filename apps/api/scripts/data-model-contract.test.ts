@@ -115,4 +115,18 @@ describe('verifyDataModelContract', () => {
       'Missing migration guard: points_logs_redemption_refund_once_idx',
     );
   });
+
+  it('requires growth record source idempotency and ordered media guards', async () => {
+    const [schema, migration] = await Promise.all([
+      readFile(schemaUrl, 'utf8'),
+      readMigrationHistory(),
+    ]);
+
+    expect(schema).toContain('model GrowthRecord {');
+    expect(schema).toContain('model GrowthRecordMedia {');
+    expect(migration).toContain('growth_records_source_pair_check');
+    expect(migration).toContain('growth_records_family_id_source_type_source_id_key');
+    expect(migration).toContain('growth_record_media_growth_record_id_sort_order_key');
+    expect(migration).toContain('growth_record_media_sort_order_check');
+  });
 });
