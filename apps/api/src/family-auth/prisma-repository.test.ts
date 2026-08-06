@@ -81,6 +81,7 @@ describe('PrismaFamilyAuthRepository', () => {
   });
 
   it('creates or refreshes one pending invitation and detects verified email', async () => {
+    const now = new Date('2026-07-30T12:00:00.000Z');
     const queryRaw = vi
       .fn()
       .mockResolvedValueOnce([{ id: 'family-1', createdById: 'parent-1' }])
@@ -111,13 +112,16 @@ describe('PrismaFamilyAuthRepository', () => {
         email: 'second@example.com',
         tokenHash: 'token-hash',
         expiresAt: new Date('2026-08-06T12:00:00.000Z'),
-        now: new Date('2026-07-30T12:00:00.000Z'),
+        now,
       }),
     ).resolves.toMatchObject({
       invitation: { id: 'invitation-1', email: 'second@example.com' },
       emailConfigured: true,
     });
     expect(queryRaw).toHaveBeenCalledTimes(3);
+    const insertQuery = queryRaw.mock.calls[2]?.[0] as Prisma.Sql;
+    expect(insertQuery.strings.join(' ')).toContain('"created_at", "updated_at"');
+    expect(insertQuery.values.filter((value) => value === now)).toHaveLength(3);
   });
 
   it('rotates a pending invitation token and expiry for the family creator', async () => {

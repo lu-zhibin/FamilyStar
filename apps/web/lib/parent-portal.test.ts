@@ -1,18 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  buildCosIntegrationPayload,
   buildChildCredentialPatch,
   buildChildProfilePatch,
-  buildSoloTaskDraft,
+  buildEmailIntegrationPayload,
+  buildFamilyProfilePatch,
   buildSubmissionReviewRequest,
+  buildTaskDraft,
+  buildTaskFrequency,
   buildTaskPatch,
   canAccessParentPortal,
   copyTextToClipboard,
   formatFrequency,
   isParentSection,
+  parentApi,
   parentSectionPaths,
   parentSections,
 } from './parent-portal';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('child management payloads', () => {
   it('normalizes editable profile fields and preserves an uploaded avatar', () => {
@@ -69,6 +76,98 @@ describe('child management payloads', () => {
   });
 });
 
+describe('family profile payloads', () => {
+  it('normalizes creator-managed family details', () => {
+    const form = new FormData();
+    form.set('name', '  星光家庭  ');
+    form.set('time_zone', 'Asia/Shanghai');
+
+    expect(buildFamilyProfilePatch(form, true)).toEqual({
+      name: '星光家庭',
+      time_zone: 'Asia/Shanghai',
+    });
+  });
+
+  it('omits the restricted family name for a co-parent', () => {
+    const form = new FormData();
+    form.set('name', '越权名称');
+    form.set('time_zone', 'Europe/Berlin');
+
+    expect(buildFamilyProfilePatch(form, false)).toEqual({ time_zone: 'Europe/Berlin' });
+  });
+});
+
+describe('integration settings payloads', () => {
+  it('builds email configuration and numeric SMTP port', () => {
+    expect(
+      buildEmailIntegrationPayload(
+        {
+          host: ' smtp.example.com ',
+          port: '465',
+          tlsMode: 'tls',
+          fromName: ' FamilyStar ',
+          fromAddress: 'family@example.com',
+          username: 'family@example.com',
+          password: 'authorization-code',
+        },
+        false,
+      ),
+    ).toEqual({
+      configuration: {
+        host: 'smtp.example.com',
+        port: 465,
+        tls_mode: 'tls',
+        from_name: 'FamilyStar',
+        from_address: 'family@example.com',
+      },
+      credentials: { username: 'family@example.com', password: 'authorization-code' },
+    });
+  });
+
+  it('preserves stored credentials when credential inputs are empty', () => {
+    expect(
+      buildCosIntegrationPayload(
+        {
+          bucket: 'family-123',
+          region: 'ap-guangzhou',
+          domain: 'https://family.example.com',
+          secretId: '',
+          secretKey: '',
+        },
+        true,
+      ),
+    ).toEqual({
+      configuration: {
+        bucket: 'family-123',
+        region: 'ap-guangzhou',
+        domain: 'https://family.example.com',
+      },
+    });
+  });
+
+  it('rejects partial or missing credentials', () => {
+    expect(() =>
+      buildCosIntegrationPayload(
+        {
+          bucket: 'family-123',
+          region: 'ap-guangzhou',
+          domain: 'https://family.example.com',
+          secretId: 'secret-id',
+          secretKey: '',
+        },
+        true,
+      ),
+    ).toThrow('SecretId和SecretKey需要同时填写');
+  });
+
+  it('accepts successful 204 responses from delete operations', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+    await expect(
+      parentApi<void>('/family/integrations/email', { method: 'DELETE' }),
+    ).resolves.toBeUndefined();
+  });
+});
+
 describe('submission review requests', () => {
   const target = {
     target_type: 'CHECK_IN' as const,
@@ -112,11 +211,13 @@ describe('task creation payload', () => {
     form.set('verify_mode', 'MANUAL');
     form.set('base_points', '10');
     form.set('child_id', 'child-1');
+    form.set('collaboration_mode', 'SOLO');
+    form.set('frequency_kind', 'daily');
     return form;
   }
 
   it('omits an empty optional description from the API request', () => {
-    expect(buildSoloTaskDraft(taskForm('  '), '2026-08-01')).toEqual({
+    expect(buildTaskDraft(taskForm('  '), '2026-08-01')).toEqual({
       task_type_id: 'type-1',
       name: '每天阅读',
       check_type: 'TEXT',
@@ -129,9 +230,36 @@ describe('task creation payload', () => {
   });
 
   it('trims and preserves a provided description', () => {
-    expect(buildSoloTaskDraft(taskForm('  阅读第三章  '), '2026-08-01')).toMatchObject({
+    expect(buildTaskDraft(taskForm('  阅读第三章  '), '2026-08-01')).toMatchObject({
       description: '阅读第三章',
     });
+  });
+
+  it('builds a collaboration task with unique child assignments', () => {
+    const form = taskForm('一起完成');
+    form.set('collaboration_mode', 'COLLAB');
+    form.append('child_id', 'child-2');
+    form.append('child_id', 'child-1');
+
+    expect(buildTaskDraft(form, '2026-08-01')).toMatchObject({
+      collaboration_mode: 'COLLAB',
+      assignments: [
+        { child_id: 'child-1', start_date: '2026-08-01' },
+        { child_id: 'child-2', start_date: '2026-08-01' },
+      ],
+    });
+  });
+
+  it('requires one child for solo tasks and at least two for collaboration tasks', () => {
+    const solo = taskForm('');
+    solo.delete('child_id');
+    expect(() => buildTaskDraft(solo, '2026-08-01')).toThrow('单人任务需要选择一名孩子。');
+
+    const collaboration = taskForm('');
+    collaboration.set('collaboration_mode', 'COLLAB');
+    expect(() => buildTaskDraft(collaboration, '2026-08-01')).toThrow(
+      '协作任务至少需要选择两名孩子。',
+    );
   });
 });
 
@@ -144,6 +272,8 @@ describe('task update payload', () => {
     form.set('check_type', 'TICK');
     form.set('verify_mode', 'AUTO');
     form.set('base_points', '20');
+    form.set('frequency_kind', 'weekly_count');
+    form.set('frequency_count', '3');
     return form;
   }
 
@@ -154,12 +284,35 @@ describe('task update payload', () => {
       description: '完成后勾选',
       check_type: 'TICK',
       verify_mode: 'AUTO',
+      frequency: { kind: 'weekly_count', count: 3 },
       base_points: 20,
     });
   });
 
   it('uses null to clear an optional description', () => {
     expect(buildTaskPatch(taskForm('  '))).toMatchObject({ description: null });
+  });
+});
+
+describe('task frequency payload', () => {
+  it('builds selected weekdays', () => {
+    const form = new FormData();
+    form.set('frequency_kind', 'weekdays');
+    form.append('frequency_weekdays', '1');
+    form.append('frequency_weekdays', '5');
+    expect(buildTaskFrequency(form)).toEqual({ kind: 'weekdays', weekdays: [1, 5] });
+  });
+
+  it('builds an API date range', () => {
+    const form = new FormData();
+    form.set('frequency_kind', 'date_range');
+    form.set('frequency_start_date', '2026-08-05');
+    form.set('frequency_end_date', '2026-08-12');
+    expect(buildTaskFrequency(form)).toEqual({
+      kind: 'date_range',
+      start_date: '2026-08-05',
+      end_date: '2026-08-12',
+    });
   });
 });
 

@@ -101,6 +101,36 @@ function defaultApiResponse(request, role) {
     return envelope({ date: '2026-08-02', tasks: [childTaskFixture] });
   }
   if (url.endsWith('/family/submission-reviews/pending')) return envelope({ reviews: [] });
+  if (url.endsWith('/family/settings')) {
+    return envelope({
+      settings: {
+        time_zone: 'Asia/Shanghai',
+        check_in_deadline: '23:59',
+        makeup_days: 3,
+        review_timeout_hours: 48,
+        auto_approve_quota: 0,
+        streak_multipliers: [
+          { days: 3, multiplier: 1.5 },
+          { days: 7, multiplier: 2 },
+          { days: 14, multiplier: 3 },
+          { days: 30, multiplier: 5 },
+          { days: 60, multiplier: 8 },
+          { days: 100, multiplier: 10 },
+        ],
+      },
+    });
+  }
+  if (/\/family\/integrations\/(email|cos)$/.test(new URL(url).pathname)) {
+    return envelope({
+      configured: false,
+      status: null,
+      configuration: null,
+      credentials_configured: false,
+      last_verified_at: null,
+      last_verification_result: null,
+      can_manage: true,
+    });
+  }
   if (url.endsWith('/levels/me') || /\/levels\/[^/]+$/.test(url)) {
     return envelope({ level: levelFixture });
   }
@@ -147,27 +177,182 @@ async function mockApi(page, handler, role = 'parent') {
 }
 
 test.describe('FamilyStar portal routes', () => {
-  test('keeps the login heading anchored when identity forms change', async ({ page }) => {
+  test('uses the compact mobile login and scrolls one child profile at a time', async ({
+    page,
+  }) => {
+    let familyLookupCount = 0;
+    await page.route('**/api/v1/**', async (route) => {
+      const request = route.request();
+      if (request.url().endsWith('/auth/session')) {
+        await route.fulfill(envelope({}, 401));
+        return;
+      }
+      if (request.url().endsWith('/auth/child/family')) {
+        familyLookupCount += 1;
+        await route.fulfill(
+          familyLookupCount === 1
+            ? envelope({}, 401)
+            : envelope({
+                family: { name: '星光家庭', family_code: '123456' },
+                children: [
+                  {
+                    id: 'child-login-1',
+                    nickname: '小星',
+                    grade: '三年级',
+                    avatar_media_id: null,
+                  },
+                  {
+                    id: 'child-login-2',
+                    nickname: '小月',
+                    grade: '二年级',
+                    avatar_media_id: null,
+                  },
+                  {
+                    id: 'child-login-3',
+                    nickname: '小雨',
+                    grade: '一年级',
+                    avatar_media_id: null,
+                  },
+                ],
+              }),
+        );
+        return;
+      }
+      await route.fulfill(envelope({}));
+    });
+
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/');
+      await expect(page.getByRole('heading', { name: 'FamilyStar' })).toBeVisible();
+      await expect(page.getByText('把好习惯，变成全家的闪光时刻')).toBeHidden();
+      await expect(page.getByText('温暖陪伴 · 正向激励 · 安全私密')).toBeHidden();
+      await expect(page.getByText('欢迎回家', { exact: true })).toBeHidden();
+      await expect(page.getByText('一个入口，连接全家的每一次成长。')).toBeHidden();
+      const parentLoginDetails = page.getByLabel('家长登录说明');
+      await expect(parentLoginDetails).toBeVisible();
+      await expect(parentLoginDetails.getByText('孩子完成任务，收获积分与成就')).toBeVisible();
+      await expect(parentLoginDetails.getByText('家长轻松鼓励，见证每一步成长')).toBeVisible();
+      await expect(parentLoginDetails.getByText('共同目标，让家庭协作更有温度')).toBeVisible();
+      await expect(page.getByText('今天以谁的身份出发？')).toHaveCount(0);
+      const brandRegion = page.getByRole('region', { name: 'FamilyStar 品牌' });
+      await expect(brandRegion).toBeVisible();
+      expect((await brandRegion.boundingBox()).height).toBe(92);
+      const pageWidths = await page.evaluate(() => ({
+        client: globalThis.document.documentElement.clientWidth,
+        scroll: globalThis.document.documentElement.scrollWidth,
+      }));
+      expect(pageWidths.scroll).toBe(pageWidths.client);
+    }
+
+    await page.getByRole('tab', { name: '我是孩子' }).click();
+    await expect(page.getByText('请填写家庭码', { exact: true })).toBeVisible();
+    await expect(page.getByText('找到你的家庭', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('家庭码可以向家长询问')).toHaveCount(0);
+    await page.getByLabel('6 位数字家庭码').fill('123456');
+    await page.getByRole('button', { name: '找到我的家庭' }).click();
+    await expect(
+      page.getByText('没有匹配到家庭哦，请重新输入家庭码。', { exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: '找到我的家庭' }).click();
+    await expect(page.getByRole('button', { name: '切换家庭' })).toBeVisible();
+    await expect(page.getByText('你是谁呀？', { exact: true })).toBeVisible();
+    const [familyNameBox, switchFamilyBox] = await Promise.all([
+      page.getByRole('heading', { name: '星光家庭' }).boundingBox(),
+      page.getByRole('button', { name: '切换家庭' }).boundingBox(),
+    ]);
+    expect(
+      Math.abs(
+        familyNameBox.y + familyNameBox.height - (switchFamilyBox.y + switchFamilyBox.height),
+      ),
+    ).toBeLessThan(2);
+    await page.setViewportSize({ width: 320, height: 844 });
+
+    const childList = page.getByLabel('孩子头像选择');
+    const childCards = childList.getByRole('button');
+    await expect(childCards).toHaveCount(3);
+    const dimensions = await childList.evaluate((element) => ({
+      viewportWidth: element.clientWidth,
+      cards: Array.from(element.children, (child) => {
+        const bounds = child.getBoundingClientRect();
+        return { width: bounds.width, height: bounds.height };
+      }),
+    }));
+    expect(dimensions.viewportWidth).toBe(120);
+    for (const card of dimensions.cards) {
+      expect(card.width).toBe(120);
+      expect(card.height).toBe(120);
+    }
+    const avatarDimensions = await childCards
+      .first()
+      .locator('span')
+      .first()
+      .evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { width: bounds.width, height: bounds.height };
+      });
+    expect(avatarDimensions.height).toBeCloseTo(avatarDimensions.width, 1);
+    expect(avatarDimensions.height).toBe(110);
+    const childLoginWidths = await page.evaluate(() => ({
+      client: globalThis.document.documentElement.clientWidth,
+      scroll: globalThis.document.documentElement.scrollWidth,
+    }));
+    expect(childLoginWidths.scroll).toBe(childLoginWidths.client);
+
+    const nextChildButton = page.getByRole('button', { name: '下一个孩子' });
+    await expect(nextChildButton).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await nextChildButton.click();
+    await expect(nextChildButton).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+    await expect(childCards.nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect
+      .poll(() => childList.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(dimensions.viewportWidth * 0.9);
+
+    const childListBox = await childList.boundingBox();
+    const touchClient = await page.context().newCDPSession(page);
+    const touchY = childListBox.y + childListBox.height / 2;
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: childListBox.x + childListBox.width * 0.8, y: touchY }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: childListBox.x + childListBox.width * 0.6, y: touchY }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: childListBox.x + childListBox.width * 0.4, y: touchY }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: childListBox.x + childListBox.width * 0.15, y: touchY }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(childCards.nth(2)).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('vertically centers the login content on tablet and desktop viewports', async ({ page }) => {
     await page.route('**/api/v1/auth/session', (route) => route.fulfill(envelope({}, 401)));
 
     for (const viewport of [
-      { width: 390, height: 844 },
+      { width: 820, height: 900 },
       { width: 1280, height: 900 },
     ]) {
       await page.setViewportSize(viewport);
       await page.goto('/');
-
-      const heading = page.getByRole('heading', { name: '今天以谁的身份出发？' });
-      await expect(heading).toBeVisible();
-      const parentPosition = await heading.boundingBox();
-
-      await page.getByRole('tab', { name: '我是孩子' }).click();
-      await expect(page.getByText('找到你的家庭', { exact: true })).toBeVisible();
-      const childPosition = await heading.boundingBox();
-
-      expect(parentPosition).not.toBeNull();
-      expect(childPosition).not.toBeNull();
-      expect(childPosition.y).toBe(parentPosition.y);
+      const loginRegion = page.getByRole('region', { name: 'FamilyStar 登录' });
+      const loginContent = loginRegion.locator(':scope > div');
+      const [regionBox, contentBox] = await Promise.all([
+        loginRegion.boundingBox(),
+        loginContent.boundingBox(),
+      ]);
+      expect(
+        Math.abs(contentBox.y + contentBox.height / 2 - (regionBox.y + regionBox.height / 2)),
+      ).toBeLessThan(2);
+      await expect(page.getByText('今天以谁的身份出发？')).toHaveCount(0);
+      await expect(page.getByText('欢迎回家', { exact: true })).toBeVisible();
+      await expect(page.getByText('一个入口，连接全家的每一次成长。')).toBeVisible();
+      await expect(page.getByLabel('家长登录说明')).toBeHidden();
     }
   });
 
@@ -184,10 +369,10 @@ test.describe('FamilyStar portal routes', () => {
       for (const link of await links.all()) await expect(link).toBeVisible();
 
       const dimensions = await page.evaluate(() => {
-        const navigationContent = document.querySelector('.nav-scroll');
+        const navigationContent = globalThis.document.querySelector('.nav-scroll');
         return {
-          documentClientWidth: document.documentElement.clientWidth,
-          documentScrollWidth: document.documentElement.scrollWidth,
+          documentClientWidth: globalThis.document.documentElement.clientWidth,
+          documentScrollWidth: globalThis.document.documentElement.scrollWidth,
           navigationClientWidth: navigationContent?.clientWidth,
           navigationScrollWidth: navigationContent?.scrollWidth,
         };
@@ -239,6 +424,219 @@ test.describe('FamilyStar portal routes', () => {
 });
 
 test.describe('FamilyStar core browser flows', () => {
+  test('manages family profile and co-parent invitations with authoritative refreshes', async ({
+    page,
+  }) => {
+    let profile = {
+      id: 'family-e2e',
+      name: '星光家庭',
+      time_zone: 'Asia/Shanghai',
+      parents: [
+        {
+          id: 'parent-e2e',
+          nickname: '星爸',
+          email: 'owner@example.com',
+          is_creator: true,
+          joined_at: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+      invitations: [],
+      permissions: { can_update_name: true, can_manage_invitations: true },
+    };
+    let savedProfilePayload;
+    let createdInvitationPayload;
+    let resendCount = 0;
+    await mockApi(page, (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith('/family/profile') && request.method() === 'GET') {
+        return envelope({ profile });
+      }
+      if (path.endsWith('/family/profile') && request.method() === 'PATCH') {
+        savedProfilePayload = request.postDataJSON();
+        profile = {
+          ...profile,
+          name: savedProfilePayload.name,
+          time_zone: savedProfilePayload.time_zone,
+        };
+        return envelope({ profile });
+      }
+      if (path.endsWith('/auth/parent/invitations') && request.method() === 'POST') {
+        createdInvitationPayload = request.postDataJSON();
+        profile = {
+          ...profile,
+          invitations: [
+            {
+              id: 'invitation-e2e',
+              email: createdInvitationPayload.email,
+              status: 'pending',
+              expires_at: '2026-08-12T00:00:00.000Z',
+              created_at: '2026-08-05T00:00:00.000Z',
+            },
+          ],
+        };
+        return envelope({
+          invitation: {
+            id: 'invitation-e2e',
+            email: createdInvitationPayload.email,
+            expiresAt: '2026-08-12T00:00:00.000Z',
+          },
+          delivery: 'copy-link',
+          invitationLink: 'https://example.test/invitations/initial',
+        });
+      }
+      if (path.endsWith('/family/invitations/invitation-e2e/resend')) {
+        resendCount += 1;
+        return envelope({
+          invitation: {
+            id: 'invitation-e2e',
+            email: 'coparent@example.com',
+            expiresAt: '2026-08-13T00:00:00.000Z',
+          },
+          delivery: 'copy-link',
+          invitationLink: 'https://example.test/invitations/refreshed',
+        });
+      }
+      if (path.endsWith('/family/invitations/invitation-e2e') && request.method() === 'DELETE') {
+        profile = { ...profile, invitations: [] };
+        return envelope({ invitation: { id: 'invitation-e2e', status: 'expired' } });
+      }
+      return undefined;
+    });
+
+    await page.goto('/family');
+    const profilePanel = page.locator('section.panel').filter({ hasText: '家庭资料' });
+    await profilePanel.getByLabel('家庭名称').fill('星河家庭');
+    await profilePanel.getByLabel('家庭时区').fill('Europe/Berlin');
+    await profilePanel.getByRole('button', { name: '保存家庭资料' }).click();
+    await expect(page.getByText('家庭资料已更新。')).toBeVisible();
+    expect(savedProfilePayload).toEqual({ name: '星河家庭', time_zone: 'Europe/Berlin' });
+
+    const parentPanel = page.locator('section.panel').filter({ hasText: '家长与共同管理' });
+    await expect(parentPanel.getByText('星爸', { exact: true })).toBeVisible();
+    await parentPanel.getByLabel('邀请共同家长').fill('coparent@example.com');
+    await parentPanel.getByRole('button', { name: '发送邀请' }).click();
+    await expect(parentPanel.getByText('coparent@example.com')).toBeVisible();
+    await expect(parentPanel.getByLabel('最新邀请链接')).toHaveValue(
+      'https://example.test/invitations/initial',
+    );
+    expect(createdInvitationPayload).toEqual({ email: 'coparent@example.com' });
+
+    await parentPanel.getByLabel('重发coparent@example.com的邀请').click();
+    await expect(parentPanel.getByLabel('最新邀请链接')).toHaveValue(
+      'https://example.test/invitations/refreshed',
+    );
+    expect(resendCount).toBe(1);
+
+    await parentPanel.getByLabel('撤销coparent@example.com的邀请').click();
+    await page.getByRole('button', { name: '确认撤销' }).click();
+    await expect(parentPanel.getByText('coparent@example.com')).toHaveCount(0);
+    await expect(page.getByText('coparent@example.com的邀请已撤销。')).toBeVisible();
+  });
+
+  test('shows co-parent family management restrictions', async ({ page }) => {
+    await mockApi(page, (request) => {
+      if (request.url().endsWith('/family/profile')) {
+        return envelope({
+          profile: {
+            id: 'family-e2e',
+            name: '星光家庭',
+            time_zone: 'Asia/Shanghai',
+            parents: [],
+            invitations: [],
+            permissions: { can_update_name: false, can_manage_invitations: false },
+          },
+        });
+      }
+      return undefined;
+    });
+
+    await page.goto('/family');
+    await expect(page.getByLabel('家庭名称')).toHaveAttribute('readonly', '');
+    await expect(page.getByLabel('家庭时区')).toBeEditable();
+    await expect(page.getByText('家庭名称由家庭创建者管理')).toBeVisible();
+    await expect(page.getByText('邀请管理由家庭创建者处理')).toBeVisible();
+    await expect(page.getByLabel('邀请共同家长')).toHaveCount(0);
+  });
+
+  test('maintains, tests and deletes the family email integration', async ({ page }) => {
+    let emailResource = {
+      configured: false,
+      status: null,
+      configuration: null,
+      credentials_configured: false,
+      last_verified_at: null,
+      last_verification_result: null,
+      can_manage: true,
+    };
+    let savedPayload;
+    await mockApi(page, (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith('/family/integrations/email') && request.method() === 'GET') {
+        return envelope(emailResource);
+      }
+      if (path.endsWith('/family/integrations/email') && request.method() === 'PUT') {
+        savedPayload = request.postDataJSON();
+        emailResource = {
+          ...emailResource,
+          configured: true,
+          status: 'pending',
+          configuration: savedPayload.configuration,
+          credentials_configured: true,
+        };
+        return envelope(emailResource);
+      }
+      if (path.endsWith('/family/integrations/email/test') && request.method() === 'POST') {
+        emailResource = {
+          ...emailResource,
+          status: 'verified',
+          last_verified_at: '2026-08-03T00:00:00.000Z',
+          last_verification_result: { code: 'email_test_sent' },
+        };
+        return envelope(emailResource);
+      }
+      if (path.endsWith('/family/integrations/email') && request.method() === 'DELETE') {
+        emailResource = {
+          configured: false,
+          status: null,
+          configuration: null,
+          credentials_configured: false,
+          last_verified_at: null,
+          last_verification_result: null,
+          can_manage: true,
+        };
+        return { status: 204, body: '' };
+      }
+      return undefined;
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/settings');
+    const card = page.locator('section.panel').filter({ hasText: '家庭邮件' });
+    await card.getByLabel('SMTP Host').fill('smtp.example.com');
+    await card.getByLabel('发件邮箱').fill('family@example.com');
+    await card.getByLabel('SMTP 用户名').fill('family@example.com');
+    await card.getByLabel('密码或授权码').fill('authorization-code');
+    await card.getByRole('button', { name: '保存配置' }).click();
+
+    await expect(card.getByText('待验证', { exact: true })).toBeVisible();
+    expect(savedPayload).toMatchObject({
+      configuration: { host: 'smtp.example.com', port: 465, tls_mode: 'tls' },
+      credentials: { username: 'family@example.com', password: 'authorization-code' },
+    });
+    await card.getByRole('button', { name: '测试连接' }).click();
+    await expect(card.getByText('验证通过', { exact: true })).toBeVisible();
+    await expect(card.getByText('测试邮件已发送')).toBeVisible();
+
+    await card.getByRole('button', { name: '删除' }).click();
+    await page.getByRole('button', { name: '确认删除' }).click();
+    await expect(card.getByText('未配置', { exact: true })).toBeVisible();
+    const dimensions = await page.evaluate(() => ({
+      client: globalThis.document.documentElement.clientWidth,
+      scroll: globalThis.document.documentElement.scrollWidth,
+    }));
+    expect(dimensions.scroll).toBe(dimensions.client);
+  });
+
   test('reloads the authoritative review queue and preserves failed submissions', async ({
     page,
   }) => {
@@ -301,6 +699,114 @@ test.describe('FamilyStar core browser flows', () => {
     await failedCard.getByRole('button', { name: '通过并发分' }).click();
     await expect(page.getByRole('alert').filter({ hasText: '当前记录已保留' })).toBeVisible();
     await expect(failedCard).toBeVisible();
+  });
+
+  test('previews review media and keeps decision actions in mobile order', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockApi(page, (request) => {
+      const url = request.url();
+      if (url.endsWith('/family/submission-reviews/pending')) {
+        return envelope({
+          reviews: [
+            {
+              target_type: 'CHECK_IN',
+              target_id: 'check-in-media-e2e',
+              attempt_id: 'attempt-media-e2e',
+              task: { id: 'task-media-e2e', name: '整理房间' },
+              child: { id: 'child-media-e2e', nickname: '小月' },
+              content_text: '已经整理完成。',
+              media: [
+                { id: 'image-media-e2e', type: 'IMAGE', mime_type: 'image/png' },
+                { id: 'image-media-e2e-2', type: 'IMAGE', mime_type: 'image/jpeg' },
+                { id: 'video-media-e2e', type: 'VIDEO', mime_type: 'video/mp4' },
+              ],
+              submitted_at: '2026-08-03T08:00:00.000Z',
+            },
+          ],
+        });
+      }
+      if (url.endsWith('/media/image-media-e2e/access-url')) {
+        return envelope({
+          url: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="20" height="20"%3E%3Crect width="20" height="20" fill="orange"/%3E%3C/svg%3E',
+        });
+      }
+      if (url.endsWith('/media/image-media-e2e-2/access-url')) {
+        return envelope({
+          url: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="20" height="20"%3E%3Crect width="20" height="20" fill="blue"/%3E%3C/svg%3E',
+        });
+      }
+      if (url.endsWith('/media/video-media-e2e/access-url')) {
+        return envelope({ url: 'data:video/mp4;base64,AAAA' });
+      }
+      return undefined;
+    });
+
+    await page.goto('/reviews');
+    const card = page.locator('article').filter({ hasText: '整理房间' });
+    const approve = card.getByRole('button', { name: '通过并发分' });
+    const reject = card.getByRole('button', { name: '不通过打回' });
+    const reason = card.getByLabel('打回原因');
+    const [approveBox, rejectBox, reasonBox] = await Promise.all([
+      approve.boundingBox(),
+      reject.boundingBox(),
+      reason.boundingBox(),
+    ]);
+    expect(approveBox.y).toBeLessThan(rejectBox.y);
+    expect(rejectBox.y).toBeLessThan(reasonBox.y);
+
+    await card.getByRole('button', { name: '查看凭证 (3)' }).click();
+    const dialog = page.getByRole('dialog', { name: '提交凭证' });
+    await expect(dialog.getByAltText('提交凭证 1')).toBeVisible();
+    await dialog.getByRole('button', { name: '放大图片' }).click();
+    await expect(dialog.getByRole('button', { name: '恢复图片原始缩放' })).toContainText('125%');
+    const imageViewport = dialog.getByLabel('图片凭证浏览区域');
+    const imageViewportBox = await imageViewport.boundingBox();
+    await page.mouse.move(
+      imageViewportBox.x + imageViewportBox.width / 2,
+      imageViewportBox.y + imageViewportBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      imageViewportBox.x + imageViewportBox.width / 2 + 45,
+      imageViewportBox.y + imageViewportBox.height / 2 + 35,
+    );
+    await page.mouse.up();
+    await expect(dialog.getByAltText('提交凭证 1')).toHaveCSS(
+      'transform',
+      /matrix\(1\.25, 0, 0, 1\.25, (?!0, 0)/,
+    );
+    await dialog.getByRole('button', { name: '恢复图片原始缩放' }).click();
+    const touchClient = await page.context().newCDPSession(page);
+    const touchY = imageViewportBox.y + imageViewportBox.height / 2;
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: imageViewportBox.x + imageViewportBox.width * 0.8, y: touchY }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: imageViewportBox.x + imageViewportBox.width * 0.2, y: touchY }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(dialog.getByAltText('提交凭证 2')).toBeVisible();
+    await dialog.getByRole('button', { name: '放大图片' }).click();
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x: imageViewportBox.x + imageViewportBox.width / 2, y: touchY }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ x: imageViewportBox.x + imageViewportBox.width / 2 - 40, y: touchY + 30 }],
+    });
+    await touchClient.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(dialog.getByAltText('提交凭证 2')).toBeVisible();
+    await expect(dialog.getByAltText('提交凭证 2')).toHaveCSS(
+      'transform',
+      /matrix\(1\.25, 0, 0, 1\.25, (?!0, 0)/,
+    );
+    await dialog.getByRole('button', { name: '下一项凭证' }).click();
+    await expect(dialog.getByLabel('视频凭证 3')).toBeVisible();
+    await page.locator('.modal-backdrop').click({ position: { x: 2, y: 2 } });
+    await expect(dialog).toHaveCount(0);
   });
 
   test('creates a parent task and preserves the API contract', async ({ page }) => {
@@ -380,6 +886,86 @@ test.describe('FamilyStar core browser flows', () => {
     await expect(page.getByText('整理学习桌', { exact: true })).toBeVisible();
     await expect(page.getByText('+15 星', { exact: true })).toBeVisible();
     await expect(page.getByText('提交说明：完成后勾选', { exact: true })).toBeVisible();
+  });
+
+  test('submits a real child checkbox check-in request', async ({ page }) => {
+    let submittedRequest;
+    await mockApi(
+      page,
+      (request) => {
+        if (request.method() === 'POST' && request.url().endsWith('/check-ins')) {
+          submittedRequest = {
+            body: request.postDataJSON(),
+            idempotencyKey: request.headers()['idempotency-key'],
+          };
+          return envelope(
+            {
+              check_in: {
+                id: 'check-in-child-e2e',
+                task_assignment_id: childTaskFixture.task_assignment_id,
+                status: 'APPROVED',
+              },
+            },
+            201,
+          );
+        }
+        return undefined;
+      },
+      'child',
+    );
+
+    await page.goto('/child/check-ins');
+    await page.getByRole('button', { name: '开始打卡' }).click();
+    const dialog = page.getByRole('dialog', { name: '打卡：整理学习桌' });
+    await expect(dialog.getByText('点击下方按钮确认完成任务')).toBeVisible();
+    await dialog.getByRole('button', { name: '确认打卡' }).click();
+
+    await expect
+      .poll(() => submittedRequest?.body.task_assignment_id)
+      .toBe(childTaskFixture.task_assignment_id);
+    expect(submittedRequest.idempotencyKey).toMatch(/^check-in-/);
+    await expect(dialog.getByText('打卡成功，任务已自动通过。')).toBeVisible();
+  });
+
+  test('shows mobile videos in the child media picker and preserves selected file names', async ({
+    page,
+  }) => {
+    await mockApi(
+      page,
+      (request) => {
+        if (new URL(request.url()).pathname.endsWith('/tasks/me')) {
+          return envelope({
+            date: '2026-08-03',
+            tasks: [
+              {
+                ...childTaskFixture,
+                name: '录制整理书桌',
+                check_type: 'VIDEO',
+                verify_mode: 'MANUAL',
+              },
+            ],
+          });
+        }
+        return undefined;
+      },
+      'child',
+    );
+
+    await page.goto('/child/check-ins');
+    await page.getByRole('button', { name: '开始打卡' }).click();
+    const dialog = page.getByRole('dialog', { name: '打卡：录制整理书桌' });
+    await expect(dialog.getByText('选择照片、视频')).toBeVisible();
+    await expect(dialog.getByText('点击选择…')).toBeVisible();
+    const input = dialog.locator('input[type="file"]');
+    await expect(input).toHaveClass(/sr-only/);
+    await expect(input).toHaveAttribute('accept', 'video/*,.mp4,.mov,.m4v');
+    await input.setInputFiles({
+      name: '整理完成.mov',
+      mimeType: 'video/quicktime',
+      buffer: Buffer.from('familystar-e2e'),
+    });
+    await expect(dialog.getByText('已选择 1 个文件')).toBeVisible();
+    await expect(dialog.getByText('整理完成.mov')).toBeVisible();
   });
 
   test('simulates COS multipart calls and displays PIN lock countdown', async ({ page }) => {

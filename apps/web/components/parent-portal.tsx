@@ -6,6 +6,8 @@ import {
   Camera,
   Check,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   CloudOff,
   Copy,
@@ -18,6 +20,7 @@ import {
   PackageCheck,
   Pencil,
   Plus,
+  RotateCcw,
   Save,
   ShieldCheck,
   Sparkles,
@@ -27,23 +30,43 @@ import {
   Trophy,
   UserPlus,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import NextImage from 'next/image';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
+import { createPortal } from 'react-dom';
 
 import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
 import { authApi, type SessionIdentity } from '../lib/auth';
 import {
   buildChildCredentialPatch,
   buildChildProfilePatch,
-  buildSoloTaskDraft,
+  buildCosIntegrationPayload,
+  buildEmailIntegrationPayload,
+  buildFamilyProfilePatch,
   buildSubmissionReviewRequest,
+  buildTaskDraft,
   buildTaskPatch,
   copyTextToClipboard,
   formatFrequency,
   parentApi,
+  type CosIntegrationDraft,
+  type EmailIntegrationDraft,
+  type FamilyProfile,
+  type IntegrationResource,
+  type IntegrationType,
   type ParentChild,
   type ParentSection,
   type ReviewTargetType,
+  type TaskCollaborationMode,
 } from '../lib/parent-portal';
 import { uploadMediaFile } from '../lib/media-upload';
 import { ParentShell } from './parent-shell';
@@ -51,6 +74,12 @@ import { ParentShell } from './parent-shell';
 type LoadState = ApiLoadState;
 type FamilyCodeLoadState = 'loading' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'error';
+type FrequencyKind = 'daily' | 'weekly_count' | 'weekdays' | 'date_range';
+type TaskFrequency =
+  | { kind: 'daily' }
+  | { kind: 'weekly_count'; count: number }
+  | { kind: 'weekdays'; weekdays: number[] }
+  | { kind: 'date_range'; start_date: string; end_date: string };
 type Child = ParentChild;
 type Task = {
   id: string;
@@ -63,7 +92,7 @@ type Task = {
   check_type: string;
   verify_mode: string;
   collaboration_mode: string;
-  frequency: { kind: string; count?: number };
+  frequency: TaskFrequency;
   assignments: Array<{ child_id: string }>;
 };
 type TaskType = { id: string; name: string };
@@ -309,6 +338,133 @@ function DashboardPage() {
   );
 }
 
+function FrequencyFields({
+  kind,
+  onKindChange,
+  value,
+}: {
+  kind: FrequencyKind;
+  onKindChange: (kind: FrequencyKind) => void;
+  value?: TaskFrequency;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  return (
+    <>
+      <label className="field-label">
+        任务频率
+        <select
+          className="field"
+          name="frequency_kind"
+          value={kind}
+          onChange={(event) => onKindChange(event.target.value as FrequencyKind)}
+        >
+          <option value="daily">每天</option>
+          <option value="weekly_count">每周 N 次</option>
+          <option value="weekdays">指定星期</option>
+          <option value="date_range">日期范围</option>
+        </select>
+      </label>
+      {kind === 'weekly_count' && (
+        <label className="field-label">
+          每周次数
+          <input
+            className="field"
+            name="frequency_count"
+            type="number"
+            min="1"
+            max="7"
+            defaultValue={value?.kind === 'weekly_count' ? value.count : 1}
+            required
+          />
+        </label>
+      )}
+      {kind === 'weekdays' && (
+        <fieldset className="field-label">
+          <legend>执行星期</legend>
+          <div className="flex flex-wrap gap-3 pt-2">
+            {['一', '二', '三', '四', '五', '六', '日'].map((label, index) => (
+              <label key={label} className="flex items-center gap-1.5 text-sm">
+                <input
+                  name="frequency_weekdays"
+                  type="checkbox"
+                  value={index + 1}
+                  defaultChecked={value?.kind === 'weekdays' && value.weekdays.includes(index + 1)}
+                />
+                周{label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      {kind === 'date_range' && (
+        <>
+          <label className="field-label">
+            开始日期
+            <input
+              className="field"
+              name="frequency_start_date"
+              type="date"
+              defaultValue={value?.kind === 'date_range' ? value.start_date : today}
+              required
+            />
+          </label>
+          <label className="field-label">
+            结束日期
+            <input
+              className="field"
+              name="frequency_end_date"
+              type="date"
+              defaultValue={value?.kind === 'date_range' ? value.end_date : today}
+              required
+            />
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+export function TaskAssigneeFields({
+  mode,
+  assignees,
+}: {
+  mode: TaskCollaborationMode;
+  assignees: ReadonlyArray<Pick<Child, 'id' | 'nickname'>>;
+}) {
+  if (mode === 'SOLO') {
+    return (
+      <label className="field-label">
+        分配孩子
+        <select className="field" name="child_id" required>
+          {assignees.map((child) => (
+            <option key={child.id} value={child.id}>
+              {child.nickname}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
+  return (
+    <fieldset className="field-label md:col-span-2">
+      <legend>参与孩子</legend>
+      <p className="mt-1 font-semibold text-brown-light">至少选择两名孩子共同完成任务</p>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {assignees.map((child) => (
+          <label
+            key={child.id}
+            className="flex min-h-11 cursor-pointer items-center gap-3 rounded-btn border border-wood bg-cream px-3 text-body font-bold text-brown transition focus-within:border-leaf focus-within:ring-2 focus-within:ring-leaf"
+          >
+            <input name="child_id" type="checkbox" value={child.id} />
+            {child.nickname}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function TasksPage() {
   const resource = useApiData<Task[]>('/family/tasks', 'tasks', []);
   const types = useApiData<TaskType[]>('/family/task-types', 'task_types', []);
@@ -316,14 +472,27 @@ function TasksPage() {
   const [filter, setFilter] = useState('all');
   const [open, setOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [createCollaborationMode, setCreateCollaborationMode] =
+    useState<TaskCollaborationMode>('SOLO');
+  const [createFrequencyKind, setCreateFrequencyKind] = useState<FrequencyKind>('daily');
+  const [editFrequencyKind, setEditFrequencyKind] = useState<FrequencyKind>('daily');
   const [actionMessage, setActionMessage] = useState('');
   const tasks = resource.data.filter((task) => filter === 'all' || task.status === filter);
 
   async function createTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setActionMessage('');
-    const form = new FormData(event.currentTarget);
-    const draft = buildSoloTaskDraft(form, new Date().toISOString().slice(0, 10));
+    let draft: ReturnType<typeof buildTaskDraft>;
+    try {
+      draft = buildTaskDraft(
+        new FormData(event.currentTarget),
+        new Date().toISOString().slice(0, 10),
+      );
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : '任务创建失败，请检查输入后重试。');
+      return;
+    }
+
     try {
       const data = await parentApi<{ task: Task }>('/family/tasks', {
         method: 'POST',
@@ -365,7 +534,11 @@ function TasksPage() {
             className="primary-button"
             disabled={children.data.length === 0 || types.data.length === 0}
             title={children.data.length === 0 ? '请先创建孩子档案' : undefined}
-            onClick={() => setOpen(true)}
+            onClick={() => {
+              setActionMessage('');
+              setCreateCollaborationMode('SOLO');
+              setOpen(true);
+            }}
           >
             <Plus size={17} />
             创建任务
@@ -432,6 +605,7 @@ function TasksPage() {
                 title={task.status === 'ARCHIVED' ? '归档任务不可编辑' : undefined}
                 onClick={() => {
                   setActionMessage('');
+                  setEditFrequencyKind(task.frequency.kind);
                   setEditingTask(task);
                 }}
               >
@@ -473,21 +647,30 @@ function TasksPage() {
                 </select>
               </label>
               <label className="field-label">
-                分配孩子
-                <select className="field" name="child_id">
-                  {children.data.map((child) => (
-                    <option key={child.id} value={child.id}>
-                      {child.nickname}
-                    </option>
-                  ))}
+                任务模式
+                <select
+                  className="field"
+                  name="collaboration_mode"
+                  value={createCollaborationMode}
+                  onChange={(event) => {
+                    setActionMessage('');
+                    setCreateCollaborationMode(event.target.value as TaskCollaborationMode);
+                  }}
+                >
+                  <option value="SOLO">单人任务</option>
+                  <option value="COLLAB">协作任务</option>
                 </select>
               </label>
+              <TaskAssigneeFields mode={createCollaborationMode} assignees={children.data} />
+              <FrequencyFields kind={createFrequencyKind} onKindChange={setCreateFrequencyKind} />
               <label className="field-label">
                 打卡方式
                 <select className="field" name="check_type">
                   <option value="TICK">勾选</option>
                   <option value="TEXT">文字</option>
                   <option value="PHOTO">照片</option>
+                  <option value="VIDEO">视频</option>
+                  <option value="MIXED">混合</option>
                 </select>
               </label>
               <label className="field-label">
@@ -510,6 +693,11 @@ function TasksPage() {
                 />
               </label>
             </div>
+            {actionMessage && (
+              <p className="notice text-red" role="alert">
+                {actionMessage}
+              </p>
+            )}
             <button className="primary-button w-full" type="submit">
               创建并启用
             </button>
@@ -553,6 +741,11 @@ function TasksPage() {
                   ))}
                 </select>
               </label>
+              <FrequencyFields
+                kind={editFrequencyKind}
+                onKindChange={setEditFrequencyKind}
+                value={editingTask.frequency}
+              />
               <label className="field-label">
                 打卡方式
                 <select className="field" name="check_type" defaultValue={editingTask.check_type}>
@@ -598,34 +791,338 @@ function TasksPage() {
   );
 }
 
-function ReviewMedia({ media }: { media: PendingReview['media'][number] }) {
-  const [url, setUrl] = useState('');
-  const [state, setState] = useState<'idle' | 'loading' | 'error'>('idle');
+export function ReviewMediaGallery({ media }: { media: PendingReview['media'] }) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const [states, setStates] = useState<Record<string, 'loading' | 'error'>>({});
+  const previewRef = useRef<HTMLDivElement>(null);
+  const gestureRef = useRef<{
+    pointerId: number;
+    mode: 'pan' | 'swipe';
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
+  const activeMedia = media[activeIndex];
 
-  async function loadUrl() {
-    setState('loading');
+  function constrainPan(position: { x: number; y: number }, scale = zoom) {
+    const bounds = previewRef.current?.getBoundingClientRect();
+    if (!bounds || scale <= 1) return { x: 0, y: 0 };
+    const maxX = (bounds.width * (scale - 1)) / 2;
+    const maxY = (bounds.height * (scale - 1)) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, position.x)),
+      y: Math.max(-maxY, Math.min(maxY, position.y)),
+    };
+  }
+
+  function resetView() {
+    gestureRef.current = null;
+    setDragging(false);
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }
+
+  function updateZoom(nextZoom: number) {
+    const boundedZoom = Math.max(1, Math.min(3, nextZoom));
+    setZoom(boundedZoom);
+    setPan((current) => constrainPan(current, boundedZoom));
+  }
+
+  async function loadUrl(item: PendingReview['media'][number]) {
+    if (urls[item.id]) return;
+    setStates((current) => ({ ...current, [item.id]: 'loading' }));
     try {
-      const result = await parentApi<{ url: string }>(`/media/${media.id}/access-url`);
-      setUrl(result.url);
-      setState('idle');
+      const result = await parentApi<{ url: string }>(`/media/${item.id}/access-url`);
+      setUrls((current) => ({ ...current, [item.id]: result.url }));
+      setStates((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
     } catch {
-      setState('error');
+      setStates((current) => ({ ...current, [item.id]: 'error' }));
     }
   }
 
-  if (url) {
-    return (
-      <a className="secondary-button" href={url} target="_blank" rel="noreferrer">
-        <ImageIcon size={15} />
-        打开{media.type === 'IMAGE' ? '图片' : media.type === 'VIDEO' ? '视频' : '音频'}凭证
-      </a>
-    );
+  function openPreview() {
+    setActiveIndex(0);
+    resetView();
+    setOpen(true);
+    if (media[0]) void loadUrl(media[0]);
   }
+
+  function showMedia(index: number) {
+    const nextIndex = (index + media.length) % media.length;
+    const nextMedia = media[nextIndex];
+    if (!nextMedia) return;
+    setActiveIndex(nextIndex);
+    resetView();
+    void loadUrl(nextMedia);
+  }
+
+  function startImageGesture(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const mode =
+      zoom > 1 ? 'pan' : event.pointerType === 'touch' && media.length > 1 ? 'swipe' : null;
+    if (!mode) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      mode,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+    };
+    if (mode === 'pan') setDragging(true);
+  }
+
+  function moveImageGesture(event: ReactPointerEvent<HTMLDivElement>) {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (gesture.mode === 'pan') {
+      event.preventDefault();
+      const deltaX = event.clientX - gesture.lastX;
+      const deltaY = event.clientY - gesture.lastY;
+      setPan((current) => constrainPan({ x: current.x + deltaX, y: current.y + deltaY }));
+    }
+    gesture.lastX = event.clientX;
+    gesture.lastY = event.clientY;
+  }
+
+  function finishImageGesture(event: ReactPointerEvent<HTMLDivElement>, cancelled = false) {
+    const gesture = gestureRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    gestureRef.current = null;
+    setDragging(false);
+    if (cancelled || gesture.mode !== 'swipe') return;
+    const horizontalDistance = event.clientX - gesture.startX;
+    const verticalDistance = event.clientY - gesture.startY;
+    if (
+      Math.abs(horizontalDistance) < 48 ||
+      Math.abs(horizontalDistance) <= Math.abs(verticalDistance)
+    ) {
+      return;
+    }
+    showMedia(activeIndex + (horizontalDistance < 0 ? 1 : -1));
+  }
+
+  if (!activeMedia) return null;
+
+  const activeUrl = urls[activeMedia.id];
+  const activeState = states[activeMedia.id];
+
   return (
-    <button className="secondary-button" disabled={state === 'loading'} onClick={loadUrl}>
-      <ImageIcon size={15} />
-      {state === 'loading' ? '读取凭证中' : state === 'error' ? '重试凭证' : '查看凭证'}
-    </button>
+    <>
+      <button className="secondary-button" type="button" onClick={openPreview}>
+        <ImageIcon size={15} />
+        查看凭证{media.length > 1 ? ` (${media.length})` : ''}
+      </button>
+      {open && (
+        <Modal
+          title="提交凭证"
+          onClose={() => {
+            setOpen(false);
+            resetView();
+          }}
+        >
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 text-caption font-bold text-brown-light">
+              <span>
+                {activeMedia.type === 'IMAGE'
+                  ? '图片'
+                  : activeMedia.type === 'VIDEO'
+                    ? '视频'
+                    : '音频'}
+              </span>
+              <span aria-live="polite">
+                {activeIndex + 1} / {media.length}
+              </span>
+            </div>
+            {activeState === 'loading' && (
+              <div className="media-placeholder" role="status">
+                <span className="loading-dot" />
+                正在读取凭证
+              </div>
+            )}
+            {activeState === 'error' && (
+              <div className="media-placeholder" role="alert">
+                <CloudOff size={28} />
+                <span>凭证读取失败</span>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void loadUrl(activeMedia)}
+                >
+                  重试
+                </button>
+              </div>
+            )}
+            {activeUrl && activeMedia.type === 'IMAGE' && (
+              <div
+                ref={previewRef}
+                className="relative h-[min(56vh,520px)] overflow-hidden rounded-card bg-cream"
+                style={{
+                  cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'default',
+                  touchAction: zoom > 1 ? 'none' : media.length > 1 ? 'pan-y' : 'auto',
+                }}
+                aria-label="图片凭证浏览区域"
+                onPointerDown={startImageGesture}
+                onPointerMove={moveImageGesture}
+                onPointerUp={finishImageGesture}
+                onPointerCancel={(event) => finishImageGesture(event, true)}
+              >
+                <NextImage
+                  src={activeUrl}
+                  alt={`提交凭证 ${activeIndex + 1}`}
+                  fill
+                  unoptimized
+                  draggable={false}
+                  sizes="(max-width: 767px) 90vw, 480px"
+                  className={`select-none object-contain ${dragging ? '' : 'transition-transform duration-200'}`}
+                  style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}
+                  onDragStart={(event) => event.preventDefault()}
+                />
+              </div>
+            )}
+            {activeUrl && activeMedia.type === 'VIDEO' && (
+              // The uploaded video is user-generated, so a caption track is not available here.
+              // eslint-disable-next-line jsx-a11y/media-has-caption
+              <video
+                className="max-h-[56vh] w-full rounded-card bg-brown"
+                src={activeUrl}
+                controls
+                preload="metadata"
+                aria-label={`视频凭证 ${activeIndex + 1}`}
+              />
+            )}
+            {activeUrl && activeMedia.type === 'AUDIO' && (
+              // The uploaded audio is user-generated, so a caption track is not available here.
+              // eslint-disable-next-line jsx-a11y/media-has-caption
+              <audio
+                className="w-full"
+                src={activeUrl}
+                controls
+                preload="metadata"
+                aria-label={`音频凭证 ${activeIndex + 1}`}
+              />
+            )}
+            {activeMedia.type === 'IMAGE' && activeUrl && (
+              <div className="flex items-center justify-center gap-2" aria-label="图片缩放控制">
+                <button
+                  className="icon-button"
+                  type="button"
+                  disabled={zoom <= 1}
+                  onClick={() => updateZoom(zoom - 0.25)}
+                  aria-label="缩小图片"
+                >
+                  <ZoomOut size={19} />
+                </button>
+                <button
+                  className="secondary-button min-w-24"
+                  type="button"
+                  disabled={zoom === 1}
+                  onClick={resetView}
+                  aria-label="恢复图片原始缩放"
+                >
+                  <RotateCcw size={16} />
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  className="icon-button"
+                  type="button"
+                  disabled={zoom >= 3}
+                  onClick={() => updateZoom(zoom + 0.25)}
+                  aria-label="放大图片"
+                >
+                  <ZoomIn size={19} />
+                </button>
+              </div>
+            )}
+            {activeMedia.type === 'IMAGE' && activeUrl && (
+              <p className="text-center text-caption text-brown-light" aria-live="polite">
+                {zoom > 1
+                  ? '拖动图片浏览放大区域'
+                  : media.length > 1
+                    ? '移动端左右滑动可切换凭证'
+                    : '使用缩放按钮查看图片细节'}
+              </p>
+            )}
+            {media.length > 1 && (
+              <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => showMedia(activeIndex - 1)}
+                  aria-label="上一项凭证"
+                >
+                  <ChevronLeft size={18} />
+                  上一项
+                </button>
+                <span className="text-center text-caption font-bold text-brown-light">
+                  切换凭证
+                </span>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => showMedia(activeIndex + 1)}
+                  aria-label="下一项凭证"
+                >
+                  下一项
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+export function ReviewActions({
+  busy,
+  reason,
+  onApprove,
+  onReject,
+  onReasonChange,
+}: {
+  busy: boolean;
+  reason: string;
+  onApprove: () => void;
+  onReject: () => void;
+  onReasonChange: (reason: string) => void;
+}) {
+  return (
+    <div className="mt-4 grid gap-3 md:grid-cols-[auto_auto_1fr] md:items-end">
+      <button className="primary-button" type="button" disabled={busy} onClick={onApprove}>
+        <Check size={17} />
+        {busy ? '处理中' : '通过并发分'}
+      </button>
+      <button className="secondary-button" type="button" disabled={busy} onClick={onReject}>
+        <X size={17} />
+        不通过打回
+      </button>
+      <label className="field-label">
+        打回原因
+        <input
+          className="field"
+          value={reason}
+          maxLength={2000}
+          placeholder="打回时必填，例如：请补充清晰照片"
+          onChange={(event) => onReasonChange(event.target.value)}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -719,44 +1216,18 @@ function ReviewsPage() {
                 </p>
                 {item.media.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-2" aria-label="提交凭证">
-                    {item.media.map((media) => (
-                      <ReviewMedia key={media.id} media={media} />
-                    ))}
+                    <ReviewMediaGallery media={item.media} />
                   </div>
                 )}
-                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-end">
-                  <label className="field-label">
-                    打回原因
-                    <input
-                      className="field"
-                      value={reasons[item.target_id] ?? ''}
-                      maxLength={2000}
-                      placeholder="打回时必填，例如：请补充清晰照片"
-                      onChange={(event) =>
-                        setReasons((current) => ({
-                          ...current,
-                          [item.target_id]: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={() => submitReview(item, 'REJECTED')}
-                  >
-                    <X size={17} />
-                    打回
-                  </button>
-                  <button
-                    className="primary-button"
-                    disabled={busy}
-                    onClick={() => submitReview(item, 'APPROVED')}
-                  >
-                    <Check size={17} />
-                    {busy ? '处理中' : '通过并发分'}
-                  </button>
-                </div>
+                <ReviewActions
+                  busy={busy}
+                  reason={reasons[item.target_id] ?? ''}
+                  onApprove={() => submitReview(item, 'APPROVED')}
+                  onReject={() => submitReview(item, 'REJECTED')}
+                  onReasonChange={(reason) =>
+                    setReasons((current) => ({ ...current, [item.target_id]: reason }))
+                  }
+                />
               </article>
             );
           })}
@@ -1080,12 +1551,70 @@ function RecordsPage() {
   );
 }
 
+export function FamilyProfileFields({
+  profile,
+  busy,
+  onSubmit,
+}: {
+  profile: FamilyProfile;
+  busy: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form className="space-y-4" onSubmit={onSubmit} aria-busy={busy}>
+      <label className="field-label">
+        家庭名称
+        <input
+          className="field"
+          name="name"
+          defaultValue={profile.name}
+          maxLength={80}
+          required
+          readOnly={!profile.permissions.can_update_name}
+          aria-describedby={
+            profile.permissions.can_update_name ? undefined : 'family-name-permission-note'
+          }
+        />
+      </label>
+      {!profile.permissions.can_update_name && (
+        <p className="notice" id="family-name-permission-note">
+          家庭名称由家庭创建者管理，共同家长可更新家庭时区。
+        </p>
+      )}
+      <label className="field-label">
+        家庭时区
+        <input
+          className="field"
+          name="time_zone"
+          defaultValue={profile.time_zone}
+          maxLength={64}
+          required
+          placeholder="Asia/Shanghai"
+          aria-describedby="family-time-zone-note"
+        />
+      </label>
+      <p className="text-caption font-bold text-brown-light" id="family-time-zone-note">
+        使用 IANA 时区名称，例如 Asia/Shanghai。
+      </p>
+      <button className="primary-button w-full justify-center" type="submit" disabled={busy}>
+        <Save size={16} />
+        {busy ? '正在保存...' : '保存家庭资料'}
+      </button>
+    </form>
+  );
+}
+
 function FamilyPage() {
   const children = useApiData<Child[]>('/family/children', 'children', []);
+  const profile = useApiData<FamilyProfile | null>('/family/profile', 'profile', null);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingChild, setEditingChild] = useState<Child | null>(null);
   const [credentialChild, setCredentialChild] = useState<Child | null>(null);
   const [deactivatingChild, setDeactivatingChild] = useState<Child | null>(null);
+  const [revokingInvitation, setRevokingInvitation] = useState<
+    FamilyProfile['invitations'][number] | null
+  >(null);
+  const [invitationLink, setInvitationLink] = useState('');
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [familyCode, setFamilyCode] = useState('');
   const [familyCodeState, setFamilyCodeState] = useState<FamilyCodeLoadState>('loading');
@@ -1124,6 +1653,15 @@ function FamilyPage() {
       setFeedback({ tone: 'success', message: successMessage });
     } catch {
       setFeedback({ tone: 'error', message: '操作已提交，成员列表刷新失败，请刷新页面确认。' });
+    }
+  }
+
+  async function refreshProfileAfterWrite(successMessage: string): Promise<void> {
+    try {
+      await profile.refresh();
+      setFeedback({ tone: 'success', message: successMessage });
+    } catch {
+      setFeedback({ tone: 'error', message: '操作已提交，家庭资料刷新失败，请刷新页面确认。' });
     }
   }
 
@@ -1217,6 +1755,95 @@ function FamilyPage() {
       await refreshAfterWrite(`${child.nickname}的档案已停用，历史记录继续保留。`);
     } catch (error) {
       setFeedback({ tone: 'error', message: errorMessage(error, '停用孩子档案失败。') });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function updateFamilyProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!profile.data || busyAction) return;
+    const form = new FormData(event.currentTarget);
+    setBusyAction('family-profile');
+    setFeedback(null);
+    try {
+      const result = await parentApi<{ profile: FamilyProfile }>('/family/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(
+          buildFamilyProfilePatch(form, profile.data.permissions.can_update_name),
+        ),
+      });
+      profile.setData(result.profile);
+      setFeedback({ tone: 'success', message: '家庭资料已更新。' });
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '家庭资料更新失败。') });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function createInvitation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!profile.data?.permissions.can_manage_invitations || busyAction) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    setBusyAction('invitation-create');
+    setInvitationLink('');
+    setFeedback(null);
+    try {
+      const result = await parentApi<{
+        invitation: { id: string; email: string; expiresAt: string };
+        delivery: 'email' | 'copy-link';
+        invitationLink?: string;
+      }>('/auth/parent/invitations', {
+        method: 'POST',
+        body: JSON.stringify({ email: String(form.get('email') ?? '').trim() }),
+      });
+      setInvitationLink(result.invitationLink ?? '');
+      formElement.reset();
+      await refreshProfileAfterWrite(
+        result.delivery === 'email' ? '邀请邮件已发送。' : '邀请已创建，请复制邀请链接。',
+      );
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '共同家长邀请创建失败。') });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function resendInvitation(invitationId: string) {
+    if (busyAction) return;
+    setBusyAction(`invitation-resend:${invitationId}`);
+    setInvitationLink('');
+    setFeedback(null);
+    try {
+      const result = await parentApi<{ delivery: 'email' | 'copy-link'; invitationLink?: string }>(
+        `/family/invitations/${invitationId}/resend`,
+        { method: 'POST' },
+      );
+      setInvitationLink(result.invitationLink ?? '');
+      await refreshProfileAfterWrite(
+        result.delivery === 'email' ? '邀请邮件已重新发送。' : '邀请令牌已更新，请复制新链接。',
+      );
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '邀请重发失败。') });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function revokeInvitation() {
+    if (!revokingInvitation || busyAction) return;
+    const invitation = revokingInvitation;
+    setBusyAction(`invitation-revoke:${invitation.id}`);
+    setFeedback(null);
+    try {
+      await parentApi(`/family/invitations/${invitation.id}`, { method: 'DELETE' });
+      setRevokingInvitation(null);
+      setInvitationLink('');
+      await refreshProfileAfterWrite(`${invitation.email}的邀请已撤销。`);
+    } catch (error) {
+      setFeedback({ tone: 'error', message: errorMessage(error, '邀请撤销失败。') });
     } finally {
       setBusyAction(null);
     }
@@ -1318,20 +1945,173 @@ function FamilyPage() {
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <Panel>
           <SectionTitle>家长与共同管理</SectionTitle>
-          <EmptyState
-            title="家长列表接口待接入"
-            detail="共同管理者信息和邀请状态将在家庭资料读取接口完成后展示。"
-            icon={<Mail size={30} />}
-          />
+          {profile.state === 'loading' && <EmptyState title="正在读取家长列表" detail="请稍候。" />}
+          {profile.state === 'error' && (
+            <EmptyState title="家长列表读取失败" detail="请刷新页面后重试。" />
+          )}
+          {profile.data && (
+            <div className="space-y-4">
+              <div className="space-y-3">
+                {profile.data.parents.map((parent) => (
+                  <article className="list-row" key={parent.id}>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="avatar">{parent.nickname.slice(-1)}</span>
+                      <div className="min-w-0">
+                        <strong className="block truncate">{parent.nickname}</strong>
+                        <span className="text-caption font-bold text-brown-light">
+                          {parent.email ?? '未设置邮箱'}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="status-chip bg-sand text-brown-light">
+                      {parent.is_creator ? '家庭创建者' : '共同家长'}
+                    </span>
+                  </article>
+                ))}
+              </div>
+              {profile.data.invitations.length > 0 && (
+                <div className="space-y-2 border-t border-sand pt-4">
+                  <h3 className="font-display text-title">待处理邀请</h3>
+                  {profile.data.invitations.map((invitation) => (
+                    <article className="list-row" key={invitation.id}>
+                      <div className="min-w-0">
+                        <strong className="block truncate">{invitation.email}</strong>
+                        <span className="text-caption font-bold text-brown-light">
+                          {invitation.status === 'pending' ? '有效期至' : '已于'}{' '}
+                          {new Date(invitation.expires_at).toLocaleString('zh-CN')}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="status-chip bg-sand text-brown-light">
+                          {invitation.status === 'pending' ? '待接受' : '已过期'}
+                        </span>
+                        {profile.data?.permissions.can_manage_invitations &&
+                          invitation.status === 'pending' && (
+                            <>
+                              <button
+                                className="icon-button"
+                                type="button"
+                                aria-label={`重发${invitation.email}的邀请`}
+                                disabled={Boolean(busyAction)}
+                                onClick={() => resendInvitation(invitation.id)}
+                              >
+                                <RotateCcw size={16} />
+                              </button>
+                              <button
+                                className="icon-button text-red"
+                                type="button"
+                                aria-label={`撤销${invitation.email}的邀请`}
+                                disabled={Boolean(busyAction)}
+                                onClick={() => setRevokingInvitation(invitation)}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
+                          )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+              {profile.data.permissions.can_manage_invitations ? (
+                <form className="space-y-3 border-t border-sand pt-4" onSubmit={createInvitation}>
+                  <label className="field-label">
+                    邀请共同家长
+                    <input
+                      className="field"
+                      name="email"
+                      type="email"
+                      autoComplete="email"
+                      required
+                      placeholder="parent@example.com"
+                    />
+                  </label>
+                  <button
+                    className="secondary-button w-full justify-center"
+                    type="submit"
+                    disabled={Boolean(busyAction)}
+                  >
+                    <Mail size={16} />
+                    {busyAction === 'invitation-create' ? '正在创建...' : '发送邀请'}
+                  </button>
+                </form>
+              ) : (
+                <p className="notice">共同家长可查看成员和邀请状态，邀请管理由家庭创建者处理。</p>
+              )}
+              {invitationLink && (
+                <div className="notice space-y-2" role="status">
+                  <strong className="block">最新邀请链接</strong>
+                  <input
+                    className="field"
+                    value={invitationLink}
+                    readOnly
+                    aria-label="最新邀请链接"
+                  />
+                  <button
+                    className="text-button"
+                    type="button"
+                    onClick={() =>
+                      copyTextToClipboard(invitationLink)
+                        .then(() => setFeedback({ tone: 'success', message: '邀请链接已复制。' }))
+                        .catch(() =>
+                          setFeedback({ tone: 'error', message: '复制失败，请手动复制。' }),
+                        )
+                    }
+                  >
+                    <Copy size={15} />
+                    复制邀请链接
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </Panel>
         <Panel>
           <SectionTitle>家庭资料</SectionTitle>
-          <EmptyState
-            title="家庭资料接口待接入"
-            detail="家庭名称和时区会在真实读取接口开放后提供编辑。"
-          />
+          {profile.state === 'loading' && <EmptyState title="正在读取家庭资料" detail="请稍候。" />}
+          {profile.state === 'error' && (
+            <EmptyState title="家庭资料读取失败" detail="请刷新页面后重试。" />
+          )}
+          {profile.data && (
+            <FamilyProfileFields
+              key={`${profile.data.id}:${profile.data.name}:${profile.data.time_zone}`}
+              profile={profile.data}
+              busy={busyAction === 'family-profile'}
+              onSubmit={updateFamilyProfile}
+            />
+          )}
         </Panel>
       </div>
+      {revokingInvitation && (
+        <Modal
+          title="确认撤销共同家长邀请"
+          onClose={() => !busyAction && setRevokingInvitation(null)}
+        >
+          <p className="font-semibold text-brown-light">
+            撤销后，发送给 {revokingInvitation.email} 的现有邀请链接将立即失效。
+          </p>
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={Boolean(busyAction)}
+              onClick={() => setRevokingInvitation(null)}
+            >
+              取消
+            </button>
+            <button
+              className="primary-button bg-red"
+              type="button"
+              disabled={Boolean(busyAction)}
+              onClick={revokeInvitation}
+            >
+              {busyAction === `invitation-revoke:${revokingInvitation.id}`
+                ? '正在撤销...'
+                : '确认撤销'}
+            </button>
+          </div>
+        </Modal>
+      )}
       {createOpen && (
         <Modal title="添加孩子" onClose={() => !busyAction && setCreateOpen(false)}>
           {feedback?.tone === 'error' && (
@@ -1632,6 +2412,428 @@ export function FamilyCodeCard({
   );
 }
 
+const emptyEmailDraft: EmailIntegrationDraft = {
+  host: '',
+  port: '465',
+  tlsMode: 'tls',
+  fromName: 'FamilyStar',
+  fromAddress: '',
+  username: '',
+  password: '',
+};
+
+const emptyCosDraft: CosIntegrationDraft = {
+  bucket: '',
+  region: '',
+  domain: '',
+  secretId: '',
+  secretKey: '',
+};
+
+function configurationString(configuration: Record<string, unknown> | null, key: string): string {
+  const value = configuration?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function configurationNumber(configuration: Record<string, unknown> | null, key: string): string {
+  const value = configuration?.[key];
+  return typeof value === 'number' ? String(value) : '';
+}
+
+function integrationStatus(resource: IntegrationResource | null): string {
+  if (!resource?.configured) return '未配置';
+  if (resource.status === 'verified') return '验证通过';
+  if (resource.status === 'invalid') return '验证失败';
+  return '待验证';
+}
+
+function verificationCode(resource: IntegrationResource): string {
+  const code = resource.last_verification_result?.code;
+  const labels: Record<string, string> = {
+    email_test_sent: '测试邮件已发送',
+    cos_probe_ok: '对象存储探测通过',
+    cos_content_mismatch: '探测对象内容不一致',
+    cos_cors_invalid: 'Bucket CORS 需要允许当前站点、PUT 方法并暴露 ETag',
+    cos_cleanup_failed: '探测对象清理失败',
+    cos_probe_failed: '对象存储连接失败',
+    smtp_host_blocked: 'SMTP 地址不允许访问',
+    smtp_timeout: 'SMTP 连接超时',
+    email_configuration_invalid: '邮件配置无效',
+  };
+  return code ? (labels[code] ?? '连接验证失败') : '';
+}
+
+function IntegrationSettingsCard({ type }: { type: IntegrationType }) {
+  const isEmail = type === 'email';
+  const path = `/family/integrations/${type}`;
+  const [resource, setResource] = useState<IntegrationResource | null>(null);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [emailDraft, setEmailDraft] = useState(emptyEmailDraft);
+  const [cosDraft, setCosDraft] = useState(emptyCosDraft);
+  const [busy, setBusy] = useState<'save' | 'test' | 'delete' | null>(null);
+  const [message, setMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    parentApi<IntegrationResource>(path)
+      .then((value) => {
+        if (!active) return;
+        setResource(value);
+        setLoadState('live');
+        if (isEmail) {
+          setEmailDraft({
+            ...emptyEmailDraft,
+            host: configurationString(value.configuration, 'host'),
+            port: configurationNumber(value.configuration, 'port') || emptyEmailDraft.port,
+            tlsMode:
+              value.configuration?.tls_mode === 'none' ||
+              value.configuration?.tls_mode === 'starttls' ||
+              value.configuration?.tls_mode === 'tls'
+                ? value.configuration.tls_mode
+                : emptyEmailDraft.tlsMode,
+            fromName: configurationString(value.configuration, 'from_name') || 'FamilyStar',
+            fromAddress: configurationString(value.configuration, 'from_address'),
+          });
+        } else {
+          setCosDraft({
+            ...emptyCosDraft,
+            bucket: configurationString(value.configuration, 'bucket'),
+            region: configurationString(value.configuration, 'region'),
+            domain: configurationString(value.configuration, 'domain'),
+          });
+        }
+      })
+      .catch(() => active && setLoadState('error'));
+    return () => {
+      active = false;
+    };
+  }, [isEmail, path]);
+
+  async function saveIntegration(event: FormEvent) {
+    event.preventDefault();
+    setBusy('save');
+    setMessage(null);
+    try {
+      const payload = isEmail
+        ? buildEmailIntegrationPayload(emailDraft, resource?.configured ?? false)
+        : buildCosIntegrationPayload(cosDraft, resource?.configured ?? false);
+      const updated = await parentApi<IntegrationResource>(path, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      setResource(updated);
+      setEmailDraft((current) => ({ ...current, username: '', password: '' }));
+      setCosDraft((current) => ({ ...current, secretId: '', secretKey: '' }));
+      setMessage({ kind: 'success', text: '配置已保存，请执行连接测试' });
+    } catch (error) {
+      setMessage({
+        kind: 'error',
+        text: error instanceof Error ? error.message : '配置保存失败',
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function testIntegration() {
+    setBusy('test');
+    setMessage(null);
+    try {
+      const updated = await parentApi<IntegrationResource>(`${path}/test`, { method: 'POST' });
+      setResource(updated);
+      setMessage({
+        kind: updated.status === 'verified' ? 'success' : 'error',
+        text: verificationCode(updated) || integrationStatus(updated),
+      });
+    } catch {
+      setMessage({ kind: 'error', text: '连接测试失败，请检查配置后重试' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deleteIntegration() {
+    setBusy('delete');
+    setMessage(null);
+    try {
+      await parentApi<void>(path, { method: 'DELETE' });
+      setResource({
+        configured: false,
+        status: null,
+        configuration: null,
+        credentials_configured: false,
+        last_verified_at: null,
+        last_verification_result: null,
+        can_manage: true,
+      });
+      setEmailDraft(emptyEmailDraft);
+      setCosDraft(emptyCosDraft);
+      setConfirmDelete(false);
+      setMessage({ kind: 'success', text: '配置已删除' });
+    } catch {
+      setMessage({ kind: 'error', text: '删除失败，请刷新后重试' });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const status = integrationStatus(resource);
+  return (
+    <Panel>
+      <SectionTitle
+        action={
+          <span
+            className={`status-chip ${resource?.status === 'verified' ? 'bg-leaf-light text-leaf-dark' : 'bg-sand text-brown-light'}`}
+          >
+            {status}
+          </span>
+        }
+      >
+        <span className="inline-flex items-center gap-2">
+          {isEmail ? <Mail size={20} /> : <Camera size={20} />}
+          {isEmail ? '家庭邮件' : '腾讯云 COS'}
+        </span>
+      </SectionTitle>
+      {loadState === 'loading' && <EmptyState title="正在读取配置" detail="请稍候。" />}
+      {loadState === 'error' && <EmptyState title="配置读取失败" detail="请刷新页面后重试。" />}
+      {resource && !resource.can_manage && (
+        <div className="space-y-3">
+          <p className="notice">仅家庭创建者可维护集成配置。</p>
+          {Object.entries(resource.configuration ?? {}).map(([key, value]) => (
+            <div className="list-row" key={key}>
+              <span className="font-extrabold text-brown-light">{key}</span>
+              <strong className="break-all text-right">{String(value)}</strong>
+            </div>
+          ))}
+          {resource.last_verified_at && (
+            <p className="text-caption font-bold text-brown-light">
+              最近验证：{new Date(resource.last_verified_at).toLocaleString('zh-CN')}
+            </p>
+          )}
+        </div>
+      )}
+      {resource?.can_manage && (
+        <form className="space-y-4" onSubmit={saveIntegration}>
+          {isEmail ? (
+            <div className="form-grid">
+              <label className="field-label">
+                SMTP Host
+                <input
+                  className="field"
+                  required
+                  value={emailDraft.host}
+                  onChange={(event) => setEmailDraft({ ...emailDraft, host: event.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                SMTP Port
+                <input
+                  className="field"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  required
+                  value={emailDraft.port}
+                  onChange={(event) => setEmailDraft({ ...emailDraft, port: event.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                TLS 模式
+                <select
+                  className="field"
+                  value={emailDraft.tlsMode}
+                  onChange={(event) =>
+                    setEmailDraft({
+                      ...emailDraft,
+                      tlsMode: event.target.value as EmailIntegrationDraft['tlsMode'],
+                    })
+                  }
+                >
+                  <option value="tls">TLS</option>
+                  <option value="starttls">STARTTLS</option>
+                  <option value="none">无加密</option>
+                </select>
+              </label>
+              <label className="field-label">
+                发件人名称
+                <input
+                  className="field"
+                  required
+                  value={emailDraft.fromName}
+                  onChange={(event) =>
+                    setEmailDraft({ ...emailDraft, fromName: event.target.value })
+                  }
+                />
+              </label>
+              <label className="field-label">
+                发件邮箱
+                <input
+                  className="field"
+                  type="email"
+                  required
+                  value={emailDraft.fromAddress}
+                  onChange={(event) =>
+                    setEmailDraft({ ...emailDraft, fromAddress: event.target.value })
+                  }
+                />
+              </label>
+              <label className="field-label">
+                SMTP 用户名
+                <input
+                  className="field"
+                  autoComplete="off"
+                  required={!resource.configured}
+                  value={emailDraft.username}
+                  onChange={(event) =>
+                    setEmailDraft({ ...emailDraft, username: event.target.value })
+                  }
+                />
+              </label>
+              <label className="field-label">
+                密码或授权码
+                <input
+                  className="field"
+                  type="password"
+                  autoComplete="new-password"
+                  required={!resource.configured}
+                  value={emailDraft.password}
+                  onChange={(event) =>
+                    setEmailDraft({ ...emailDraft, password: event.target.value })
+                  }
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="form-grid">
+              <label className="field-label">
+                Bucket
+                <input
+                  className="field"
+                  required
+                  value={cosDraft.bucket}
+                  onChange={(event) => setCosDraft({ ...cosDraft, bucket: event.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                Region
+                <input
+                  className="field"
+                  required
+                  value={cosDraft.region}
+                  onChange={(event) => setCosDraft({ ...cosDraft, region: event.target.value })}
+                />
+              </label>
+              <label className="field-label md:col-span-2">
+                访问域名
+                <input
+                  className="field"
+                  type="url"
+                  required
+                  value={cosDraft.domain}
+                  onChange={(event) => setCosDraft({ ...cosDraft, domain: event.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                SecretId
+                <input
+                  className="field"
+                  type="password"
+                  autoComplete="off"
+                  required={!resource.configured}
+                  value={cosDraft.secretId}
+                  onChange={(event) => setCosDraft({ ...cosDraft, secretId: event.target.value })}
+                />
+              </label>
+              <label className="field-label">
+                SecretKey
+                <input
+                  className="field"
+                  type="password"
+                  autoComplete="new-password"
+                  required={!resource.configured}
+                  value={cosDraft.secretKey}
+                  onChange={(event) => setCosDraft({ ...cosDraft, secretKey: event.target.value })}
+                />
+              </label>
+            </div>
+          )}
+          {resource.last_verified_at && (
+            <p className="text-caption font-bold text-brown-light">
+              最近验证：{new Date(resource.last_verified_at).toLocaleString('zh-CN')}
+            </p>
+          )}
+          {message && (
+            <p
+              className={`notice ${message.kind === 'error' ? 'text-red' : 'text-leaf-dark'}`}
+              role={message.kind === 'error' ? 'alert' : 'status'}
+            >
+              {message.text}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-2">
+            {resource.configured && (
+              <button
+                className="text-button text-red"
+                type="button"
+                disabled={busy !== null}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 size={16} />
+                删除
+              </button>
+            )}
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={!resource.configured || busy !== null}
+              aria-busy={busy === 'test'}
+              onClick={testIntegration}
+            >
+              <CheckCircle2 size={16} />
+              {busy === 'test' ? '测试中' : '测试连接'}
+            </button>
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={busy !== null}
+              aria-busy={busy === 'save'}
+            >
+              <Save size={16} />
+              {busy === 'save' ? '保存中' : '保存配置'}
+            </button>
+          </div>
+        </form>
+      )}
+      {confirmDelete && (
+        <Modal
+          title={`删除${isEmail ? '家庭邮件' : '腾讯云 COS'}配置`}
+          onClose={() => setConfirmDelete(false)}
+        >
+          <p className="font-bold text-brown-light">配置与加密凭证将一并删除。</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+            >
+              取消
+            </button>
+            <button
+              className="primary-button bg-red"
+              type="button"
+              disabled={busy !== null}
+              onClick={deleteIntegration}
+            >
+              {busy === 'delete' ? '删除中' : '确认删除'}
+            </button>
+          </div>
+        </Modal>
+      )}
+    </Panel>
+  );
+}
+
 function SettingsPage() {
   const resource = useApiData<FamilySettings | null>('/family/settings', 'settings', null);
   const [settings, setSettings] = useState(defaultSettings);
@@ -1653,24 +2855,6 @@ function SettingsPage() {
       setMessage('保存失败，请刷新后重试');
     }
   }
-  if (!resource.data) {
-    return (
-      <>
-        <PageHeader
-          eyebrow="让规则适合自己的家庭"
-          title="设置"
-          description="维护打卡、审核、兑换和连续奖励规则。"
-          state={resource.state}
-        />
-        <Panel>
-          <EmptyState
-            title={resource.state === 'error' ? '家庭规则读取失败' : '正在读取家庭规则'}
-            detail={resource.state === 'error' ? '请刷新页面后重试。' : '规则加载完成后即可编辑。'}
-          />
-        </Panel>
-      </>
-    );
-  }
   return (
     <>
       <PageHeader
@@ -1679,107 +2863,116 @@ function SettingsPage() {
         description="维护打卡、审核、兑换和连续奖励规则。"
         state={resource.state}
       />
-      <form onSubmit={save}>
-        <div className="grid gap-5 lg:grid-cols-2">
-          <Panel>
-            <SectionTitle>打卡与审核规则</SectionTitle>
-            <div className="form-grid">
-              <label className="field-label">
-                每日截止时间
-                <input
-                  className="field"
-                  type="time"
-                  value={settings.check_in_deadline}
-                  onChange={(e) => setSettings({ ...settings, check_in_deadline: e.target.value })}
-                />
-              </label>
-              <label className="field-label">
-                允许补打天数
-                <input
-                  className="field"
-                  type="number"
-                  min="0"
-                  value={settings.makeup_days}
-                  onChange={(e) =>
-                    setSettings({ ...settings, makeup_days: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-label">
-                审核超时小时
-                <input
-                  className="field"
-                  type="number"
-                  min="0"
-                  value={settings.review_timeout_hours}
-                  onChange={(e) =>
-                    setSettings({ ...settings, review_timeout_hours: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label className="field-label">
-                兑换免审批额度
-                <input
-                  className="field"
-                  type="number"
-                  min="0"
-                  value={settings.auto_approve_quota}
-                  onChange={(e) =>
-                    setSettings({ ...settings, auto_approve_quota: Number(e.target.value) })
-                  }
-                />
-              </label>
-            </div>
-          </Panel>
-          <Panel>
-            <SectionTitle>Streak 连续倍率</SectionTitle>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              {settings.streak_multipliers.map((item, index) => (
-                <label className="stepper" key={item.days}>
-                  <span>{item.days} 天</span>
+      {resource.data ? (
+        <form onSubmit={save}>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <Panel>
+              <SectionTitle>打卡与审核规则</SectionTitle>
+              <div className="form-grid">
+                <label className="field-label">
+                  每日截止时间
                   <input
-                    type="number"
-                    min="1"
-                    step="0.5"
-                    value={item.multiplier}
-                    onChange={(e) => {
-                      const streak = [...settings.streak_multipliers];
-                      streak[index] = { ...item, multiplier: Number(e.target.value) };
-                      setSettings({ ...settings, streak_multipliers: streak });
-                    }}
+                    className="field"
+                    type="time"
+                    value={settings.check_in_deadline}
+                    onChange={(e) =>
+                      setSettings({ ...settings, check_in_deadline: e.target.value })
+                    }
                   />
-                  <small>倍</small>
                 </label>
-              ))}
-            </div>
-          </Panel>
-        </div>
-        <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          <Panel>
-            <SectionTitle>家庭集成</SectionTitle>
-            <ComingSoonRow
-              icon={<Mail />}
-              title="家庭邮件"
-              detail="凭证状态、维护与连接测试接口待注册"
-            />
-            <ComingSoonRow icon={<Camera />} title="腾讯云 COS" detail="凭证仅由家庭创建者维护" />
-          </Panel>
-          <Panel>
-            <SectionTitle>更多能力</SectionTitle>
-            <ComingSoonRow icon={<Bell />} title="通知偏好与免打扰" detail="即将推出" />
-            <ComingSoonRow icon={<ShieldCheck />} title="PWA 与动态模块开关" detail="即将推出" />
-          </Panel>
-        </div>
-        <div className="mt-5 flex items-center justify-end gap-3">
-          <span className="text-caption font-extrabold text-leaf-dark" role="status">
-            {message}
-          </span>
-          <button className="primary-button" type="submit">
-            <Save size={17} />
-            保存家庭规则
-          </button>
-        </div>
-      </form>
+                <label className="field-label">
+                  允许补打天数
+                  <input
+                    className="field"
+                    type="number"
+                    min="0"
+                    value={settings.makeup_days}
+                    onChange={(e) =>
+                      setSettings({ ...settings, makeup_days: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label className="field-label">
+                  审核超时小时
+                  <input
+                    className="field"
+                    type="number"
+                    min="0"
+                    value={settings.review_timeout_hours}
+                    onChange={(e) =>
+                      setSettings({ ...settings, review_timeout_hours: Number(e.target.value) })
+                    }
+                  />
+                </label>
+                <label className="field-label">
+                  兑换免审批额度
+                  <input
+                    className="field"
+                    type="number"
+                    min="0"
+                    value={settings.auto_approve_quota}
+                    onChange={(e) =>
+                      setSettings({ ...settings, auto_approve_quota: Number(e.target.value) })
+                    }
+                  />
+                </label>
+              </div>
+            </Panel>
+            <Panel>
+              <SectionTitle>Streak 连续倍率</SectionTitle>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                {settings.streak_multipliers.map((item, index) => (
+                  <label className="stepper" key={item.days}>
+                    <span>{item.days} 天</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.5"
+                      value={item.multiplier}
+                      onChange={(e) => {
+                        const streak = [...settings.streak_multipliers];
+                        streak[index] = { ...item, multiplier: Number(e.target.value) };
+                        setSettings({ ...settings, streak_multipliers: streak });
+                      }}
+                    />
+                    <small>倍</small>
+                  </label>
+                ))}
+              </div>
+            </Panel>
+          </div>
+          <div className="mt-5 flex items-center justify-end gap-3">
+            <span
+              className={`text-caption font-extrabold ${message.startsWith('保存失败') ? 'text-red' : 'text-leaf-dark'}`}
+              role={message.startsWith('保存失败') ? 'alert' : 'status'}
+            >
+              {message}
+            </span>
+            <button className="primary-button" type="submit">
+              <Save size={17} />
+              保存家庭规则
+            </button>
+          </div>
+        </form>
+      ) : (
+        <Panel>
+          <EmptyState
+            title={resource.state === 'error' ? '家庭规则读取失败' : '正在读取家庭规则'}
+            detail={resource.state === 'error' ? '请刷新页面后重试。' : '规则加载完成后即可编辑。'}
+          />
+        </Panel>
+      )}
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <IntegrationSettingsCard type="email" />
+        <IntegrationSettingsCard type="cos" />
+      </div>
+      <div className="mt-5">
+        <Panel>
+          <SectionTitle>更多能力</SectionTitle>
+          <ComingSoonRow icon={<Bell />} title="通知偏好与免打扰" detail="即将推出" />
+          <ComingSoonRow icon={<ShieldCheck />} title="PWA 与动态模块开关" detail="即将推出" />
+        </Panel>
+      </div>
     </>
   );
 }
@@ -1813,7 +3006,7 @@ function Modal({
   title: string;
   onClose: () => void;
 }) {
-  return (
+  const content = (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
         className="modal"
@@ -1826,7 +3019,7 @@ function Modal({
           <h2 id="modal-title" className="font-display text-title">
             {title}
           </h2>
-          <button className="icon-button" onClick={onClose} aria-label="关闭弹窗">
+          <button className="icon-button" type="button" onClick={onClose} aria-label="关闭弹窗">
             <X />
           </button>
         </div>
@@ -1834,6 +3027,7 @@ function Modal({
       </section>
     </div>
   );
+  return typeof document === 'undefined' ? content : createPortal(content, document.body);
 }
 
 const pages: Record<ParentSection, () => ReactNode> = {

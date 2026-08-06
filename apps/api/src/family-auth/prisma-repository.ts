@@ -179,15 +179,17 @@ export class PrismaFamilyAuthRepository
     `);
     const invitations = await transaction.$queryRaw<InvitationRow[]>(Prisma.sql`
       INSERT INTO "invitations" (
-        "family_id", "invited_by", "email", "token_hash", "expires_at"
+        "family_id", "invited_by", "email", "token_hash", "expires_at",
+        "created_at", "updated_at"
       ) VALUES (
         ${input.familyId}::uuid, ${input.actorId}::uuid, ${input.email},
-        ${input.tokenHash}, ${input.expiresAt}
+        ${input.tokenHash}, ${input.expiresAt}, ${input.now}, ${input.now}
       )
       ON CONFLICT ("family_id", (LOWER("email"))) WHERE "status" = 'pending'
-      DO UPDATE SET
-        "token_hash" = EXCLUDED."token_hash",
-        "updated_at" = ${input.now}
+       DO UPDATE SET
+         "token_hash" = EXCLUDED."token_hash",
+         "expires_at" = EXCLUDED."expires_at",
+         "updated_at" = ${input.now}
       RETURNING "id", "family_id" AS "familyId", "invited_by" AS "invitedById",
                 "email", "expires_at" AS "expiresAt"
     `);

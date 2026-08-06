@@ -202,4 +202,17 @@ describe('FamilySettingsService', () => {
       permissions: { canUpdateName: true, canManageInvitations: true },
     });
   });
+
+  it('uses only the authenticated family when reading a profile', async () => {
+    const deps = dependencies();
+    vi.mocked(deps.sessions.read).mockResolvedValue({ ...parentSession, familyId: 'family-2' });
+    vi.mocked(deps.repository.findActiveProfile).mockImplementation(async (familyId) =>
+      familyId === 'family-1' ? profile : null,
+    );
+
+    await expect(
+      new FamilySettingsService(deps).getProfile({ sessionToken: 'family-2-token' }),
+    ).rejects.toBeInstanceOf(FamilySettingsNotFoundError);
+    expect(deps.repository.findActiveProfile).toHaveBeenCalledWith('family-2', expect.any(Date));
+  });
 });
