@@ -80,6 +80,14 @@ pnpm lint
 pnpm exec vitest run apps/api/src
 pnpm exec vitest run apps/web
 pnpm --filter @familystar/web build
+REAL_ACCEPTANCE=1 PLAYWRIGHT_BASE_URL=https://home.wenwuge.vip pnpm exec playwright test e2e/growth-records.real.spec.cjs --project=chromium
 ```
 
 任务 5.2 的仓储、服务和路由聚焦回归共 3 个文件、14 项测试通过；权限联合回归共 45 项通过。任务 5.3 的事件发布、幂等消费者和事务回归共 3 个文件、30 项测试通过。API 全量回归共 98 个文件、638 项通过。任务 5.4 的双端门户、时间线视图、查询、分页和媒体 helper 聚焦回归共 4 个文件、44 项通过，Web 全量回归共 14 个文件、127 项通过。全工作区类型检查、Lint、Prisma Schema、迁移契约、Web 生产构建和任务文件格式检查通过。
+
+## 开发环境部署与真实验收
+
+- 干净提交镜像构建发现 `media-upload.ts` 引用的 MIME 规范化函数仍在并行工作区中。提交 `a110149` 将该独立 helper 纳入版本控制，精确回归 17 项、Web 类型检查、ESLint 和干净镜像构建通过。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-644eb74-i29-20260806.dump`，大小为 5694150 bytes、权限为 `600`，并通过 `pg_restore --list` 校验。
+- 服务器本地镜像 `dev-20260806-a110149-i30-web`、`dev-20260806-a110149-i30-api` 和 `dev-20260806-a110149-i30-worker` 已切换到开发环境 `8098`，未推送 Registry。迁移 `20260806100000_add_growth_records` 成功应用，Web、API、Worker、PostgreSQL 和 Redis 均为 healthy，IP 与开发域名首页和健康接口返回 HTTP 200。
+- 真实 Chromium 在 390 x 844 视口创建隔离家庭并验证自动打卡投影、家长手动记录新建、编辑、孩子/任务/类型/日期组合筛选、软删除、20 条 cursor 分页、自动记录只读，以及孩子端个人打卡审核结果和 17 星积分展示。定向用例 1 项通过。
