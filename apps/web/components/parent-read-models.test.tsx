@@ -87,6 +87,18 @@ describe('ParentDashboardView', () => {
 });
 
 describe('ParentAnalyticsView', () => {
+  it('renders retryable loading and error states', () => {
+    const loading = renderToStaticMarkup(
+      <ParentAnalyticsView analytics={null} state="loading" onRetry={() => undefined} />,
+    );
+    const error = renderToStaticMarkup(
+      <ParentAnalyticsView analytics={null} state="error" onRetry={() => undefined} />,
+    );
+    expect(loading).toContain('正在计算成长统计');
+    expect(error).toContain('成长统计暂时无法读取');
+    expect(error).toContain('重新加载');
+  });
+
   it('renders zero-plan analytics without inventing a completion rate', () => {
     const markup = renderToStaticMarkup(
       <ParentAnalyticsView

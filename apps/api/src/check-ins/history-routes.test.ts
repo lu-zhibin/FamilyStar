@@ -46,6 +46,7 @@ describe('history HTTP routes', () => {
     ['/api/v1/check-ins/me/history?task_id=bad'],
     ['/api/v1/check-ins/me/history?submission_type=TEAM'],
     ['/api/v1/check-ins/me/history?limit=0'],
+    ['/api/v1/check-ins/me/history?cursor=not-an-opaque-cursor'],
   ])('maps invalid filters on %s to 400', async (path) => {
     const app = createApp({
       publicBaseUrl: 'http://localhost:3000',

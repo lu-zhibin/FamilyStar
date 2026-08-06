@@ -159,4 +159,15 @@ describe('ChildRankingsView', () => {
     expect(markup).toContain('家庭排行暂时无法读取');
     expect(markup).toContain('重新加载');
   });
+
+  it('renders a real empty ranking state', () => {
+    const markup = renderToStaticMarkup(
+      <ChildRankingsView
+        rankings={{ metric: 'earned', period: 'month', range: null, items: [] }}
+        state="empty"
+        onRetry={() => undefined}
+      />,
+    );
+    expect(markup).toContain('家庭排行还是空的');
+  });
 });

@@ -158,4 +158,56 @@ describe('AnalyticsService', () => {
       { rank: 3, childId: '01989a58-c542-7abc-8def-0123456789af', isCurrentUser: false },
     ]);
   });
+
+  it('property: ranking output is stable for every metric, period, and candidate permutation', async () => {
+    const metrics = ['balance', 'earned', 'level'] as const;
+    const periods = ['week', 'month', 'all'] as const;
+    const permutations = [
+      [0, 1, 2],
+      [2, 0, 1],
+      [1, 2, 0],
+      [2, 1, 0],
+    ] as const;
+
+    for (const metric of metrics) {
+      for (const period of periods) {
+        let expected: Awaited<ReturnType<AnalyticsService['getRankings']>>['items'] | undefined;
+        for (const permutation of permutations) {
+          const source = repository();
+          const candidates = await source.findRankingCandidates({ familyId });
+          vi.mocked(source.findRankingCandidates).mockResolvedValue(
+            permutation.map((index) => candidates[index]!),
+          );
+          const service = new AnalyticsService({
+            repository: source,
+            sessions: sessions('child', secondChild),
+            now: () => new Date('2026-08-06T16:00:00.000Z'),
+          });
+          const result = await service.getRankings({
+            sessionToken: 'child',
+            metric,
+            period,
+          });
+          expected ??= result.items;
+          expect(result.items).toEqual(expected);
+        }
+      }
+    }
+  });
+
+  it('uses the 25-hour family day at the daylight-saving fallback boundary', async () => {
+    const source = repository();
+    const service = new AnalyticsService({ repository: source, sessions: sessions() });
+    await service.getAnalytics({
+      sessionToken: 'parent',
+      startDate: '2026-11-01',
+      endDate: '2026-11-01',
+    });
+    expect(source.aggregateAnalytics).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startAt: new Date('2026-11-01T04:00:00.000Z'),
+        endAtExclusive: new Date('2026-11-02T05:00:00.000Z'),
+      }),
+    );
+  });
 });

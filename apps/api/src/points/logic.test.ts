@@ -149,4 +149,37 @@ describe('calculatePointsChange', () => {
       expect(change.balanceAfter).toBeGreaterThanOrEqual(0);
     }
   });
+
+  it('property: valid mixed ledger sequences preserve balance and earned-total invariants', () => {
+    const types = ['EARN', 'MANUAL', 'REDEEM', 'REFUND'] as const;
+    for (let seed = 1; seed <= 100; seed += 1) {
+      let balance = 100;
+      let earnedTotal = 100;
+      let deltaSum = 0;
+      let earnedDeltaSum = 0;
+      for (let step = 0; step < 40; step += 1) {
+        const type = types[(seed + step) % types.length]!;
+        const magnitude = ((seed * 97 + step * 31) % 20) + 1;
+        const delta =
+          type === 'REDEEM' || (type === 'MANUAL' && step % 3 === 0)
+            ? -Math.min(magnitude, balance || 1)
+            : magnitude;
+        if (balance === 0 && delta < 0) continue;
+        const beforeBalance = balance;
+        const beforeEarned = earnedTotal;
+        const change = calculatePointsChange({ type, balance, earnedTotal, delta });
+        balance = change.balanceAfter;
+        earnedTotal = change.earnedTotalAfter;
+        deltaSum += delta;
+        if (type === 'EARN' || (type === 'MANUAL' && delta > 0)) earnedDeltaSum += delta;
+
+        expect(change.balanceAfter - beforeBalance).toBe(delta);
+        expect(change.earnedTotalAfter - beforeEarned).toBe(
+          type === 'EARN' || (type === 'MANUAL' && delta > 0) ? delta : 0,
+        );
+      }
+      expect(balance).toBe(100 + deltaSum);
+      expect(earnedTotal).toBe(100 + earnedDeltaSum);
+    }
+  });
 });

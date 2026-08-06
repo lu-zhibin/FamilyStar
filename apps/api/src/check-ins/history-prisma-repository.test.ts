@@ -179,4 +179,34 @@ describe('PrismaHistoryRepository', () => {
       { submittedAt },
     ]);
   });
+
+  it('uses the reverse source boundary after a collaboration cursor and preserves family scope', async () => {
+    const soloFindMany = vi.fn().mockResolvedValue([]);
+    const collaborationFindMany = vi.fn().mockResolvedValue([]);
+    const repository = new PrismaHistoryRepository({
+      checkInSubmissionAttempt: { findMany: soloFindMany },
+      collaborationSubmissionAttempt: { findMany: collaborationFindMany },
+      mediaAsset: { findMany: vi.fn() },
+    } as unknown as PrismaClient);
+
+    await repository.findHistory({
+      familyId: '11111111-1111-4111-8111-111111111111',
+      filters: {},
+      cursor: { submittedAt, submissionType: 'COLLABORATION', attemptId: collaborationId },
+      limit: 20,
+    });
+
+    expect(soloFindMany.mock.calls[0]?.[0].where).toEqual(
+      expect.objectContaining({
+        familyId: '11111111-1111-4111-8111-111111111111',
+        OR: [{ submittedAt: { lt: submittedAt } }],
+      }),
+    );
+    expect(collaborationFindMany.mock.calls[0]?.[0].where).toEqual(
+      expect.objectContaining({
+        familyId: '11111111-1111-4111-8111-111111111111',
+        OR: [{ submittedAt: { lt: submittedAt } }, { submittedAt, id: { lt: collaborationId } }],
+      }),
+    );
+  });
 });

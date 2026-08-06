@@ -77,4 +77,27 @@ describe('PrismaPointsReadRepository', () => {
       }),
     );
   });
+
+  it('returns an empty family-scoped page without weakening the query boundary', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const repository = new PrismaPointsReadRepository({
+      pointsLog: { findMany },
+    } as unknown as PrismaClient);
+
+    await expect(
+      repository.findChildLogs({
+        familyId: 'family-1',
+        childId: 'child-1',
+        cursor: null,
+        limit: 20,
+      }),
+    ).resolves.toEqual([]);
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { familyId: 'family-1', userId: 'child-1' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 21,
+      }),
+    );
+  });
 });
