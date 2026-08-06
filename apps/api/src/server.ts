@@ -50,6 +50,8 @@ import { PrismaBadgeRepository } from './badges/prisma-repository.js';
 import { BadgeService } from './badges/service.js';
 import { PrismaDashboardRepository } from './dashboard/prisma-repository.js';
 import { DashboardService } from './dashboard/service.js';
+import { PrismaAnalyticsRepository } from './analytics/prisma-repository.js';
+import { AnalyticsService } from './analytics/service.js';
 
 const environment = parseEnvironment(process.env);
 const credentialVault = initializeCredentialVault(environment);
@@ -133,6 +135,10 @@ const dashboardOperations = new DashboardService({
   repository: new PrismaDashboardRepository(prisma, badgeRepository),
   sessions: sessionStore,
 });
+const analyticsOperations = new AnalyticsService({
+  repository: new PrismaAnalyticsRepository(prisma),
+  sessions: sessionStore,
+});
 const levelOperations = new LevelService({
   repository: new PrismaLevelRepository(prisma),
   sessions: sessionStore,
@@ -181,6 +187,7 @@ const app = createApp({
   mediaAccessOperations,
   dashboardOperations,
   badgeOperations,
+  analyticsOperations,
   secureCookies: environment.NODE_ENV === 'production',
 });
 
