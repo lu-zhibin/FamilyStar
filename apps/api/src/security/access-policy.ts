@@ -167,6 +167,11 @@ export const ROUTE_ACCESS_POLICIES: readonly RouteAccessPolicy[] = [
     module: 'rewards',
   },
   {
+    methods: ['POST'],
+    path: /^\/api\/v1\/media\/access-urls$/,
+    role: 'authenticated',
+  },
+  {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     path: /^\/api\/v1\/media(?:\/.*)?$/,
     role: 'authenticated',

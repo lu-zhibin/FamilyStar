@@ -42,6 +42,10 @@ import { IntegrationSettingsService } from './infrastructure/credentials/integra
 import { PrismaIntegrationSettingsRepository } from './infrastructure/credentials/integration-prisma-repository.js';
 import { PrismaPointsReadRepository } from './points/prisma-repository.js';
 import { PointsReadService } from './points/service.js';
+import { PrismaHistoryRepository } from './check-ins/history-prisma-repository.js';
+import { HistoryService } from './check-ins/history-service.js';
+import { PrismaMediaAccessRepository } from './media/access-prisma-repository.js';
+import { MediaAccessService } from './media/access-service.js';
 
 const environment = parseEnvironment(process.env);
 const credentialVault = initializeCredentialVault(environment);
@@ -57,6 +61,11 @@ const redisCommands: RedisCommandPort = {
 const familyAuthRepository = new PrismaFamilyAuthRepository(prisma);
 const redisKeyspace = createRedisKeyspace(environment.REDIS_KEY_PREFIX);
 const sessionStore = new RedisSessionStore(redisCommands, redisKeyspace);
+const cosClient = new TencentCosClient();
+const cosConnectionProvider = new PrismaCosConnectionProvider(
+  new PrismaCredentialVaultRepository(prisma),
+  credentialVault,
+);
 const integrationSettingsOperations = new IntegrationSettingsService(
   new PrismaIntegrationSettingsRepository(prisma),
   sessionStore,
@@ -96,15 +105,22 @@ const taskOperations = new TaskService({
 const mediaOperations = new MediaService({
   repository: new PrismaMediaRepository(prisma),
   sessions: sessionStore,
-  connections: new PrismaCosConnectionProvider(
-    new PrismaCredentialVaultRepository(prisma),
-    credentialVault,
-  ),
-  cos: new TencentCosClient(),
+  connections: cosConnectionProvider,
+  cos: cosClient,
+});
+const mediaAccessOperations = new MediaAccessService({
+  repository: new PrismaMediaAccessRepository(prisma),
+  sessions: sessionStore,
+  connections: cosConnectionProvider,
+  cos: cosClient,
 });
 const pointsTransactionWriter = new PrismaPointsTransactionWriter(prisma, new PrismaOutboxWriter());
 const pointsReadOperations = new PointsReadService({
   repository: new PrismaPointsReadRepository(prisma),
+  sessions: sessionStore,
+});
+const historyOperations = new HistoryService({
+  repository: new PrismaHistoryRepository(prisma),
   sessions: sessionStore,
 });
 const levelOperations = new LevelService({
@@ -151,6 +167,8 @@ const app = createApp({
   auditWriter: new PrismaAuditWriter(prisma),
   integrationSettingsOperations,
   pointsReadOperations,
+  historyOperations,
+  mediaAccessOperations,
   secureCookies: environment.NODE_ENV === 'production',
 });
 

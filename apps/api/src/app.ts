@@ -34,6 +34,10 @@ import { registerIntegrationSettingsRoutes } from './infrastructure/credentials/
 import type { IntegrationSettingsOperations } from './infrastructure/credentials/integration-service.js';
 import { registerPointsReadRoutes } from './points/routes.js';
 import type { PointsReadOperations } from './points/types.js';
+import { registerHistoryRoutes } from './check-ins/history-routes.js';
+import type { HistoryOperations } from './check-ins/history-types.js';
+import { registerMediaAccessRoutes } from './media/access-routes.js';
+import type { MediaAccessOperations } from './media/access-types.js';
 
 const service: ServiceInfo = {
   name: 'FamilyStar API',
@@ -58,6 +62,8 @@ export type CreateAppOptions = {
   familyModuleStatus?: FamilyModuleStatusPort;
   integrationSettingsOperations?: IntegrationSettingsOperations;
   pointsReadOperations?: PointsReadOperations;
+  historyOperations?: HistoryOperations;
+  mediaAccessOperations?: MediaAccessOperations;
   secureCookies?: boolean;
 };
 
@@ -79,6 +85,8 @@ export function createApp({
   familyModuleStatus,
   integrationSettingsOperations,
   pointsReadOperations,
+  historyOperations,
+  mediaAccessOperations,
   secureCookies = false,
 }: CreateAppOptions) {
   const app = new Hono<AppEnvironment>();
@@ -157,6 +165,12 @@ export function createApp({
   }
   if (pointsReadOperations) {
     registerPointsReadRoutes(apiV1, pointsReadOperations, secureCookies);
+  }
+  if (historyOperations) {
+    registerHistoryRoutes(apiV1, historyOperations, secureCookies);
+  }
+  if (mediaAccessOperations) {
+    registerMediaAccessRoutes(apiV1, mediaAccessOperations, secureCookies);
   }
 
   app.notFound((context) =>
