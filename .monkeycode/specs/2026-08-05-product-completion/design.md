@@ -1,7 +1,7 @@
 # FamilyStar 产品功能补全技术设计
 
 Feature Name: product-completion
-Updated: 2026-08-05
+Updated: 2026-08-06
 
 ## Description
 
@@ -45,7 +45,8 @@ API 继续作为唯一业务授权边界。Web 仅保存界面状态、离线请
 
 ### Dashboard and Analytics
 
-- `GET /api/v1/family/dashboard?date=`：孩子今日进度、待办计数和近期动态。
+- `GET /api/v1/family/dashboard?date=`：孩子今日进度、待办计数与目标 URL，以及最多三十条按 `(occurred_at, id)` 倒序排列的近期动态。
+- 近期动态直接聚合打卡、审核、积分、等级、兑换、愿望、成员、邀请和徽章业务记录；Outbox 投递状态不参与总览业务判断。
 - `GET /api/v1/family/analytics`：孩子、任务、日期范围筛选后的打卡率、积分趋势、任务表现和等级分布。
 - `GET /api/v1/rankings?family_scope=&metric=&period=`：家庭内余额、累计积分、等级排行。
 - 聚合统一以家庭时区计算自然日边界，并限制最大日期跨度。
@@ -76,6 +77,9 @@ API 继续作为唯一业务授权边界。Web 仅保存界面状态、离线请
 - 模板条件使用受控判别联合：任务完成次数、连续天数、累计积分、等级、协作次数和手动颁发。
 - 业务事件消费者按家庭启用模板计算进度，以 `(template_id, child_id, level)` 唯一键保证颁发幂等。
 - 颁发记录保存模板展示快照，保护历史真实性。
+- 家庭注册初始化首个任务、累计七次任务、连续七天、累计一百分、达到三级和首次协作六个启用模板；迁移为既有活动家庭幂等回填。
+- 自动颁发与 `badges.award.created.v1` 在同一事务写入，颁发 ID 同时作为 Outbox 事件 ID，保证源事件重投只产生一个颁发事件。
+- 徽章后端在家庭总览阶段前置完成模板管理、手动颁发、孩子徽章墙和事件评估；管理与徽章墙 Web 页面继续由任务 8.4 实现。
 
 ### Notification Domain
 

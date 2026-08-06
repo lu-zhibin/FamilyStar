@@ -38,6 +38,10 @@ import { registerHistoryRoutes } from './check-ins/history-routes.js';
 import type { HistoryOperations } from './check-ins/history-types.js';
 import { registerMediaAccessRoutes } from './media/access-routes.js';
 import type { MediaAccessOperations } from './media/access-types.js';
+import { registerDashboardRoutes } from './dashboard/routes.js';
+import type { DashboardOperations } from './dashboard/types.js';
+import { registerBadgeRoutes } from './badges/routes.js';
+import type { BadgeOperations } from './badges/types.js';
 
 const service: ServiceInfo = {
   name: 'FamilyStar API',
@@ -64,6 +68,8 @@ export type CreateAppOptions = {
   pointsReadOperations?: PointsReadOperations;
   historyOperations?: HistoryOperations;
   mediaAccessOperations?: MediaAccessOperations;
+  dashboardOperations?: DashboardOperations;
+  badgeOperations?: BadgeOperations;
   secureCookies?: boolean;
 };
 
@@ -87,6 +93,8 @@ export function createApp({
   pointsReadOperations,
   historyOperations,
   mediaAccessOperations,
+  dashboardOperations,
+  badgeOperations,
   secureCookies = false,
 }: CreateAppOptions) {
   const app = new Hono<AppEnvironment>();
@@ -171,6 +179,12 @@ export function createApp({
   }
   if (mediaAccessOperations) {
     registerMediaAccessRoutes(apiV1, mediaAccessOperations, secureCookies);
+  }
+  if (dashboardOperations) {
+    registerDashboardRoutes(apiV1, dashboardOperations, secureCookies);
+  }
+  if (badgeOperations) {
+    registerBadgeRoutes(apiV1, badgeOperations, secureCookies);
   }
 
   app.notFound((context) =>

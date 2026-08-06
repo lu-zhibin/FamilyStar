@@ -1,7 +1,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_LEVEL_CONFIGS, DEFAULT_TASK_TYPES } from './constants.js';
+import { DEFAULT_BADGE_TEMPLATES, DEFAULT_LEVEL_CONFIGS, DEFAULT_TASK_TYPES } from './constants.js';
 import { PrismaFamilyAuthRepository } from './prisma-repository.js';
 
 describe('PrismaFamilyAuthRepository', () => {
@@ -18,12 +18,14 @@ describe('PrismaFamilyAuthRepository', () => {
     const templateUpsert = vi.fn().mockResolvedValue(undefined);
     const taskTypeCreateMany = vi.fn().mockResolvedValue({ count: 5 });
     const levelCreateMany = vi.fn().mockResolvedValue({ count: 20 });
+    const badgeTemplateCreateMany = vi.fn().mockResolvedValue({ count: 6 });
     const transaction = {
       family: { create: familyCreate, update: familyUpdate },
       user: { create: userCreate },
       taskTypeTemplate: { upsert: templateUpsert },
       taskType: { createMany: taskTypeCreateMany },
       levelConfig: { createMany: levelCreateMany },
+      badgeTemplate: { createMany: badgeTemplateCreateMany },
     };
     const prisma = {
       $transaction: vi.fn(async (work: (client: typeof transaction) => Promise<unknown>) =>
@@ -54,6 +56,9 @@ describe('PrismaFamilyAuthRepository', () => {
     expect(templateUpsert).toHaveBeenCalledTimes(DEFAULT_TASK_TYPES.length);
     expect(taskTypeCreateMany.mock.calls[0]?.[0].data).toHaveLength(DEFAULT_TASK_TYPES.length);
     expect(levelCreateMany.mock.calls[0]?.[0].data).toHaveLength(DEFAULT_LEVEL_CONFIGS.length);
+    expect(badgeTemplateCreateMany.mock.calls[0]?.[0].data).toHaveLength(
+      DEFAULT_BADGE_TEMPLATES.length,
+    );
     expect(familyUpdate).toHaveBeenCalledWith({
       where: { id: 'family-1' },
       data: { createdById: 'parent-1' },

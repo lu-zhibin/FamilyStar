@@ -33,6 +33,57 @@ export const DEFAULT_TASK_TYPES = Object.freeze([
   Object.freeze({ code: 'custom', name: '自定义', icon: '🎯', sortOrder: 5 }),
 ]);
 
+export const DEFAULT_BADGE_TEMPLATES = Object.freeze([
+  Object.freeze({
+    presetCode: 'first-task',
+    name: '初次启程',
+    description: '完成首个任务',
+    icon: '⭐',
+    category: '任务',
+    condition: Object.freeze({ type: 'TASK_COMPLETION_COUNT' as const, target: 1 }),
+  }),
+  Object.freeze({
+    presetCode: 'seven-tasks',
+    name: '小小行动家',
+    description: '累计完成 7 次任务',
+    icon: '✅',
+    category: '任务',
+    condition: Object.freeze({ type: 'TASK_COMPLETION_COUNT' as const, target: 7 }),
+  }),
+  Object.freeze({
+    presetCode: 'seven-day-streak',
+    name: '坚持一周',
+    description: '连续 7 天完成任务',
+    icon: '🔥',
+    category: '坚持',
+    condition: Object.freeze({ type: 'STREAK_DAYS' as const, target: 7 }),
+  }),
+  Object.freeze({
+    presetCode: 'one-hundred-points',
+    name: '百分新星',
+    description: '累计获得 100 分',
+    icon: '💯',
+    category: '积分',
+    condition: Object.freeze({ type: 'TOTAL_POINTS' as const, target: 100 }),
+  }),
+  Object.freeze({
+    presetCode: 'level-three',
+    name: '三级成长',
+    description: '成长等级达到 3 级',
+    icon: '🌱',
+    category: '等级',
+    condition: Object.freeze({ type: 'LEVEL_REACHED' as const, target: 3 }),
+  }),
+  Object.freeze({
+    presetCode: 'first-collaboration',
+    name: '合作之星',
+    description: '首次完成协作任务',
+    icon: '🤝',
+    category: '协作',
+    condition: Object.freeze({ type: 'COLLABORATION_COUNT' as const, target: 1 }),
+  }),
+]);
+
 const LEVEL_NAMES = [
   ['新星', '⭐', 0],
   ['萌芽', '🌱', 30],

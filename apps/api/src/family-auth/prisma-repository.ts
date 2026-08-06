@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 
 import {
+  DEFAULT_BADGE_TEMPLATES,
   DEFAULT_LEVEL_CONFIGS,
   DEFAULT_TASK_TYPES,
   MAX_ACTIVE_PARENTS_PER_FAMILY,
@@ -126,6 +127,18 @@ export class PrismaFamilyAuthRepository
         });
         await transaction.levelConfig.createMany({
           data: DEFAULT_LEVEL_CONFIGS.map((level) => ({ ...level, familyId: family.id })),
+        });
+        await transaction.badgeTemplate.createMany({
+          data: DEFAULT_BADGE_TEMPLATES.map((template) => ({
+            familyId: family.id,
+            presetCode: template.presetCode,
+            name: template.name,
+            description: template.description,
+            icon: template.icon,
+            category: template.category,
+            conditionType: template.condition.type,
+            condition: template.condition,
+          })),
         });
         return mapParent(parent, family.familyCode);
       });

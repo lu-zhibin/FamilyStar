@@ -35,6 +35,11 @@ export const ROUTE_ACCESS_POLICIES: readonly RouteAccessPolicy[] = [
   { methods: ['PATCH'], path: /^\/api\/v1\/auth\/child\/password$/, role: 'child' },
   {
     methods: ['GET'],
+    path: /^\/api\/v1\/family\/dashboard$/,
+    role: 'parent',
+  },
+  {
+    methods: ['GET'],
     path: /^\/api\/v1\/family\/analytics$/,
     role: 'parent',
     module: 'analytics',

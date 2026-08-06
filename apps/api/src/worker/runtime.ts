@@ -19,6 +19,8 @@ import { createWorkerJobs, PrismaWorkerJobsRepository } from './jobs.js';
 import { WorkerJobRunner } from './job-runner.js';
 import { PrismaWorkerJobRunRepository } from './prisma-job-run-repository.js';
 import { WorkerScheduler } from './scheduler.js';
+import { BadgeEventConsumer, BADGE_EVENT_NAMES } from '../badges/event-consumer.js';
+import { PrismaBadgeRepository } from '../badges/prisma-repository.js';
 
 export function createWorkerRuntime(input: {
   environment: AppEnvironment;
@@ -37,6 +39,22 @@ export function createWorkerRuntime(input: {
   const points = new PrismaPointsTransactionWriter(prisma);
   const credentialVault = initializeCredentialVault(environment);
   const cos = new TencentCosClient();
+  const eventBus = new EventBus();
+  const badgeEventConsumer = new BadgeEventConsumer(new PrismaBadgeRepository(prisma));
+  const badgeScope = eventBus.createScope({
+    name: 'badge-evaluator',
+    version: '1.0.0',
+    capabilities: ['badge-evaluation'],
+    dependencies: [],
+    permissions: [],
+    publishes: [],
+    subscribes: BADGE_EVENT_NAMES,
+  });
+  for (const eventName of BADGE_EVENT_NAMES) {
+    badgeScope.subscribe(eventName, async (event) => {
+      await badgeEventConsumer.handle(event);
+    });
+  }
   const jobs = createWorkerJobs({
     repository: new PrismaWorkerJobsRepository(prisma),
     collaborationScheduler: new CollaborationScheduler(
@@ -50,7 +68,7 @@ export function createWorkerRuntime(input: {
     }),
     outbox: new OutboxDispatcher(
       new PrismaOutboxRepository(prisma),
-      new EventBus().createOutboxPublisher(),
+      eventBus.createOutboxPublisher(),
       {
         workerId: input.workerId,
         batchSize: environment.WORKER_BATCH_SIZE,

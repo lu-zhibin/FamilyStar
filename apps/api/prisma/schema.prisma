@@ -218,6 +218,17 @@ enum WorkerJobStatus {
   @@map("worker_job_status")
 }
 
+enum BadgeConditionType {
+  TASK_COMPLETION_COUNT @map("task_completion_count")
+  STREAK_DAYS           @map("streak_days")
+  TOTAL_POINTS          @map("total_points")
+  LEVEL_REACHED         @map("level_reached")
+  COLLABORATION_COUNT   @map("collaboration_count")
+  MANUAL                @map("manual")
+
+  @@map("badge_condition_type")
+}
+
 model Family {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   familyCode  String    @unique @map("family_code") @db.VarChar(6)
@@ -256,6 +267,9 @@ model Family {
   auditLogs                       AuditLog[]
   outboxEvents                    OutboxEvent[]
   integrationSettings             FamilyIntegrationSetting[]
+  badgeTemplates                  BadgeTemplate[]
+  badgeAwards                     BadgeAward[]
+  badgeProgress                   BadgeProgress[]
 
   @@index([deletedAt])
   @@map("families")
@@ -308,6 +322,10 @@ model User {
   emittedEvents                   OutboxEvent[]                    @relation("OutboxActor")
   integrationSettingsCreated      FamilyIntegrationSetting[]       @relation("IntegrationSettingCreator")
   integrationSettingsUpdated      FamilyIntegrationSetting[]       @relation("IntegrationSettingUpdater")
+  badgeTemplatesCreated           BadgeTemplate[]                  @relation("BadgeTemplateCreator")
+  badgeAwards                     BadgeAward[]                     @relation("BadgeAwardChild")
+  badgeAwardsGranted              BadgeAward[]                     @relation("BadgeAwardGranter")
+  badgeProgress                   BadgeProgress[]                  @relation("BadgeProgressChild")
 
   @@index([familyId, role, deletedAt])
   @@index([familyId, currentLevel])
@@ -868,6 +886,86 @@ model Wish {
 
   @@index([familyId, childId, status, deletedAt])
   @@map("wishes")
+}
+
+model BadgeTemplate {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId      String             @map("family_id") @db.Uuid
+  presetCode    String?            @map("preset_code") @db.VarChar(40)
+  name          String             @db.VarChar(120)
+  description   String?            @db.Text
+  icon          String             @db.VarChar(80)
+  category      String             @db.VarChar(80)
+  conditionType BadgeConditionType @map("condition_type")
+  condition     Json               @db.JsonB
+  awardLevel    Int                @default(1) @map("award_level")
+  isVisible     Boolean            @default(true) @map("is_visible")
+  isEnabled     Boolean            @default(true) @map("is_enabled")
+  version       Int                @default(1)
+  createdById   String?            @map("created_by") @db.Uuid
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime?          @map("deleted_at") @db.Timestamptz(3)
+
+  family    Family          @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  createdBy User?           @relation("BadgeTemplateCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  awards    BadgeAward[]
+  progress  BadgeProgress[]
+
+  @@unique([familyId, presetCode])
+  @@index([familyId, isEnabled, deletedAt])
+  @@map("badge_templates")
+}
+
+model BadgeAward {
+  id                            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId                      String             @map("family_id") @db.Uuid
+  templateId                    String             @map("template_id") @db.Uuid
+  childId                       String             @map("child_id") @db.Uuid
+  level                         Int                @default(1)
+  templateNameSnapshot          String             @map("template_name_snapshot") @db.VarChar(120)
+  templateDescriptionSnapshot   String?            @map("template_description_snapshot") @db.Text
+  templateIconSnapshot          String             @map("template_icon_snapshot") @db.VarChar(80)
+  templateCategorySnapshot      String             @map("template_category_snapshot") @db.VarChar(80)
+  templateConditionTypeSnapshot BadgeConditionType @map("template_condition_type_snapshot")
+  templateConditionSnapshot     Json               @map("template_condition_snapshot") @db.JsonB
+  templateVersion               Int                @map("template_version")
+  reason                        String?            @db.Text
+  sourceEventId                 String?            @map("source_event_id") @db.Uuid
+  awardedById                   String?            @map("awarded_by") @db.Uuid
+  awardedAt                     DateTime           @default(now()) @map("awarded_at") @db.Timestamptz(3)
+  createdAt                     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family    Family        @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  template  BadgeTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  child     User          @relation("BadgeAwardChild", fields: [childId], references: [id], onDelete: Restrict)
+  awardedBy User?         @relation("BadgeAwardGranter", fields: [awardedById], references: [id], onDelete: SetNull)
+
+  @@unique([templateId, childId, level])
+  @@index([familyId, childId, awardedAt])
+  @@index([familyId, sourceEventId])
+  @@map("badge_awards")
+}
+
+model BadgeProgress {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId     String   @map("family_id") @db.Uuid
+  templateId   String   @map("template_id") @db.Uuid
+  childId      String   @map("child_id") @db.Uuid
+  level        Int      @default(1)
+  currentValue Int      @default(0) @map("current_value")
+  targetValue  Int      @map("target_value")
+  evaluatedAt  DateTime @map("evaluated_at") @db.Timestamptz(3)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family   Family        @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  template BadgeTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  child    User          @relation("BadgeProgressChild", fields: [childId], references: [id], onDelete: Restrict)
+
+  @@unique([templateId, childId, level])
+  @@index([familyId, childId])
+  @@map("badge_progress")
 }
 
 model AuditLog {
