@@ -24,7 +24,6 @@ import {
   Save,
   ShieldCheck,
   Trash2,
-  TrendingUp,
   Trophy,
   UserPlus,
   X,
@@ -67,6 +66,7 @@ import {
   type TaskCollaborationMode,
 } from '../lib/parent-portal';
 import { uploadMediaFile } from '../lib/media-upload';
+import { ParentGrowthRecordsSection } from './growth-records';
 import { ParentAnalyticsSection, ParentDashboardSection } from './parent-read-models';
 import { ParentShell } from './parent-shell';
 
@@ -1444,40 +1444,7 @@ function StatsPage() {
 }
 
 function RecordsPage() {
-  return (
-    <>
-      <PageHeader
-        eyebrow="把成长留成可回看的故事"
-        title="成长记录"
-        description="未来将在这里汇集照片时间线、习惯追踪和学习笔记。"
-      />
-      <Panel className="overflow-hidden p-0">
-        <div className="restricted-hero">
-          <BookOpen size={46} />
-          <span className="tag bg-white/80">Phase 1 受限页面</span>
-          <h2 className="font-display text-page">记录能力正在生长</h2>
-          <p>当前阶段保留完整响应式骨架。成长记录列表、媒体关联和学习笔记 API 完成后即可启用。</p>
-        </div>
-        <div className="grid gap-4 p-6 md:grid-cols-3 mobile:p-4">
-          <article className="placeholder-card">
-            <ImageIcon />
-            <strong>相册时间线</strong>
-            <p>自动沉淀打卡照片与家庭瞬间</p>
-          </article>
-          <article className="placeholder-card">
-            <TrendingUp />
-            <strong>习惯追踪</strong>
-            <p>按周与月对比长期变化</p>
-          </article>
-          <article className="placeholder-card">
-            <BookOpen />
-            <strong>学习笔记</strong>
-            <p>记录值得保存的学习片段</p>
-          </article>
-        </div>
-      </Panel>
-    </>
-  );
+  return <ParentGrowthRecordsSection />;
 }
 
 export function FamilyProfileFields({

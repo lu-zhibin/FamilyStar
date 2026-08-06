@@ -52,7 +52,9 @@ describe('ParentPortal', () => {
     expect(tasks).toContain('创建任务');
     expect(tasks).toContain('当前筛选下没有任务');
     expect(renderToStaticMarkup(<ParentPortal section="settings" />)).toContain('正在读取家庭规则');
-    expect(renderToStaticMarkup(<ParentPortal section="records" />)).toContain('Phase 1 受限页面');
+    expect(renderToStaticMarkup(<ParentPortal section="records" />)).toContain(
+      '正在整理家庭成长时间线',
+    );
     expect(renderToStaticMarkup(<ParentPortal section="reviews" />)).toContain(
       '正在读取待审核提交',
     );

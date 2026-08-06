@@ -1,10 +1,8 @@
 'use client';
 
 import {
-  ArrowLeft,
   BookOpen,
   Gift,
-  Image as ImageIcon,
   LockKeyhole,
   Medal,
   Plus,
@@ -38,6 +36,7 @@ import {
   ChildRankingsPanel,
 } from './child-points-rankings';
 import { ChildShell } from './child-shell';
+import { ChildGrowthRecordsSection } from './growth-records';
 
 type LoadState = ApiLoadState;
 type FeedbackState = { tone: 'success' | 'warning' | 'error'; message: string } | null;
@@ -576,29 +575,7 @@ function RewardsPage({
 }
 
 function RecordsPage() {
-  return (
-    <div className="space-y-6">
-      <section className="child-hero child-hero-blue child-animate-in">
-        <Link href={childSectionPaths.profile} className="child-glass-chip mb-3 w-fit">
-          <ArrowLeft aria-hidden="true" size={17} /> 返回我的信息
-        </Link>
-        <h1 className="font-display text-page">我的记录</h1>
-        <p className="mt-2 font-bold">每一次坚持，都在这里变成闪亮回忆。</p>
-      </section>
-      <div className="notice child-animate-in child-delay-1" role="note">
-        <ShieldAlert aria-hidden="true" className="shrink-0 text-blue" />
-        <p>本人打卡历史与批量媒体签名接口待接入。</p>
-      </div>
-      <section className="child-animate-in child-delay-2">
-        <SectionHeading title="成长时间线" />
-        <div className="empty-state">
-          <ImageIcon aria-hidden="true" size={34} />
-          <strong>成长记录接口待接入</strong>
-          <p>真实打卡与媒体记录开放后会显示在这里。</p>
-        </div>
-      </section>
-    </div>
-  );
+  return <ChildGrowthRecordsSection />;
 }
 
 function ProfilePage({
