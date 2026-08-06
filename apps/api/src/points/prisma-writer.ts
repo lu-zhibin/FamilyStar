@@ -4,6 +4,7 @@ import { createDomainEvent } from '@familystar/shared';
 import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 
+import { CHECK_IN_APPROVED_EVENT, type CheckInApprovedEventPayload } from '../check-ins/events.js';
 import { PrismaOutboxWriter } from '../events/prisma-outbox.js';
 import type { OutboxWriter } from '../events/outbox.js';
 import { normalizeFamilySettings } from '../family-settings/service.js';
@@ -336,6 +337,9 @@ export class PrismaPointsTransactionWriter implements PointsTransactionWriter {
         },
       }),
     );
+    if (input.businessType === 'check_in' || input.businessType === 'collaboration_round') {
+      await this.appendApprovalEvent(transaction, input, change.delta);
+    }
     if (levelAfter > user.currentLevel) {
       await this.outbox.append(
         transaction,
@@ -356,6 +360,91 @@ export class PrismaPointsTransactionWriter implements PointsTransactionWriter {
       );
     }
     return record(pointsLog);
+  }
+
+  private async appendApprovalEvent(
+    transaction: Prisma.TransactionClient,
+    input: EarnInput,
+    pointsEarned: number,
+  ): Promise<void> {
+    const payload = await this.approvalSnapshot(transaction, input, pointsEarned);
+    await this.outbox.append(
+      transaction,
+      createDomainEvent({
+        event_id: this.eventIdFactory(),
+        event_name: CHECK_IN_APPROVED_EVENT,
+        occurred_at: input.occurredAt.toISOString(),
+        family_id: input.familyId,
+        actor_id: input.actorId,
+        correlation_id: payload.source_id,
+        payload,
+      }),
+    );
+  }
+
+  private async approvalSnapshot(
+    transaction: Prisma.TransactionClient,
+    input: EarnInput,
+    pointsEarned: number,
+  ): Promise<CheckInApprovedEventPayload> {
+    if (input.businessType === 'check_in') {
+      const source = await transaction.checkIn.findFirst({
+        where: {
+          id: input.businessId,
+          familyId: input.familyId,
+          childId: input.userId,
+          status: 'APPROVED',
+        },
+        select: {
+          id: true,
+          childId: true,
+          contentText: true,
+          checkDate: true,
+          task: { select: { id: true, name: true } },
+          media: { orderBy: { sortOrder: 'asc' }, select: { mediaAssetId: true } },
+        },
+      });
+      if (!source) throw new Error('The approved check-in snapshot was not found.');
+      return {
+        source_type: 'CHECK_IN',
+        source_id: source.id,
+        child_id: source.childId,
+        task_id: source.task.id,
+        task_name: source.task.name,
+        content_text: source.contentText,
+        occurred_on: source.checkDate.toISOString().slice(0, 10),
+        points_earned: pointsEarned,
+        media_ids: source.media.map(({ mediaAssetId }) => mediaAssetId),
+      };
+    }
+
+    const source = await transaction.collaborationSubmission.findFirst({
+      where: {
+        familyId: input.familyId,
+        childId: input.userId,
+        roundId: input.businessId,
+        status: 'APPROVED',
+      },
+      select: {
+        id: true,
+        childId: true,
+        contentText: true,
+        round: { select: { endDate: true, task: { select: { id: true, name: true } } } },
+        media: { orderBy: { sortOrder: 'asc' }, select: { mediaAssetId: true } },
+      },
+    });
+    if (!source) throw new Error('The approved collaboration snapshot was not found.');
+    return {
+      source_type: 'COLLABORATION_SUBMISSION',
+      source_id: source.id,
+      child_id: source.childId,
+      task_id: source.round.task.id,
+      task_name: source.round.task.name,
+      content_text: source.contentText,
+      occurred_on: source.round.endDate.toISOString().slice(0, 10),
+      points_earned: pointsEarned,
+      media_ids: source.media.map(({ mediaAssetId }) => mediaAssetId),
+    };
   }
 
   private async changeRedemption(

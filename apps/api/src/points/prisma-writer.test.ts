@@ -65,6 +65,14 @@ function transaction(
     },
     checkIn: {
       findMany: vi.fn().mockResolvedValue([]),
+      findFirst: vi.fn().mockResolvedValue({
+        id: input.checkInId,
+        childId: input.userId,
+        contentText: '完成阅读',
+        checkDate: new Date('2026-07-31T00:00:00.000Z'),
+        task: { id: '70000000-0000-4000-8000-000000000001', name: '每日阅读' },
+        media: [{ mediaAssetId: '80000000-0000-4000-8000-000000000001' }],
+      }),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     family: { findFirst: vi.fn().mockResolvedValue({ settings: {} }) },
@@ -137,6 +145,24 @@ describe('PrismaPointsTransactionWriter', () => {
         payload: expect.objectContaining({ balance_after: 20, earned_total_after: 38 }),
       }),
     );
+    expect(outbox.append).toHaveBeenCalledWith(
+      databaseTransaction,
+      expect.objectContaining({
+        event_name: 'check-in.entry.approved.v1',
+        correlation_id: input.checkInId,
+        payload: {
+          source_type: 'CHECK_IN',
+          source_id: input.checkInId,
+          child_id: input.userId,
+          task_id: '70000000-0000-4000-8000-000000000001',
+          task_name: '每日阅读',
+          content_text: '完成阅读',
+          occurred_on: '2026-07-31',
+          points_earned: 8,
+          media_ids: ['80000000-0000-4000-8000-000000000001'],
+        },
+      }),
+    );
     expect(result).toEqual(pointsLog());
   });
 
@@ -189,9 +215,9 @@ describe('PrismaPointsTransactionWriter', () => {
     expect(databaseTransaction.user.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ currentLevel: 3 }) }),
     );
-    expect(outbox.append).toHaveBeenCalledTimes(2);
+    expect(outbox.append).toHaveBeenCalledTimes(3);
     expect(outbox.append).toHaveBeenNthCalledWith(
-      2,
+      3,
       databaseTransaction,
       expect.objectContaining({
         event_name: 'levels.level.advanced.v1',
@@ -222,7 +248,7 @@ describe('PrismaPointsTransactionWriter', () => {
     expect(databaseTransaction.user.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ currentLevel: 3 }) }),
     );
-    expect(outbox.append).toHaveBeenCalledTimes(1);
+    expect(outbox.append).toHaveBeenCalledTimes(2);
     expect(outbox.append).toHaveBeenCalledWith(
       databaseTransaction,
       expect.objectContaining({ event_name: 'points.balance.changed.v1' }),
@@ -239,7 +265,11 @@ describe('PrismaPointsTransactionWriter', () => {
     });
     const levelEventError = new Error('level event unavailable');
     const outbox = {
-      append: vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(levelEventError),
+      append: vi
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(levelEventError),
     };
     const writer = new PrismaPointsTransactionWriter(client(databaseTransaction), outbox);
 
@@ -247,7 +277,7 @@ describe('PrismaPointsTransactionWriter', () => {
       levelEventError,
     );
     expect(databaseTransaction.pointsLog.create).toHaveBeenCalledOnce();
-    expect(outbox.append).toHaveBeenCalledTimes(2);
+    expect(outbox.append).toHaveBeenCalledTimes(3);
   });
 
   it('retries the full work three times and returns a retryable conflict', async () => {
@@ -400,6 +430,23 @@ describe('PrismaPointsTransactionWriter', () => {
       levelConfig: {
         findMany: vi.fn().mockResolvedValue([{ level: 1, pointsRequired: 0 }]),
       },
+      collaborationSubmission: {
+        findFirst: vi.fn(({ where }) =>
+          Promise.resolve({
+            id:
+              where.childId === '20000000-0000-4000-8000-000000000001'
+                ? '90000000-0000-4000-8000-000000000001'
+                : '90000000-0000-4000-8000-000000000002',
+            childId: where.childId,
+            contentText: `协作-${where.childId}`,
+            round: {
+              endDate: round.endDate,
+              task: { id: '70000000-0000-4000-8000-000000000002', name: '协作整理' },
+            },
+            media: [],
+          }),
+        ),
+      },
     };
     const outbox = { append: vi.fn().mockResolvedValue(undefined) };
     const writer = new PrismaPointsTransactionWriter(
@@ -434,7 +481,7 @@ describe('PrismaPointsTransactionWriter', () => {
         data: { pointsEarned: 8, streakMultiplier: new Prisma.Decimal(1.5) },
       }),
     );
-    expect(outbox.append).toHaveBeenCalledTimes(3);
+    expect(outbox.append).toHaveBeenCalledTimes(5);
     expect(outbox.append).toHaveBeenNthCalledWith(
       1,
       databaseTransaction,
@@ -442,6 +489,20 @@ describe('PrismaPointsTransactionWriter', () => {
         event_name: 'check-in.collaboration.completed.v1',
         correlation_id: round.id,
         payload: { round_id: round.id, participant_count: 2 },
+      }),
+    );
+    expect(outbox.append).toHaveBeenNthCalledWith(
+      3,
+      databaseTransaction,
+      expect.objectContaining({
+        event_name: 'check-in.entry.approved.v1',
+        payload: expect.objectContaining({
+          source_type: 'COLLABORATION_SUBMISSION',
+          source_id: '90000000-0000-4000-8000-000000000001',
+          child_id: '20000000-0000-4000-8000-000000000001',
+          task_name: '协作整理',
+          points_earned: 8,
+        }),
       }),
     );
 
@@ -453,7 +514,7 @@ describe('PrismaPointsTransactionWriter', () => {
       writer.run((_transaction, points) => points.completeCollaborationRound(completion)),
     ).resolves.toBe(false);
     expect(databaseTransaction.pointsLog.create).toHaveBeenCalledTimes(2);
-    expect(outbox.append).toHaveBeenCalledTimes(3);
+    expect(outbox.append).toHaveBeenCalledTimes(5);
 
     const rollbackError = new Error('collaboration event unavailable');
     databaseTransaction.collaborationRound.findFirst.mockResolvedValue(round);

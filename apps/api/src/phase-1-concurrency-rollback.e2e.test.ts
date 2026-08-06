@@ -364,6 +364,14 @@ class MemoryPointsDatabase {
       },
       family: { findFirst: async () => ({ settings: {} }) },
       checkIn: {
+        findFirst: async ({ where }: { where: { id: string; childId: string } }) => ({
+          id: where.id,
+          childId: where.childId,
+          contentText: '完成今日任务',
+          checkDate: NOW,
+          task: { id: 'task-1', name: '今日任务' },
+          media: [],
+        }),
         findMany: async () => [],
         updateMany: async () => {
           draft.snapshotWrites += 1;
@@ -781,7 +789,7 @@ describe('phase 1 concurrency and rollback e2e regression', () => {
     await writer.run((_transaction, points) => points.earnCheckIn(award));
     expect(initial).toMatchObject({ balance: 30, earnedTotal: 30, version: 2, snapshotWrites: 1 });
     expect(initial.logs).toHaveLength(1);
-    expect(initial.events).toHaveLength(1);
+    expect(initial.events).toHaveLength(2);
 
     const failureState: MemoryPointsState = {
       balance: initial.balance,

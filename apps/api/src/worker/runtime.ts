@@ -1,6 +1,10 @@
 import { EventBus } from '../events/event-bus.js';
+import { IdempotentEventConsumer } from '../events/idempotent-consumer.js';
 import { OutboxDispatcher } from '../events/outbox.js';
 import { PrismaOutboxRepository } from '../events/prisma-outbox.js';
+import { RedisEventReceiptStore } from '../events/redis-event-receipts.js';
+import { CHECK_IN_APPROVED_EVENT } from '../check-ins/events.js';
+import { GrowthRecordEventConsumer } from '../growth-records/event-consumer.js';
 import { SubmissionReviewTimeoutService } from '../check-ins/review-timeout-service.js';
 import { PrismaSubmissionReviewRepository } from '../check-ins/review-prisma-repository.js';
 import { initializeCredentialVault } from '../infrastructure/credentials/runtime.js';
@@ -41,6 +45,14 @@ export function createWorkerRuntime(input: {
   const cos = new TencentCosClient();
   const eventBus = new EventBus();
   const badgeEventConsumer = new BadgeEventConsumer(new PrismaBadgeRepository(prisma));
+  const growthRecordProjector = new GrowthRecordEventConsumer(prisma);
+  const growthRecordConsumer = new IdempotentEventConsumer(
+    new RedisEventReceiptStore(redisCommands, keys),
+    async (event) => {
+      await growthRecordProjector.handle(event);
+    },
+    { consumer: 'growth-record-projector-v1', receiptTtlSeconds: 86_400 },
+  );
   const badgeScope = eventBus.createScope({
     name: 'badge-evaluator',
     version: '1.0.0',
@@ -55,6 +67,19 @@ export function createWorkerRuntime(input: {
       await badgeEventConsumer.handle(event);
     });
   }
+  eventBus
+    .createScope({
+      name: 'growth-record-projector',
+      version: '1.0.0',
+      capabilities: ['growth-record-projection'],
+      dependencies: [],
+      permissions: [],
+      publishes: [],
+      subscribes: [CHECK_IN_APPROVED_EVENT],
+    })
+    .subscribe(CHECK_IN_APPROVED_EVENT, async (event) => {
+      await growthRecordConsumer.consume(event);
+    });
   const jobs = createWorkerJobs({
     repository: new PrismaWorkerJobsRepository(prisma),
     collaborationScheduler: new CollaborationScheduler(
