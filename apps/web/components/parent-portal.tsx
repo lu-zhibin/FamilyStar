@@ -23,8 +23,6 @@ import {
   RotateCcw,
   Save,
   ShieldCheck,
-  Sparkles,
-  Target,
   Trash2,
   TrendingUp,
   Trophy,
@@ -69,6 +67,7 @@ import {
   type TaskCollaborationMode,
 } from '../lib/parent-portal';
 import { uploadMediaFile } from '../lib/media-upload';
+import { ParentAnalyticsSection, ParentDashboardSection } from './parent-read-models';
 import { ParentShell } from './parent-shell';
 
 type LoadState = ApiLoadState;
@@ -284,58 +283,7 @@ function Progress({ value, label }: { value: number; label: string }) {
   );
 }
 function DashboardPage() {
-  const children = useApiData<Child[]>('/family/children', 'children', []);
-  return (
-    <>
-      <PageHeader
-        eyebrow="今天也在一起成长"
-        title="家庭总览"
-        description="查看真实家庭成员，并了解尚待接入的总览聚合能力。"
-        state={children.state}
-      />
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
-        <Panel>
-          <SectionTitle>孩子今日进度</SectionTitle>
-          <div className="grid gap-3 md:grid-cols-3">
-            {children.data.map((child) => (
-              <article key={child.id} className="soft-card">
-                <div className="mb-4 flex items-center gap-3">
-                  <span className="avatar">{child.nickname.slice(-1)}</span>
-                  <div>
-                    <h3 className="font-extrabold">{child.nickname}</h3>
-                    <p className="text-caption font-bold text-brown-light">
-                      {child.grade ?? '成长探索中'}
-                    </p>
-                  </div>
-                </div>
-                <p className="text-caption font-bold text-brown-light">
-                  今日进度与积分将在总览聚合接口接入后展示。
-                </p>
-              </article>
-            ))}
-            {children.data.length === 0 && (
-              <EmptyState title="还没有孩子档案" detail="前往家庭成员页创建第一个孩子档案。" />
-            )}
-          </div>
-        </Panel>
-        <Panel>
-          <SectionTitle>今日待办</SectionTitle>
-          <EmptyState
-            title="总览待办接口待接入"
-            detail="审核和兑换聚合完成后，这里会展示当前家庭的真实待办。"
-          />
-        </Panel>
-      </div>
-      <Panel className="mt-5">
-        <SectionTitle>最近家庭动态</SectionTitle>
-        <EmptyState
-          title="动态时间线正在接入"
-          detail="家庭动态聚合接口将在后续阶段提供。"
-          icon={<Sparkles size={30} />}
-        />
-      </Panel>
-    </>
-  );
+  return <ParentDashboardSection />;
 }
 
 function FrequencyFields({
@@ -1492,26 +1440,7 @@ function LevelsPage() {
 }
 
 function StatsPage() {
-  return (
-    <>
-      <PageHeader
-        eyebrow="从趋势中找到陪伴重点"
-        title="数据面板"
-        description="按孩子、任务和时间观察家庭成长节奏。"
-      />
-      <div className="notice">
-        <Info size={20} />
-        <span>MVP 聚合统计接口尚待建设。</span>
-      </div>
-      <Panel className="mt-5">
-        <EmptyState
-          title="统计数据接口待接入"
-          detail="真实打卡率、积分趋势和任务洞察将在聚合接口完成后展示。"
-          icon={<Target size={30} />}
-        />
-      </Panel>
-    </>
-  );
+  return <ParentAnalyticsSection />;
 }
 
 function RecordsPage() {

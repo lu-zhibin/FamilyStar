@@ -32,6 +32,11 @@ import {
   formatCountdown,
   type ChildSection,
 } from '../lib/child-portal';
+import {
+  ChildPointsBalance,
+  ChildPointsPanel,
+  ChildRankingsPanel,
+} from './child-points-rankings';
 import { ChildShell } from './child-shell';
 
 type LoadState = ApiLoadState;
@@ -388,7 +393,7 @@ function AchievementsPage({ level, state }: Readonly<{ level: LevelView; state: 
         <div className="relative z-10">
           <div className="flex items-center justify-between">
             <span className="child-glass-chip">Lv.{level.current_level}</span>
-            <DataStatus state={state} limited="徽章与积分流水接口待接入" />
+            <DataStatus state={state} limited="徽章接口待接入" />
           </div>
           <h1 className="mt-3 font-display text-[32px]">{level.current.name}</h1>
           <p className="font-extrabold">累计获得 {level.points_earned_total} 星，等级只升不降</p>
@@ -432,14 +437,7 @@ function AchievementsPage({ level, state }: Readonly<{ level: LevelView; state: 
           <p>徽章规则和获得记录开放后会显示在这里。</p>
         </div>
       </section>
-      <section className="child-card child-animate-in child-delay-3">
-        <SectionHeading title="积分明细" />
-        <div className="empty-state">
-          <Star aria-hidden="true" size={34} />
-          <strong>积分流水接口待接入</strong>
-          <p>累计积分与当前等级来自实时等级接口，逐笔明细将在后续接口开放后展示。</p>
-        </div>
-      </section>
+      <ChildPointsPanel />
     </div>
   );
 }
@@ -467,8 +465,7 @@ function RewardsPage({
         <div className="relative z-10 flex items-center justify-between gap-4">
           <div>
             <p className="font-extrabold">我的星星</p>
-            <strong className="text-subtitle">余额接口待接入</strong>
-            <p className="text-label font-bold">累计星星 {level.points_earned_total}</p>
+            <ChildPointsBalance />
           </div>
           <div className="rounded-card bg-white/20 p-3 text-center text-label font-extrabold">
             {level.benefits.effective_auto_approve_quota} 星内
@@ -630,14 +627,7 @@ function ProfilePage({
           </div>
         </div>
       </section>
-      <section className="child-card child-animate-in child-delay-1">
-        <SectionHeading title="家庭排行" />
-        <div className="empty-state">
-          <Medal aria-hidden="true" size={34} />
-          <strong>排行接口待接入</strong>
-          <p>家庭成员积分与等级聚合完成后会显示在这里。</p>
-        </div>
-      </section>
+      <ChildRankingsPanel />
       <section className="child-card child-animate-in child-delay-2">
         <SectionHeading title="我的空间" />
         <Link href={childSectionPaths.records} className="child-menu-item">
