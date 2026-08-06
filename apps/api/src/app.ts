@@ -32,6 +32,8 @@ import { createSecurityMiddleware } from './security/middleware.js';
 import type { FamilyModuleStatusPort } from './security/module-access.js';
 import { registerIntegrationSettingsRoutes } from './infrastructure/credentials/integration-routes.js';
 import type { IntegrationSettingsOperations } from './infrastructure/credentials/integration-service.js';
+import { registerPointsReadRoutes } from './points/routes.js';
+import type { PointsReadOperations } from './points/types.js';
 
 const service: ServiceInfo = {
   name: 'FamilyStar API',
@@ -55,6 +57,7 @@ export type CreateAppOptions = {
   auditWriter?: AuditWriter;
   familyModuleStatus?: FamilyModuleStatusPort;
   integrationSettingsOperations?: IntegrationSettingsOperations;
+  pointsReadOperations?: PointsReadOperations;
   secureCookies?: boolean;
 };
 
@@ -75,6 +78,7 @@ export function createApp({
   auditWriter,
   familyModuleStatus,
   integrationSettingsOperations,
+  pointsReadOperations,
   secureCookies = false,
 }: CreateAppOptions) {
   const app = new Hono<AppEnvironment>();
@@ -150,6 +154,9 @@ export function createApp({
   }
   if (integrationSettingsOperations) {
     registerIntegrationSettingsRoutes(apiV1, integrationSettingsOperations);
+  }
+  if (pointsReadOperations) {
+    registerPointsReadRoutes(apiV1, pointsReadOperations, secureCookies);
   }
 
   app.notFound((context) =>

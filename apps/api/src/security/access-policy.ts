@@ -112,6 +112,11 @@ export const ROUTE_ACCESS_POLICIES: readonly RouteAccessPolicy[] = [
   },
   {
     methods: ['GET'],
+    path: /^\/api\/v1\/family\/children\/[^/]+\/points$/,
+    role: 'parent',
+  },
+  {
+    methods: ['GET'],
     path: /^\/api\/v1\/tasks\/me$/,
     role: 'child',
   },

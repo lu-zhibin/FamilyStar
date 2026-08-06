@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveRouteAccessPolicy, type RequiredRole } from './access-policy.js';
+import {
+  resolveRouteAccessPolicy,
+  ROUTE_ACCESS_POLICIES,
+  type RequiredRole,
+} from './access-policy.js';
 
 describe('route access policy', () => {
   it.each([
@@ -41,6 +45,18 @@ describe('route access policy', () => {
     expect(resolveRouteAccessPolicy('GET', '/api/v1/future-capability')).toMatchObject({
       role: 'authenticated',
     });
+  });
+
+  it('registers an explicit GET policy for parent child-points reads', () => {
+    expect(
+      ROUTE_ACCESS_POLICIES.some(
+        (policy) =>
+          policy.role === 'parent' &&
+          policy.methods.length === 1 &&
+          policy.methods[0] === 'GET' &&
+          policy.path.test('/api/v1/family/children/child-id/points'),
+      ),
+    ).toBe(true);
   });
 
   it('property: arbitrary unregistered versioned paths never become public', () => {

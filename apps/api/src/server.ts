@@ -40,6 +40,8 @@ import { RewardService } from './rewards/service.js';
 import { PrismaAuditWriter } from './security/audit.js';
 import { IntegrationSettingsService } from './infrastructure/credentials/integration-service.js';
 import { PrismaIntegrationSettingsRepository } from './infrastructure/credentials/integration-prisma-repository.js';
+import { PrismaPointsReadRepository } from './points/prisma-repository.js';
+import { PointsReadService } from './points/service.js';
 
 const environment = parseEnvironment(process.env);
 const credentialVault = initializeCredentialVault(environment);
@@ -101,6 +103,10 @@ const mediaOperations = new MediaService({
   cos: new TencentCosClient(),
 });
 const pointsTransactionWriter = new PrismaPointsTransactionWriter(prisma, new PrismaOutboxWriter());
+const pointsReadOperations = new PointsReadService({
+  repository: new PrismaPointsReadRepository(prisma),
+  sessions: sessionStore,
+});
 const levelOperations = new LevelService({
   repository: new PrismaLevelRepository(prisma),
   sessions: sessionStore,
@@ -144,6 +150,7 @@ const app = createApp({
   sessionStore,
   auditWriter: new PrismaAuditWriter(prisma),
   integrationSettingsOperations,
+  pointsReadOperations,
   secureCookies: environment.NODE_ENV === 'production',
 });
 
