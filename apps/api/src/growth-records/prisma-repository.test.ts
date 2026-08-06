@@ -6,7 +6,13 @@ import { GrowthRecordAccessError } from './service.js';
 
 const now = new Date('2026-08-06T08:00:00.000Z');
 
-function value(overrides: Partial<GrowthRecord> = {}) {
+type GrowthRecordValue = GrowthRecord & {
+  child: { id: string; nickname: string };
+  task: { id: string; name: string } | null;
+  media: readonly unknown[];
+};
+
+function value(overrides: Partial<GrowthRecordValue> = {}): GrowthRecordValue {
   return {
     id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     familyId: 'family-a',
@@ -39,6 +45,63 @@ function prismaWithTransaction(transaction: object): PrismaClient {
 }
 
 describe('PrismaGrowthRecordRepository', () => {
+  it('property: builds a strict stable keyset boundary for every generated cursor', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const repository = new PrismaGrowthRecordRepository({
+      growthRecord: { findMany },
+    } as unknown as PrismaClient);
+
+    for (let index = 0; index < 64; index += 1) {
+      const occurredOn = new Date(Date.UTC(2026, 7, (index % 28) + 1));
+      const id = `record-${String(index).padStart(3, '0')}`;
+      await repository.findMany({
+        familyId: `family-${index}`,
+        filters: {},
+        cursor: { occurredOn, id },
+        limit: (index % 50) + 1,
+      });
+
+      expect(findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          where: {
+            familyId: `family-${index}`,
+            deletedAt: null,
+            OR: [{ occurredOn: { lt: occurredOn } }, { occurredOn, id: { lt: id } }],
+          },
+          orderBy: [{ occurredOn: 'desc' }, { id: 'desc' }],
+          take: (index % 50) + 2,
+        }),
+      );
+    }
+  });
+
+  it('keeps automatic task names on their immutable approval snapshot', async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      value({
+        type: 'CHECK_IN',
+        title: '审批时的任务名称',
+        sourceType: 'CHECK_IN',
+        sourceId: 'source-a',
+        taskId: 'task-a',
+        task: { id: 'task-a', name: '后来修改的任务名称' },
+      }),
+      value({ taskId: 'task-a', task: { id: 'task-a', name: '当前任务名称' } }),
+    ]);
+    const repository = new PrismaGrowthRecordRepository({
+      growthRecord: { findMany },
+    } as unknown as PrismaClient);
+
+    const records = await repository.findMany({
+      familyId: 'family-a',
+      filters: {},
+      cursor: null,
+      limit: 20,
+    });
+
+    expect(records[0]?.task).toEqual({ id: 'task-a', name: '审批时的任务名称' });
+    expect(records[1]?.task).toEqual({ id: 'task-a', name: '当前任务名称' });
+  });
+
   it('creates an ordered manual record after validating family references and READY media', async () => {
     const create = vi.fn().mockResolvedValue(value());
     const transaction = {
@@ -109,6 +172,60 @@ describe('PrismaGrowthRecordRepository', () => {
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' } satisfies Partial<GrowthRecordAccessError>);
     expect(transaction.growthRecord.create).not.toHaveBeenCalled();
+  });
+
+  it('property: rejects every generated cross-family child, task, and media reference', async () => {
+    const missingReferences = ['child', 'task', 'media'] as const;
+    for (const missing of missingReferences) {
+      for (let index = 0; index < 12; index += 1) {
+        const transaction = {
+          user: {
+            findFirst: vi
+              .fn()
+              .mockResolvedValueOnce({ id: `parent-${index}` })
+              .mockResolvedValueOnce(missing === 'child' ? null : { id: `child-${index}` }),
+          },
+          task: {
+            findFirst: vi
+              .fn()
+              .mockResolvedValue(missing === 'task' ? null : { id: `task-${index}` }),
+          },
+          mediaAsset: {
+            findMany: vi
+              .fn()
+              .mockResolvedValue(missing === 'media' ? [] : [{ id: `media-${index}` }]),
+          },
+          growthRecord: { create: vi.fn() },
+        };
+        const repository = new PrismaGrowthRecordRepository(prismaWithTransaction(transaction));
+
+        await expect(
+          repository.createManual({
+            familyId: `family-${index}`,
+            parentId: `parent-${index}`,
+            record: {
+              childId: `child-${index}`,
+              taskId: `task-${index}`,
+              type: 'NOTE',
+              title: `记录 ${index}`,
+              occurredOn: now,
+              mediaIds: [`media-${index}`],
+            },
+          }),
+        ).rejects.toMatchObject({ code: 'NOT_FOUND' } satisfies Partial<GrowthRecordAccessError>);
+        expect(transaction.task.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ familyId: `family-${index}` }),
+          }),
+        );
+        expect(transaction.mediaAsset.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ familyId: `family-${index}` }),
+          }),
+        );
+        expect(transaction.growthRecord.create).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it('keeps automatic CHECK_IN records outside manual update and delete operations', async () => {

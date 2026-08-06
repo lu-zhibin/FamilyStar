@@ -48,6 +48,7 @@ type GrowthRecordValue = Prisma.GrowthRecordGetPayload<{ select: typeof recordSe
 function record(value: GrowthRecordValue): GrowthRecordItem {
   return {
     ...value,
+    task: value.task && value.sourceType ? { id: value.task.id, name: value.title } : value.task,
     media: value.media.map(({ mediaAsset }) => ({
       ...mediaAsset,
       sizeBytes: Number(mediaAsset.sizeBytes),

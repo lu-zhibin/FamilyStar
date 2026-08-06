@@ -45,6 +45,28 @@ describe('growth record helpers', () => {
     ).toEqual(['media-a', 'media-b']);
   });
 
+  it('property: overlapping and repeated timeline pages preserve first-seen stable order', () => {
+    for (let pageSize = 1; pageSize <= 32; pageSize += 1) {
+      const ordered = Array.from({ length: pageSize * 3 }, (_, index) => ({
+        id: `record-${String(index).padStart(3, '0')}`,
+        version: 'first',
+      }));
+      const pages = [
+        ordered.slice(0, pageSize),
+        ordered.slice(pageSize - 1, pageSize * 2 + 1),
+        [...ordered.slice(pageSize * 2), ...ordered.slice(pageSize * 2)],
+      ];
+      const merged = pages.reduce<readonly (typeof ordered)[number][]>(
+        (items, page) => mergeTimelineItems(items, page),
+        [],
+      );
+
+      expect(merged).toEqual(ordered);
+      expect(new Set(merged.map(({ id }) => id)).size).toBe(ordered.length);
+      expect(mergeTimelineItems(merged, pages[1]!)).toEqual(merged);
+    }
+  });
+
   it('chunks media requests at the API boundary and restores an id-to-url map', async () => {
     const ids = Array.from({ length: 101 }, (_, index) => `media-${index}`);
     expect(chunkMediaIds(ids).map((batch) => batch.length)).toEqual([50, 50, 1]);

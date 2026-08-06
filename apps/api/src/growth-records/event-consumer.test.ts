@@ -94,6 +94,24 @@ describe('GrowthRecordEventConsumer', () => {
     expect(transaction.growthRecord.create).not.toHaveBeenCalled();
   });
 
+  it('property: projects one record across repeated deliveries with different event ids', async () => {
+    const { consumer, transaction } = fixture();
+    const results = [];
+
+    for (let index = 0; index < 32; index += 1) {
+      results.push(
+        await consumer.handle({
+          ...event,
+          event_id: `10000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+        }),
+      );
+    }
+
+    expect(results).toEqual(['created', ...Array.from({ length: 31 }, () => 'duplicate')]);
+    expect(transaction.growthRecord.create).toHaveBeenCalledTimes(1);
+    expect(transaction.checkIn.findFirst).toHaveBeenCalledTimes(1);
+  });
+
   it('projects each approved collaboration submission from its immutable payload snapshot', async () => {
     const { consumer, transaction } = fixture();
     transaction.collaborationSubmission.findFirst.mockResolvedValue({

@@ -111,6 +111,36 @@ describe('ParentGrowthRecordsView', () => {
     expect(failure).toContain('成长记录暂时无法读取');
     expect(failure).toContain('重新读取');
   });
+
+  it('property: only manual record types expose mutation controls', () => {
+    for (const type of ['CHECK_IN', 'NOTE', 'MILESTONE'] as const) {
+      const record = {
+        ...checkIn,
+        id: `record-${type}`,
+        type,
+        title: `${type} 标题`,
+        source_type: type === 'CHECK_IN' ? 'CHECK_IN' : null,
+        source_id: type === 'CHECK_IN' ? 'source-1' : null,
+      };
+      const markup = renderToStaticMarkup(
+        <ParentGrowthRecordsView
+          records={[record]}
+          page={{ next_cursor: null, has_more: false }}
+          state="live"
+          urls={{}}
+          mediaError={false}
+          loadingMore={false}
+          pageError={false}
+          {...viewCallbacks}
+          onEdit={vi.fn()}
+          onDelete={vi.fn()}
+        />,
+      );
+
+      expect(markup.includes(`aria-label="编辑${record.title}"`)).toBe(type !== 'CHECK_IN');
+      expect(markup.includes(`aria-label="删除${record.title}"`)).toBe(type !== 'CHECK_IN');
+    }
+  });
 });
 
 describe('ChildGrowthRecordsView', () => {
@@ -162,5 +192,31 @@ describe('ChildGrowthRecordsView', () => {
     expect(markup).toContain('已通过');
     expect(markup).toContain('+20 星');
     expect(markup).not.toMatch(/编辑|删除/);
+  });
+
+  it('property: renders every review state as a read-only localized result', () => {
+    const states = [
+      ['PENDING', '等待审核', null],
+      ['APPROVED', '已通过', 20],
+      ['REJECTED', '需再试一次', null],
+    ] as const;
+    for (const [status, label, pointsEarned] of states) {
+      const markup = renderToStaticMarkup(
+        <ChildGrowthRecordsView
+          items={[{ ...history, status, points_earned: pointsEarned }]}
+          page={{ next_cursor: null, has_more: false }}
+          state="live"
+          urls={{}}
+          mediaError={false}
+          loadingMore={false}
+          pageError={false}
+          {...viewCallbacks}
+        />,
+      );
+
+      expect(markup).toContain(label);
+      expect(markup).not.toMatch(/编辑|删除/);
+      expect(markup.includes('+20 星')).toBe(pointsEarned === 20);
+    }
   });
 });

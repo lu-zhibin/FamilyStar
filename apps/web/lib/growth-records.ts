@@ -106,8 +106,14 @@ export function mergeTimelineItems<Item extends { id: string }>(
   current: readonly Item[],
   incoming: readonly Item[],
 ): readonly Item[] {
-  const ids = new Set(current.map(({ id }) => id));
-  return [...current, ...incoming.filter(({ id }) => !ids.has(id))];
+  const merged: Item[] = [];
+  const ids = new Set<string>();
+  for (const item of [...current, ...incoming]) {
+    if (ids.has(item.id)) continue;
+    ids.add(item.id);
+    merged.push(item);
+  }
+  return merged;
 }
 
 export function timelineMediaIds(
