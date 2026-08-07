@@ -162,6 +162,8 @@ pnpm db:seed
 
 任务 15 已通过完整 Vitest 套件、核心 HTTP 闭环集成测试、覆盖率门禁、格式检查、零警告 Lint、全工作区类型检查、Prisma 契约、生产构建和 9 项 Playwright E2E。
 
+产品补全阶段 11 的最新质量基线为聚焦回归 31 个文件、223 项和完整单元回归 131 个文件、986 项通过。全工作区类型检查、零警告 Lint、全局 Prettier、Prisma Schema、数据模型契约和全部生产构建均通过；`48d3bd0` 已对齐邀请仓储现行事件字段契约。
+
 Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwright.config.cjs` 同时启动测试专用会话服务和临时 Next.js 服务，使服务端门户守卫经过真实 Cookie 与角色重定向路径；浏览器业务请求继续由每项测试的显式 API 契约夹具承接。九页家长巡检具有 120 秒独立预算，其余用例使用 60 秒预算。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
 
 ## Worker 开发
