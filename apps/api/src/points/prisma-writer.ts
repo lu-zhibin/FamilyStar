@@ -82,6 +82,15 @@ function record(value: {
   return value;
 }
 
+function isPrismaRequestError(error: unknown, code: string): error is { code: string } {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === code
+  );
+}
+
 export class PrismaPointsTransactionWriter implements PointsTransactionWriter {
   constructor(
     private readonly prisma: PrismaClient,
@@ -120,7 +129,7 @@ export class PrismaPointsTransactionWriter implements PointsTransactionWriter {
           if (attempt < MAX_TRANSACTION_ATTEMPTS) continue;
           throw new PointsTransactionConflictError();
         }
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2034') {
+        if (isPrismaRequestError(error, 'P2034')) {
           if (attempt < MAX_TRANSACTION_ATTEMPTS) continue;
           throw new PointsTransactionConflictError();
         }
@@ -310,7 +319,7 @@ export class PrismaPointsTransactionWriter implements PointsTransactionWriter {
         },
       });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (isPrismaRequestError(error, 'P2002')) {
         throw new PointsBusinessKeyConflictError(input, error);
       }
       throw error;
@@ -510,7 +519,7 @@ export class PrismaPointsTransactionWriter implements PointsTransactionWriter {
         },
       });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      if (isPrismaRequestError(error, 'P2002')) {
         throw new PointsBusinessKeyConflictError(key, error);
       }
       throw error;
