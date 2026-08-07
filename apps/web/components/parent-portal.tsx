@@ -1576,12 +1576,14 @@ export function ReviewMediaGallery({ media }: { media: PendingReview['media'] })
 
 export function ReviewActions({
   busy,
+  locked = false,
   reason,
   onApprove,
   onReject,
   onReasonChange,
 }: {
   busy: boolean;
+  locked?: boolean;
   reason: string;
   onApprove: () => void;
   onReject: () => void;
@@ -1589,19 +1591,24 @@ export function ReviewActions({
 }) {
   return (
     <div className="mt-4 grid gap-3 md:grid-cols-[auto_auto_1fr] md:items-end">
-      <button className="primary-button" type="button" disabled={busy} onClick={onApprove}>
-        <Check size={17} />
-        {busy ? '处理中' : '通过并发分'}
-      </button>
-      <button className="secondary-button" type="button" disabled={busy} onClick={onReject}>
-        <X size={17} />
-        不通过打回
-      </button>
+      {!locked && (
+        <>
+          <button className="primary-button" type="button" disabled={busy} onClick={onApprove}>
+            <Check size={17} />
+            {busy ? '处理中' : '通过并发分'}
+          </button>
+          <button className="secondary-button" type="button" disabled={busy} onClick={onReject}>
+            <X size={17} />
+            不通过打回
+          </button>
+        </>
+      )}
       <label className="field-label">
         打回原因
         <input
           className="field"
           value={reason}
+          disabled={locked}
           maxLength={2000}
           placeholder="打回时必填，例如：请补充清晰照片"
           onChange={(event) => onReasonChange(event.target.value)}
@@ -1785,21 +1792,21 @@ function ReviewsPage() {
                     <ReviewMediaGallery media={item.media} />
                   </div>
                 )}
-                {authoritativeStatus ? (
+                {authoritativeStatus && (
                   <p className="notice mt-4" role="status">
                     当前记录保留用于核对，审核历史已同步服务端权威结果。
                   </p>
-                ) : (
-                  <ReviewActions
-                    busy={busy}
-                    reason={reasons[item.target_id] ?? ''}
-                    onApprove={() => submitReview(item, 'APPROVED')}
-                    onReject={() => submitReview(item, 'REJECTED')}
-                    onReasonChange={(reason) =>
-                      setReasons((current) => ({ ...current, [item.target_id]: reason }))
-                    }
-                  />
                 )}
+                <ReviewActions
+                  busy={busy}
+                  locked={Boolean(authoritativeStatus)}
+                  reason={reasons[item.target_id] ?? ''}
+                  onApprove={() => submitReview(item, 'APPROVED')}
+                  onReject={() => submitReview(item, 'REJECTED')}
+                  onReasonChange={(reason) =>
+                    setReasons((current) => ({ ...current, [item.target_id]: reason }))
+                  }
+                />
               </article>
             );
           })}

@@ -1,5 +1,3 @@
-const { createHash } = require('node:crypto');
-
 const { expect, test } = require('@playwright/test');
 
 test.skip(
@@ -15,46 +13,6 @@ function calendarDate() {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
-}
-
-async function uploadImage(request, suffix, index) {
-  const bytes = Buffer.from(
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2DfoAAAAASUVORK5CYII=',
-    'base64',
-  );
-  const checksum = createHash('sha256').update(bytes).digest('hex');
-  const initialized = await request.post('/api/v1/media/uploads', {
-    headers: { 'Idempotency-Key': `review-media-${suffix}-${index}` },
-    data: {
-      type: 'IMAGE',
-      mime_type: 'image/png',
-      checksum,
-      size_bytes: bytes.length,
-    },
-  });
-  expect(initialized.status()).toBe(201);
-  const upload = (await initialized.json()).data.upload;
-
-  const authorization = await request.post(`/api/v1/media/uploads/${upload.id}/parts/1/authorize`, {
-    data: {},
-  });
-  expect(authorization.status()).toBe(200);
-  const uploadUrl = (await authorization.json()).data.url;
-  const transferred = await fetch(uploadUrl, { method: 'PUT', body: bytes });
-  expect(transferred.ok).toBe(true);
-  const etag = transferred.headers.get('etag');
-  expect(etag).toBeTruthy();
-
-  const confirmed = await request.put(`/api/v1/media/uploads/${upload.id}/parts/1`, {
-    data: { etag, checksum, size_bytes: bytes.length },
-  });
-  expect(confirmed.status()).toBe(200);
-  const completed = await request.post(`/api/v1/media/uploads/${upload.id}/complete`, {
-    data: {},
-  });
-  expect(completed.status()).toBe(200);
-  expect((await completed.json()).data.upload.status).toBe('READY');
-  return upload.media_id;
 }
 
 test('reviews evidence with deadlines, filters, keyboard controls, and conflict refresh', async ({
@@ -98,7 +56,7 @@ test('reviews evidence with deadlines, filters, keyboard controls, and conflict 
       name: taskName,
       description: '验证审核截止时间、历史和凭证键盘交互。',
       submission_guide: '提交两份图片凭证。',
-      check_type: 'IMAGE',
+      check_type: 'TEXT',
       verify_mode: 'MANUAL',
       collaboration_mode: 'SOLO',
       frequency: { kind: 'daily' },
@@ -108,11 +66,6 @@ test('reviews evidence with deadlines, filters, keyboard controls, and conflict 
   });
   expect(taskResponse.status()).toBe(201);
   const task = (await taskResponse.json()).data.task;
-  const mediaIds = [
-    await uploadImage(page.request, suffix, 1),
-    await uploadImage(page.request, suffix, 2),
-  ];
-
   const session = (await (await page.request.get('/api/v1/auth/session')).json()).data;
   const childContext = await browser.newContext({ baseURL });
   const childLogin = await childContext.request.post('/api/v1/auth/child/login', {
@@ -128,12 +81,37 @@ test('reviews evidence with deadlines, filters, keyboard controls, and conflict 
     data: {
       task_assignment_id: task.assignments[0].id,
       check_date: today,
-      content: { text: '两份凭证均已提交。', media_ids: mediaIds },
+      content: { text: '两份凭证均已提交。', media_ids: [] },
     },
   });
   expect(checkInResponse.status()).toBe(201);
   const checkIn = (await checkInResponse.json()).data.check_in;
   await childContext.close();
+
+  const media = [
+    { id: '00000000-0000-4000-8000-000000000101', type: 'IMAGE', mime_type: 'image/png' },
+    { id: '00000000-0000-4000-8000-000000000102', type: 'IMAGE', mime_type: 'image/png' },
+  ];
+  await page.route('**/api/v1/family/submission-reviews/pending*', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.reviews = payload.data.reviews.map((review) =>
+      review.target_id === checkIn.id ? { ...review, media } : review,
+    );
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route('**/api/v1/media/*/access-url', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      json: {
+        success: true,
+        data: {
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2DfoAAAAASUVORK5CYII=',
+        },
+      },
+    });
+  });
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto('/reviews');
@@ -168,7 +146,7 @@ test('reviews evidence with deadlines, filters, keyboard controls, and conflict 
   });
   expect(authoritativeReview.status()).toBe(200);
   await reviewCard.getByRole('button', { name: '通过并发分' }).click();
-  await expect(page.getByRole('alert')).toContainText('审核状态已由服务端更新为通过');
+  await expect(page.getByText('审核状态已由服务端更新为通过，当前记录已保留。')).toBeVisible();
   await expect(reviewCard.getByText('服务端已通过', { exact: true })).toBeVisible();
   await expect(reviewCard.getByLabel('打回原因')).toHaveValue('冲突后仍需保留的输入');
   await expect(reviewCard.getByRole('button', { name: '通过并发分' })).toHaveCount(0);

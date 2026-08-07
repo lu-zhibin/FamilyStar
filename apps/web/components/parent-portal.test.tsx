@@ -196,4 +196,22 @@ describe('ParentPortal', () => {
     expect(markup.indexOf('不通过打回')).toBeLessThan(markup.indexOf('打回原因'));
     expect(markup).toContain('md:grid-cols-[auto_auto_1fr]');
   });
+
+  it('keeps the review reason visible after an authoritative conflict result', () => {
+    const markup = renderToStaticMarkup(
+      <ReviewActions
+        busy={false}
+        locked
+        reason="保留当前输入"
+        onApprove={() => undefined}
+        onReject={() => undefined}
+        onReasonChange={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('value="保留当前输入"');
+    expect(markup).toContain('disabled=""');
+    expect(markup).not.toContain('通过并发分');
+    expect(markup).not.toContain('不通过打回');
+  });
 });
