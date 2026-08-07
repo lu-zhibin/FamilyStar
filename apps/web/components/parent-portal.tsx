@@ -285,16 +285,17 @@ function DashboardPage() {
   return <ParentDashboardSection />;
 }
 
-function FrequencyFields({
+export function FrequencyFields({
   kind,
   onKindChange,
+  naturalDate,
   value,
 }: {
   kind: FrequencyKind;
   onKindChange: (kind: FrequencyKind) => void;
+  naturalDate: string;
   value?: TaskFrequency;
 }) {
-  const today = new Date().toISOString().slice(0, 10);
   return (
     <>
       <label className="field-label">
@@ -351,7 +352,7 @@ function FrequencyFields({
               className="field"
               name="frequency_start_date"
               type="date"
-              defaultValue={value?.kind === 'date_range' ? value.start_date : today}
+              defaultValue={value?.kind === 'date_range' ? value.start_date : naturalDate}
               required
             />
           </label>
@@ -361,7 +362,7 @@ function FrequencyFields({
               className="field"
               name="frequency_end_date"
               type="date"
-              defaultValue={value?.kind === 'date_range' ? value.end_date : today}
+              defaultValue={value?.kind === 'date_range' ? value.end_date : naturalDate}
               required
             />
           </label>
@@ -1040,7 +1041,11 @@ function TasksPage() {
                 assignees={children.data}
                 naturalDate={naturalDate}
               />
-              <FrequencyFields kind={createFrequencyKind} onKindChange={setCreateFrequencyKind} />
+              <FrequencyFields
+                kind={createFrequencyKind}
+                onKindChange={setCreateFrequencyKind}
+                naturalDate={naturalDate}
+              />
               <label className="field-label">
                 打卡方式
                 <select className="field" name="check_type">
@@ -1156,6 +1161,7 @@ function TasksPage() {
               <FrequencyFields
                 kind={editFrequencyKind}
                 onKindChange={setEditFrequencyKind}
+                naturalDate={naturalDate}
                 value={editingTask.frequency}
               />
               <label className="field-label">

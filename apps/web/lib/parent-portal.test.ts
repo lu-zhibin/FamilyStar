@@ -14,6 +14,7 @@ import {
   buildTaskPatch,
   canAccessParentPortal,
   copyTextToClipboard,
+  familyNaturalDate,
   formatFrequency,
   isParentSection,
   parentApi,
@@ -22,6 +23,15 @@ import {
 } from './parent-portal';
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('family natural date', () => {
+  it('uses the family calendar date across the UTC boundary', () => {
+    const now = new Date('2026-08-01T16:30:00.000Z');
+
+    expect(familyNaturalDate(now, 'Asia/Shanghai')).toBe('2026-08-02');
+    expect(familyNaturalDate(now, 'America/Los_Angeles')).toBe('2026-08-01');
+  });
+});
 
 describe('child management payloads', () => {
   it('normalizes editable profile fields and preserves an uploaded avatar', () => {

@@ -6,6 +6,7 @@ import {
   ActiveWishWall,
   FamilyCodeCard,
   FamilyProfileFields,
+  FrequencyFields,
   Modal,
   ParentPortal,
   RewardCatalog,
@@ -108,6 +109,15 @@ describe('ParentPortal', () => {
     );
 
     expect(markup).toMatch(/aria-label="关闭弹窗"[^>]*disabled=""/);
+  });
+
+  it('defaults task date ranges to the family natural date', () => {
+    const markup = renderToStaticMarkup(
+      <FrequencyFields kind="date_range" onKindChange={() => undefined} naturalDate="2026-08-02" />,
+    );
+
+    expect(markup).toMatch(/name="frequency_start_date"[^>]*value="2026-08-02"/);
+    expect(markup).toMatch(/name="frequency_end_date"[^>]*value="2026-08-02"/);
   });
 
   it('renders complete reward management details and actions', () => {

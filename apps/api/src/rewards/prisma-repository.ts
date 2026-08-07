@@ -628,11 +628,21 @@ export class PrismaRewardRepository implements RewardRepository {
           status: input.reward.status ?? 'ACTIVE',
         },
       });
-      const adopted = await transaction.wish.update({
-        where: { id: wish.id },
+      const transition = await transaction.wish.updateMany({
+        where: {
+          id: wish.id,
+          familyId: input.familyId,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
         data: { status: 'ADOPTED', adoptedRewardId: reward.id, adoptedAt: input.now },
+      });
+      if (transition.count !== 1) throw new RewardConflictError('The wish cannot be adopted.');
+      const adopted = await transaction.wish.findFirst({
+        where: { id: wish.id, familyId: input.familyId, deletedAt: null },
         include: { child: { select: { pointsBalance: true } } },
       });
+      if (!adopted) throw new RewardConflictError('The adopted wish could not be read.');
       return { wish: wishRecord(adopted), reward: rewardRecord(reward) };
     });
   }
