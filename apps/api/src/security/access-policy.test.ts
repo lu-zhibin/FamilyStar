@@ -14,6 +14,8 @@ describe('route access policy', () => {
     ['POST', '/api/v1/family/invitations/invitation-id/resend', 'parent'],
     ['DELETE', '/api/v1/family/invitations/invitation-id', 'parent'],
     ['GET', '/api/v1/family/dashboard', 'parent'],
+    ['GET', '/api/v1/family/modules', 'authenticated'],
+    ['PATCH', '/api/v1/family/modules', 'parent'],
     ['GET', '/api/v1/family/analytics', 'parent'],
     ['GET', '/api/v1/rankings', 'authenticated'],
     ['GET', '/api/v1/points/me', 'child'],

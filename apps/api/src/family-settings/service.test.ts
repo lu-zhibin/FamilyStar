@@ -4,6 +4,7 @@ import { DEFAULT_FAMILY_SETTINGS } from '../family-auth/constants.js';
 import type { AuthSession, SessionStore } from '../family-auth/types.js';
 import {
   FamilyCreatorRequiredError,
+  FamilyModuleConflictError,
   FamilySettingsNotFoundError,
   FamilySettingsService,
   FamilySettingsSessionRequiredError,
@@ -23,6 +24,7 @@ const profile: FamilyProfileRecord = {
   id: 'family-1',
   name: '星星家',
   settings: { timeZone: 'Asia/Shanghai', broadcastEnabled: false },
+  settingsVersion: 0,
   createdById: 'parent-1',
   parents: [
     {
@@ -49,7 +51,11 @@ function dependencies(
   familyProfile: FamilyProfileRecord | null = profile,
 ) {
   const repository: FamilySettingsRepository = {
-    findActiveSettings: vi.fn().mockResolvedValue(raw),
+    findActiveSettings: vi
+      .fn()
+      .mockResolvedValue(
+        raw === null ? null : { settings: raw, settingsVersion: 0, createdById: 'parent-1' },
+      ),
     updateActiveSettings: vi.fn().mockResolvedValue(true),
     findActiveProfile: vi.fn().mockResolvedValue(familyProfile),
     updateActiveProfile: vi.fn().mockResolvedValue(true),
@@ -93,6 +99,7 @@ describe('FamilySettingsService', () => {
     });
     expect(deps.repository.updateActiveSettings).toHaveBeenCalledWith(
       'family-1',
+      0,
       expect.objectContaining({ broadcastEnabled: false, makeupDays: 2, reviewTimeoutHours: 0 }),
     );
   });
@@ -160,6 +167,7 @@ describe('FamilySettingsService', () => {
         timeZone: 'America/New_York',
         broadcastEnabled: false,
       },
+      expectedSettingsVersion: 0,
     });
   });
 
@@ -214,5 +222,125 @@ describe('FamilySettingsService', () => {
       new FamilySettingsService(deps).getProfile({ sessionToken: 'family-2-token' }),
     ).rejects.toBeInstanceOf(FamilySettingsNotFoundError);
     expect(deps.repository.findActiveProfile).toHaveBeenCalledWith('family-2', expect.any(Date));
+  });
+
+  it('returns one complete module read model to parent and child sessions', async () => {
+    const deps = dependencies({ modules: { rewards: false } });
+    vi.mocked(deps.sessions.read).mockResolvedValue({ ...parentSession, role: 'child' });
+
+    const result = await new FamilySettingsService(deps).getModules({ sessionToken: 'token' });
+
+    expect(result.modules.version).toBe(0);
+    expect(result.modules.modules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'authentication', enabled: true, configurable: false }),
+        expect.objectContaining({ id: 'tasks', enabled: true, configurable: false }),
+        expect.objectContaining({ id: 'points', enabled: true, configurable: false }),
+        expect.objectContaining({ id: 'rewards', enabled: false, configurable: true }),
+      ]),
+    );
+  });
+
+  it('updates optional modules atomically while preserving unrelated settings and data', async () => {
+    const deps = dependencies({
+      modules: { analytics: true, levels: true, rewards: true, badges: true },
+      retainedBusinessMarker: { rewardCount: 4 },
+    });
+
+    await expect(
+      new FamilySettingsService(deps).updateModules({
+        sessionToken: 'token',
+        expectedVersion: 0,
+        modules: { analytics: false, rewards: false, badges: false, levels: false },
+      }),
+    ).resolves.toMatchObject({
+      modules: {
+        version: 1,
+        modules: expect.arrayContaining([
+          expect.objectContaining({ id: 'levels', enabled: false }),
+          expect.objectContaining({ id: 'rewards', enabled: false }),
+        ]),
+      },
+    });
+    expect(deps.repository.updateActiveSettings).toHaveBeenCalledWith(
+      'family-1',
+      0,
+      expect.objectContaining({
+        retainedBusinessMarker: { rewardCount: 4 },
+        modules: expect.objectContaining({ levels: false, rewards: false }),
+      }),
+    );
+  });
+
+  it('returns stable conflicts for missing and in-use dependencies', async () => {
+    const disabledDependencies = dependencies({
+      modules: { analytics: false, levels: false, rewards: false, badges: false },
+    });
+    await expect(
+      new FamilySettingsService(disabledDependencies).updateModules({
+        sessionToken: 'token',
+        expectedVersion: 0,
+        modules: { rewards: true },
+      }),
+    ).rejects.toMatchObject({
+      reason: 'MISSING_DEPENDENCY',
+      moduleId: 'rewards',
+      dependencies: ['levels'],
+    });
+
+    await expect(
+      new FamilySettingsService(dependencies()).updateModules({
+        sessionToken: 'token',
+        expectedVersion: 0,
+        modules: { levels: false },
+      }),
+    ).rejects.toMatchObject({
+      reason: 'DEPENDENCY_IN_USE',
+      moduleId: 'levels',
+      dependencies: ['analytics', 'rewards', 'badges'],
+    });
+  });
+
+  it('requires the creator and protects module updates with the settings version', async () => {
+    const coParent = dependencies();
+    vi.mocked(coParent.repository.findActiveSettings).mockResolvedValue({
+      settings: {},
+      settingsVersion: 0,
+      createdById: 'another-parent',
+    });
+    await expect(
+      new FamilySettingsService(coParent).updateModules({
+        sessionToken: 'token',
+        expectedVersion: 0,
+        modules: { notifications: false },
+      }),
+    ).rejects.toBeInstanceOf(FamilyCreatorRequiredError);
+
+    await expect(
+      new FamilySettingsService(dependencies()).updateModules({
+        sessionToken: 'token',
+        expectedVersion: 1,
+        modules: { notifications: false },
+      }),
+    ).rejects.toBeInstanceOf(FamilyModuleConflictError);
+  });
+
+  it('resolves API module status from the authenticated family only', async () => {
+    const deps = dependencies();
+    vi.mocked(deps.repository.findActiveSettings).mockImplementation(async (familyId) => ({
+      settings: { modules: { analytics: familyId === 'family-1' } },
+      settingsVersion: 0,
+      createdById: 'parent-1',
+    }));
+    const service = new FamilySettingsService(deps);
+
+    await expect(
+      service.isEnabled({ session: { familyId: 'family-1' }, module: 'analytics' }),
+    ).resolves.toBe(true);
+    await expect(
+      service.isEnabled({ session: { familyId: 'family-2' }, module: 'analytics' }),
+    ).resolves.toBe(false);
+    expect(deps.repository.findActiveSettings).toHaveBeenNthCalledWith(1, 'family-1');
+    expect(deps.repository.findActiveSettings).toHaveBeenNthCalledWith(2, 'family-2');
   });
 });

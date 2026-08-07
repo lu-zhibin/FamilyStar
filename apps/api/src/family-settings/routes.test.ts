@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../app.js';
-import { FamilyCreatorRequiredError, FamilySettingsSessionRequiredError } from './service.js';
+import {
+  FamilyCreatorRequiredError,
+  FamilyModuleConflictError,
+  FamilySettingsSessionRequiredError,
+} from './service.js';
 import type { FamilyProfile, FamilySettings, FamilySettingsOperations } from './types.js';
+import { resolveFamilyModules } from './service.js';
 
 const settings: FamilySettings = {
   timeZone: 'Asia/Shanghai',
@@ -76,6 +81,18 @@ function operations(): FamilySettingsOperations {
         invitations: profile.invitations,
         permissions: profile.permissions,
       };
+    },
+    async getModules(input) {
+      expect(input.sessionToken).toBe('parent-session');
+      return { modules: resolveFamilyModules({}, 0) };
+    },
+    async updateModules(input) {
+      expect(input).toMatchObject({
+        sessionToken: 'parent-session',
+        expectedVersion: 0,
+        modules: { rewards: false },
+      });
+      return { modules: resolveFamilyModules({ modules: input.modules }, 1) };
     },
   };
 }
@@ -257,5 +274,105 @@ describe('family settings HTTP routes', () => {
 
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  });
+
+  it('returns the shared module read model using the snake_case API envelope', async () => {
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      familySettingsService: operations(),
+    });
+    const response = await app.request('/api/v1/family/modules', {
+      headers: { cookie: 'familystar_session=parent-session' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      data: {
+        modules: {
+          version: 0,
+          modules: expect.arrayContaining([
+            {
+              id: 'family-settings',
+              category: 'core',
+              enabled: true,
+              configurable: false,
+              dependencies: ['authentication'],
+            },
+          ]),
+        },
+      },
+    });
+  });
+
+  it('accepts a versioned optional module patch', async () => {
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      familySettingsService: operations(),
+    });
+    const response = await app.request('/api/v1/family/modules', {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        cookie: 'familystar_session=parent-session',
+      },
+      body: JSON.stringify({ version: 0, modules: { rewards: false } }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      data: {
+        modules: {
+          version: 1,
+          modules: expect.arrayContaining([
+            expect.objectContaining({ id: 'rewards', enabled: false }),
+          ]),
+        },
+      },
+    });
+  });
+
+  it('maps dependency and version failures to a stable conflict contract', async () => {
+    const familySettingsService = operations();
+    familySettingsService.updateModules = async () => {
+      throw new FamilyModuleConflictError('DEPENDENCY_IN_USE', 'levels', ['rewards']);
+    };
+    const app = createApp({ publicBaseUrl: 'http://localhost:3000', familySettingsService });
+    const response = await app.request('/api/v1/family/modules', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ version: 0, modules: { levels: false } }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: 'CONFLICT',
+        details: {
+          reason: 'DEPENDENCY_IN_USE',
+          module: 'levels',
+          dependencies: ['rewards'],
+        },
+      },
+    });
+  });
+
+  it('rejects core module keys and empty module patches at the route boundary', async () => {
+    const familySettingsService = operations();
+    familySettingsService.updateModules = vi.fn();
+    const app = createApp({ publicBaseUrl: 'http://localhost:3000', familySettingsService });
+
+    for (const body of [
+      { version: 0, modules: {} },
+      { version: 0, modules: { tasks: false } },
+      { version: -1, modules: { rewards: false } },
+    ]) {
+      const response = await app.request('/api/v1/family/modules', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(familySettingsService.updateModules).not.toHaveBeenCalled();
   });
 });

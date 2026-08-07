@@ -1,5 +1,19 @@
-import { DEFAULT_FAMILY_SETTINGS, resolveFamilyTimeZone } from '../family-auth/constants.js';
+import {
+  DEFAULT_OPTIONAL_FAMILY_MODULE_STATES,
+  FAMILY_MODULE_DEFINITIONS,
+  OPTIONAL_FAMILY_MODULE_IDS,
+} from '@familystar/shared';
 import type {
+  FamilyModuleId,
+  FamilyModulesReadModel,
+  OptionalFamilyModuleId,
+} from '@familystar/shared';
+
+import { DEFAULT_FAMILY_SETTINGS, resolveFamilyTimeZone } from '../family-auth/constants.js';
+import type { AuthSession } from '../family-auth/types.js';
+import type { FamilyModuleStatusPort } from '../security/module-access.js';
+import type {
+  FamilyModulePatch,
   FamilyProfile,
   FamilyProfilePatch,
   FamilyProfileRecord,
@@ -34,7 +48,7 @@ export class InvalidFamilySettingsError extends Error {
 
 export class FamilyCreatorRequiredError extends Error {
   constructor() {
-    super('Only the family creator can update the family name.');
+    super('Only the family creator can update restricted family settings.');
     this.name = 'FamilyCreatorRequiredError';
   }
 }
@@ -43,6 +57,31 @@ export class InvalidFamilyProfileError extends Error {
   constructor() {
     super('Invalid family profile.');
     this.name = 'InvalidFamilyProfileError';
+  }
+}
+
+export class FamilySettingsConflictError extends Error {
+  constructor() {
+    super('Family settings changed concurrently.');
+    this.name = 'FamilySettingsConflictError';
+  }
+}
+
+export type FamilyModuleConflictReason =
+  'DEPENDENCY_IN_USE' | 'MISSING_DEPENDENCY' | 'VERSION_CONFLICT';
+
+export class FamilyModuleConflictError extends Error {
+  constructor(
+    readonly reason: FamilyModuleConflictReason,
+    readonly moduleId?: OptionalFamilyModuleId,
+    readonly dependencies: readonly FamilyModuleId[] = [],
+  ) {
+    super(
+      reason === 'VERSION_CONFLICT'
+        ? 'Family module settings changed concurrently.'
+        : 'Family module dependencies conflict with the requested state.',
+    );
+    this.name = 'FamilyModuleConflictError';
   }
 }
 
@@ -109,6 +148,86 @@ export function normalizeFamilySettings(raw: Record<string, unknown>): FamilySet
   };
 }
 
+function optionalModuleStates(
+  raw: Record<string, unknown>,
+): Record<OptionalFamilyModuleId, boolean> {
+  const stored = isRecord(raw.modules) ? raw.modules : {};
+  return Object.fromEntries(
+    OPTIONAL_FAMILY_MODULE_IDS.map((moduleId) => [
+      moduleId,
+      typeof stored[moduleId] === 'boolean'
+        ? stored[moduleId]
+        : DEFAULT_OPTIONAL_FAMILY_MODULE_STATES[moduleId],
+    ]),
+  ) as Record<OptionalFamilyModuleId, boolean>;
+}
+
+export function resolveFamilyModules(
+  raw: Record<string, unknown>,
+  version: number,
+): FamilyModulesReadModel {
+  const optionalStates = optionalModuleStates(raw);
+  return {
+    version,
+    modules: FAMILY_MODULE_DEFINITIONS.map((definition) => ({
+      ...definition,
+      enabled:
+        definition.category === 'core'
+          ? true
+          : optionalStates[definition.id as OptionalFamilyModuleId],
+      configurable: definition.category === 'optional',
+    })),
+  };
+}
+
+function validateModulePatch(patch: FamilyModulePatch): void {
+  const entries = Object.entries(patch);
+  if (
+    entries.length === 0 ||
+    entries.some(
+      ([moduleId, enabled]) =>
+        !OPTIONAL_FAMILY_MODULE_IDS.includes(moduleId as OptionalFamilyModuleId) ||
+        typeof enabled !== 'boolean',
+    )
+  ) {
+    throw new InvalidFamilySettingsError();
+  }
+}
+
+function applyModulePatch(
+  current: Record<OptionalFamilyModuleId, boolean>,
+  patch: FamilyModulePatch,
+): Record<OptionalFamilyModuleId, boolean> {
+  const desired = { ...current, ...patch };
+  const isEnabled = (moduleId: FamilyModuleId) =>
+    FAMILY_MODULE_DEFINITIONS.find(({ id }) => id === moduleId)?.category === 'core' ||
+    desired[moduleId as OptionalFamilyModuleId];
+
+  for (const [moduleId, enabled] of Object.entries(patch) as Array<
+    [OptionalFamilyModuleId, boolean]
+  >) {
+    if (!enabled) continue;
+    const definition = FAMILY_MODULE_DEFINITIONS.find(({ id }) => id === moduleId)!;
+    const missing = definition.dependencies.filter((dependency) => !isEnabled(dependency));
+    if (missing.length > 0) {
+      throw new FamilyModuleConflictError('MISSING_DEPENDENCY', moduleId, missing);
+    }
+  }
+
+  for (const [moduleId, enabled] of Object.entries(patch) as Array<
+    [OptionalFamilyModuleId, boolean]
+  >) {
+    if (enabled) continue;
+    const dependents = FAMILY_MODULE_DEFINITIONS.filter(
+      (definition) => isEnabled(definition.id) && definition.dependencies.includes(moduleId),
+    ).map(({ id }) => id);
+    if (dependents.length > 0) {
+      throw new FamilyModuleConflictError('DEPENDENCY_IN_USE', moduleId, dependents);
+    }
+  }
+  return desired;
+}
+
 function validatePatch(patch: FamilySettingsPatch): void {
   if (Object.keys(patch).length === 0) throw new InvalidFamilySettingsError();
   if (patch.timeZone !== undefined && !isTimeZone(patch.timeZone)) {
@@ -161,7 +280,7 @@ function familyProfile(record: FamilyProfileRecord, actorId: string): FamilyProf
   };
 }
 
-export class FamilySettingsService {
+export class FamilySettingsService implements FamilyModuleStatusPort {
   constructor(
     private readonly dependencies: FamilySettingsDependencies,
     private readonly clock: () => Date = () => new Date(),
@@ -169,9 +288,9 @@ export class FamilySettingsService {
 
   async get(input: { sessionToken?: string }): Promise<{ settings: FamilySettings }> {
     const familyId = await this.requireParentFamily(input.sessionToken);
-    const raw = await this.dependencies.repository.findActiveSettings(familyId);
-    if (!raw) throw new FamilySettingsNotFoundError();
-    return { settings: normalizeFamilySettings(raw) };
+    const record = await this.dependencies.repository.findActiveSettings(familyId);
+    if (!record) throw new FamilySettingsNotFoundError();
+    return { settings: normalizeFamilySettings(record.settings) };
   }
 
   async update(input: {
@@ -180,15 +299,19 @@ export class FamilySettingsService {
   }): Promise<{ settings: FamilySettings }> {
     validatePatch(input.settings);
     const familyId = await this.requireParentFamily(input.sessionToken);
-    const raw = await this.dependencies.repository.findActiveSettings(familyId);
-    if (!raw) throw new FamilySettingsNotFoundError();
-    const settings = { ...normalizeFamilySettings(raw), ...input.settings };
-    const updated = await this.dependencies.repository.updateActiveSettings(familyId, {
-      ...raw,
-      ...settings,
-      streakMultipliers: settings.streakMultipliers.map((tier) => ({ ...tier })),
-    });
-    if (!updated) throw new FamilySettingsNotFoundError();
+    const record = await this.dependencies.repository.findActiveSettings(familyId);
+    if (!record) throw new FamilySettingsNotFoundError();
+    const settings = { ...normalizeFamilySettings(record.settings), ...input.settings };
+    const updated = await this.dependencies.repository.updateActiveSettings(
+      familyId,
+      record.settingsVersion,
+      {
+        ...record.settings,
+        ...settings,
+        streakMultipliers: settings.streakMultipliers.map((tier) => ({ ...tier })),
+      },
+    );
+    if (!updated) throw new FamilySettingsConflictError();
     return { settings };
   }
 
@@ -222,8 +345,9 @@ export class FamilySettingsService {
       ...(patch.timeZone === undefined
         ? {}
         : { settings: { ...record.settings, timeZone: patch.timeZone } }),
+      ...(patch.timeZone === undefined ? {} : { expectedSettingsVersion: record.settingsVersion }),
     });
-    if (!updated) throw new FamilySettingsNotFoundError();
+    if (!updated) throw new FamilySettingsConflictError();
 
     return {
       profile: familyProfile(
@@ -252,9 +376,60 @@ export class FamilySettingsService {
     };
   }
 
-  private async requireParent(token?: string): Promise<ParentFamilySession> {
+  async getModules(input: { sessionToken?: string }): Promise<{ modules: FamilyModulesReadModel }> {
+    const session = await this.requireSession(input.sessionToken);
+    const record = await this.dependencies.repository.findActiveSettings(session.familyId);
+    if (!record) throw new FamilySettingsNotFoundError();
+    return { modules: resolveFamilyModules(record.settings, record.settingsVersion) };
+  }
+
+  async updateModules(input: {
+    sessionToken?: string;
+    expectedVersion: number;
+    modules: FamilyModulePatch;
+  }): Promise<{ modules: FamilyModulesReadModel }> {
+    validateModulePatch(input.modules);
+    if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0) {
+      throw new InvalidFamilySettingsError();
+    }
+    const session = await this.requireParent(input.sessionToken);
+    const record = await this.dependencies.repository.findActiveSettings(session.familyId);
+    if (!record) throw new FamilySettingsNotFoundError();
+    if (record.createdById !== session.subjectId) throw new FamilyCreatorRequiredError();
+    if (record.settingsVersion !== input.expectedVersion) {
+      throw new FamilyModuleConflictError('VERSION_CONFLICT');
+    }
+
+    const modules = applyModulePatch(optionalModuleStates(record.settings), input.modules);
+    const updated = await this.dependencies.repository.updateActiveSettings(
+      session.familyId,
+      input.expectedVersion,
+      { ...record.settings, modules },
+    );
+    if (!updated) throw new FamilyModuleConflictError('VERSION_CONFLICT');
+    return {
+      modules: resolveFamilyModules({ ...record.settings, modules }, input.expectedVersion + 1),
+    };
+  }
+
+  async isEnabled(input: {
+    session: Pick<AuthSession, 'familyId'>;
+    module: OptionalFamilyModuleId;
+  }): Promise<boolean> {
+    const record = await this.dependencies.repository.findActiveSettings(input.session.familyId);
+    if (!record) return false;
+    return optionalModuleStates(record.settings)[input.module];
+  }
+
+  private async requireSession(token?: string): Promise<AuthSession> {
     const session = token ? await this.dependencies.sessions.read(token) : null;
-    if (!session || session.role !== 'parent') throw new FamilySettingsSessionRequiredError();
+    if (!session) throw new FamilySettingsSessionRequiredError();
+    return session;
+  }
+
+  private async requireParent(token?: string): Promise<ParentFamilySession> {
+    const session = await this.requireSession(token);
+    if (session.role !== 'parent') throw new FamilySettingsSessionRequiredError();
     return { ...session, role: 'parent' };
   }
 

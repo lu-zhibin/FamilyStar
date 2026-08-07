@@ -5,23 +5,31 @@ import { PrismaFamilySettingsRepository } from './prisma-repository.js';
 
 describe('PrismaFamilySettingsRepository', () => {
   it('reads and updates only an active family', async () => {
-    const findFirst = vi.fn().mockResolvedValue({ settings: { makeupDays: 5 } });
+    const findFirst = vi.fn().mockResolvedValue({
+      settings: { makeupDays: 5 },
+      settingsVersion: 2,
+      createdById: 'parent-1',
+    });
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const repository = new PrismaFamilySettingsRepository({
       family: { findFirst, updateMany },
     } as unknown as PrismaClient);
 
-    await expect(repository.findActiveSettings('family-1')).resolves.toEqual({ makeupDays: 5 });
-    await expect(repository.updateActiveSettings('family-1', { makeupDays: 7 })).resolves.toBe(
+    await expect(repository.findActiveSettings('family-1')).resolves.toEqual({
+      settings: { makeupDays: 5 },
+      settingsVersion: 2,
+      createdById: 'parent-1',
+    });
+    await expect(repository.updateActiveSettings('family-1', 2, { makeupDays: 7 })).resolves.toBe(
       true,
     );
     expect(findFirst).toHaveBeenCalledWith({
       where: { id: 'family-1', deletedAt: null },
-      select: { settings: true },
+      select: { settings: true, settingsVersion: true, createdById: true },
     });
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: 'family-1', deletedAt: null },
-      data: { settings: { makeupDays: 7 } },
+      where: { id: 'family-1', deletedAt: null, settingsVersion: 2 },
+      data: { settings: { makeupDays: 7 }, settingsVersion: { increment: 1 } },
     });
   });
 
@@ -34,7 +42,7 @@ describe('PrismaFamilySettingsRepository', () => {
     } as unknown as PrismaClient);
 
     await expect(repository.findActiveSettings('missing')).resolves.toBeNull();
-    await expect(repository.updateActiveSettings('missing', {})).resolves.toBe(false);
+    await expect(repository.updateActiveSettings('missing', 0, {})).resolves.toBe(false);
     await expect(
       repository.findActiveProfile('missing', new Date('2026-08-05T00:00:00.000Z')),
     ).resolves.toBeNull();
@@ -48,6 +56,7 @@ describe('PrismaFamilySettingsRepository', () => {
       id: 'family-1',
       name: '星星家',
       settings: { timeZone: 'Asia/Shanghai' },
+      settingsVersion: 3,
       createdById: 'parent-1',
       users: [
         {
@@ -98,11 +107,16 @@ describe('PrismaFamilySettingsRepository', () => {
       repository.updateActiveProfile('family-1', {
         name: '新家庭',
         settings: { timeZone: 'Europe/Berlin' },
+        expectedSettingsVersion: 3,
       }),
     ).resolves.toBe(true);
     expect(updateMany).toHaveBeenCalledWith({
-      where: { id: 'family-1', deletedAt: null },
-      data: { name: '新家庭', settings: { timeZone: 'Europe/Berlin' } },
+      where: { id: 'family-1', deletedAt: null, settingsVersion: 3 },
+      data: {
+        name: '新家庭',
+        settings: { timeZone: 'Europe/Berlin' },
+        settingsVersion: { increment: 1 },
+      },
     });
   });
 });

@@ -17,6 +17,20 @@ export {
   PluginRegistryError,
   validatePluginManifest,
 } from './plugins.js';
+export {
+  CORE_FAMILY_MODULE_IDS,
+  DEFAULT_OPTIONAL_FAMILY_MODULE_STATES,
+  FAMILY_MODULE_DEFINITIONS,
+  OPTIONAL_FAMILY_MODULE_IDS,
+} from './family-modules.js';
+export type {
+  CoreFamilyModuleId,
+  FamilyModuleDefinition,
+  FamilyModuleId,
+  FamilyModulesReadModel,
+  FamilyModuleState,
+  OptionalFamilyModuleId,
+} from './family-modules.js';
 export type {
   Plugin,
   PluginManifest,

@@ -1,4 +1,5 @@
-import { ERROR_CODES } from '@familystar/shared';
+import { ERROR_CODES, OPTIONAL_FAMILY_MODULE_IDS } from '@familystar/shared';
+import type { FamilyModulesReadModel } from '@familystar/shared';
 import type { Context, Hono } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
@@ -8,6 +9,8 @@ import { createErrorResponse, createSuccessResponse } from '../http/responses.js
 import type { AppEnvironment } from '../http/types.js';
 import {
   FamilyCreatorRequiredError,
+  FamilyModuleConflictError,
+  FamilySettingsConflictError,
   FamilySettingsNotFoundError,
   FamilySettingsSessionRequiredError,
   InvalidFamilyProfileError,
@@ -49,6 +52,14 @@ const profilePatchSchema = z
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0);
+const modulePatchSchema = z
+  .object({
+    version: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    modules: z
+      .partialRecord(z.enum(OPTIONAL_FAMILY_MODULE_IDS), z.boolean())
+      .refine((value) => Object.keys(value).length > 0),
+  })
+  .strict();
 
 async function readJson(context: Context<AppEnvironment>): Promise<unknown> {
   try {
@@ -128,6 +139,19 @@ function responseProfile(profile: FamilyProfile) {
   };
 }
 
+function responseModules(readModel: FamilyModulesReadModel) {
+  return {
+    version: readModel.version,
+    modules: readModel.modules.map((module) => ({
+      id: module.id,
+      category: module.category,
+      enabled: module.enabled,
+      configurable: module.configurable,
+      dependencies: module.dependencies,
+    })),
+  };
+}
+
 function mapError(context: Context<AppEnvironment>, error: unknown) {
   if (error instanceof FamilySettingsSessionRequiredError) {
     return context.json(
@@ -157,6 +181,28 @@ function mapError(context: Context<AppEnvironment>, error: unknown) {
     return context.json(
       createErrorResponse(ERROR_CODES.FORBIDDEN, error.message, context.get('requestId')),
       403,
+    );
+  }
+  if (error instanceof FamilySettingsConflictError) {
+    return context.json(
+      createErrorResponse(ERROR_CODES.CONFLICT, error.message, context.get('requestId')),
+      409,
+    );
+  }
+  if (error instanceof FamilyModuleConflictError) {
+    return context.json(
+      createErrorResponse(
+        ERROR_CODES.CONFLICT,
+        error.message,
+        context.get('requestId'),
+        undefined,
+        {
+          reason: error.reason,
+          ...(error.moduleId === undefined ? {} : { module: error.moduleId }),
+          dependencies: error.dependencies,
+        },
+      ),
+      409,
     );
   }
   throw error;
@@ -240,6 +286,51 @@ export function registerFamilySettingsRoutes(
       return context.json(
         createSuccessResponse(
           { settings: responseSettings(result.settings) },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
+  api.get('/family/modules', async (context) => {
+    try {
+      const result = await service.getModules(sessionInput(context));
+      renewSession(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          { modules: responseModules(result.modules) },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
+  api.patch('/family/modules', async (context) => {
+    const parsed = modulePatchSchema.safeParse(await readJson(context));
+    if (!parsed.success) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.INVALID_REQUEST,
+          'Invalid family module settings request.',
+          context.get('requestId'),
+        ),
+        400,
+      );
+    }
+    try {
+      const result = await service.updateModules({
+        ...sessionInput(context),
+        expectedVersion: parsed.data.version,
+        modules: parsed.data.modules,
+      });
+      renewSession(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          { modules: responseModules(result.modules) },
           context.get('requestId'),
         ),
       );

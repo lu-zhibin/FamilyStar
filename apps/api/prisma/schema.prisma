@@ -250,15 +250,16 @@ enum NotificationType {
 }
 
 model Family {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  familyCode  String    @unique @map("family_code") @db.VarChar(6)
-  name        String    @db.VarChar(120)
-  avatarUrl   String?   @map("avatar_url") @db.Text
-  settings    Json      @default("{}") @db.JsonB
-  createdById String?   @map("created_by") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyCode      String    @unique @map("family_code") @db.VarChar(6)
+  name            String    @db.VarChar(120)
+  avatarUrl       String?   @map("avatar_url") @db.Text
+  settings        Json      @default("{}") @db.JsonB
+  settingsVersion Int       @default(0) @map("settings_version")
+  createdById     String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
 
   creator                         User?                            @relation("FamilyCreator", fields: [createdById], references: [id], onDelete: SetNull)
   users                           User[]                           @relation("FamilyUsers")

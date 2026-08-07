@@ -108,6 +108,7 @@ const MIGRATION_GUARDS = [
   'notification_preferences_type_settings_object_check',
   'notification_preferences_quiet_hours_pair_check',
   'notification_preferences_quiet_hours_enabled_check',
+  'families_settings_version_nonnegative_check',
 ] as const;
 
 function modelBlock(schema: string, model: string): string {
@@ -134,6 +135,10 @@ export function verifyDataModelContract(schema: string, migration: string): void
   assert.match(
     modelBlock(schema, 'Family'),
     /familyCode\s+String\s+@unique\s+@map\("family_code"\)\s+@db\.VarChar\(6\)/,
+  );
+  assert.match(
+    modelBlock(schema, 'Family'),
+    /settingsVersion\s+Int\s+@default\(0\)\s+@map\("settings_version"\)/,
   );
 
   assert.match(schema, /@@unique\(\[type, businessType, businessId, userId\]\)/);

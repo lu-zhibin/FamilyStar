@@ -23,6 +23,7 @@ export const DEFAULT_FAMILY_SETTINGS = Object.freeze({
     Object.freeze({ days: 100, multiplier: 10 }),
   ]),
   broadcastEnabled: true,
+  modules: DEFAULT_OPTIONAL_FAMILY_MODULE_STATES,
 });
 
 export const DEFAULT_TASK_TYPES = Object.freeze([
@@ -155,3 +156,4 @@ export function resolveFamilyTimeZone(candidate?: string): string {
     return DEFAULT_FAMILY_TIME_ZONE;
   }
 }
+import { DEFAULT_OPTIONAL_FAMILY_MODULE_STATES } from '@familystar/shared';

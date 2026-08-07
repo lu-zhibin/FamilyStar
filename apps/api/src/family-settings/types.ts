@@ -1,3 +1,5 @@
+import type { FamilyModulesReadModel, OptionalFamilyModuleId } from '@familystar/shared';
+
 import type { AuthSession, SessionStore } from '../family-auth/types.js';
 
 export type StreakMultiplier = {
@@ -36,6 +38,7 @@ export type FamilyProfileRecord = {
   id: string;
   name: string;
   settings: Record<string, unknown>;
+  settingsVersion: number;
   createdById: string | null;
   parents: FamilyParent[];
   invitations: FamilyInvitationSummary[];
@@ -59,14 +62,30 @@ export type FamilyProfilePatch = {
 };
 
 export type FamilySettingsRepository = {
-  findActiveSettings(familyId: string): Promise<Record<string, unknown> | null>;
-  updateActiveSettings(familyId: string, settings: Record<string, unknown>): Promise<boolean>;
+  findActiveSettings(familyId: string): Promise<FamilySettingsRecord | null>;
+  updateActiveSettings(
+    familyId: string,
+    expectedVersion: number,
+    settings: Record<string, unknown>,
+  ): Promise<boolean>;
   findActiveProfile(familyId: string, now: Date): Promise<FamilyProfileRecord | null>;
   updateActiveProfile(
     familyId: string,
-    profile: { name?: string; settings?: Record<string, unknown> },
+    profile: {
+      name?: string;
+      settings?: Record<string, unknown>;
+      expectedSettingsVersion?: number;
+    },
   ): Promise<boolean>;
 };
+
+export type FamilySettingsRecord = {
+  settings: Record<string, unknown>;
+  settingsVersion: number;
+  createdById: string | null;
+};
+
+export type FamilyModulePatch = Partial<Record<OptionalFamilyModuleId, boolean>>;
 
 export type FamilySettingsOperations = {
   get(input: { sessionToken?: string }): Promise<{ settings: FamilySettings }>;
@@ -84,6 +103,12 @@ export type FamilySettingsOperations = {
     invitations: FamilyInvitationSummary[];
     permissions: FamilyProfile['permissions'];
   }>;
+  getModules(input: { sessionToken?: string }): Promise<{ modules: FamilyModulesReadModel }>;
+  updateModules(input: {
+    sessionToken?: string;
+    expectedVersion: number;
+    modules: FamilyModulePatch;
+  }): Promise<{ modules: FamilyModulesReadModel }>;
 };
 
 export type FamilySettingsDependencies = {

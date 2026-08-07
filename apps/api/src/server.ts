@@ -184,6 +184,7 @@ const app = createApp({
   invitationService,
   childAccountService,
   familySettingsService,
+  familyModuleStatus: familySettingsService,
   taskTypeOperations,
   taskOperations,
   mediaOperations,
