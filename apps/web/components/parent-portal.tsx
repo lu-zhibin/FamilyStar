@@ -2970,6 +2970,7 @@ export function BadgeTemplateFields({
               name="condition_target"
               type="number"
               min={1}
+              max={2_147_483_647}
               step={1}
               defaultValue={template?.condition.type === 'MANUAL' ? 1 : template?.condition.target}
               required
@@ -2984,6 +2985,7 @@ export function BadgeTemplateFields({
             name="award_level"
             type="number"
             min={1}
+            max={2_147_483_647}
             step={1}
             defaultValue={template?.award_level ?? 1}
             required

@@ -212,6 +212,76 @@ describe('PrismaBadgeRepository', () => {
       ],
       skipDuplicates: true,
     });
+    expect(transaction.outboxEvent.createMany).toHaveBeenCalledTimes(1);
+    expect(transaction.outboxEvent.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ id: createdAward.id, correlationId: createdAward.id })],
+      skipDuplicates: true,
+    });
+  });
+
+  it('property: rejects generated cross-family manual-award references before writing', async () => {
+    for (const missing of ['parent', 'child', 'template'] as const) {
+      for (let seed = 1; seed <= 12; seed += 1) {
+        const users = vi
+          .fn()
+          .mockResolvedValueOnce(missing === 'parent' ? null : { id: `parent-${seed}` })
+          .mockResolvedValueOnce(missing === 'child' ? null : { id: `child-${seed}` });
+        const transaction = {
+          user: { findFirst: users },
+          badgeTemplate: {
+            findFirst: vi
+              .fn()
+              .mockResolvedValue(
+                missing === 'template'
+                  ? null
+                  : template({ conditionType: 'MANUAL', condition: { type: 'MANUAL' } }),
+              ),
+          },
+          badgeAward: { createMany: vi.fn(), findUnique: vi.fn() },
+          outboxEvent: { createMany: vi.fn() },
+        };
+        const repository = new PrismaBadgeRepository(prismaWithTransaction(transaction));
+
+        await expect(
+          repository.awardManually({
+            familyId: `family-${seed}`,
+            parentId: `parent-${seed}`,
+            childId: `child-${seed}`,
+            templateId: `template-${seed}`,
+            reason: 'Well done',
+            now,
+          }),
+        ).rejects.toMatchObject({ code: missing === 'parent' ? 'FORBIDDEN' : 'NOT_FOUND' });
+        expect(users).toHaveBeenNthCalledWith(1, {
+          where: {
+            id: `parent-${seed}`,
+            familyId: `family-${seed}`,
+            role: 'PARENT',
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        expect(users).toHaveBeenNthCalledWith(2, {
+          where: {
+            id: `child-${seed}`,
+            familyId: `family-${seed}`,
+            role: 'CHILD',
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        expect(transaction.badgeTemplate.findFirst).toHaveBeenCalledWith({
+          where: {
+            id: `template-${seed}`,
+            familyId: `family-${seed}`,
+            conditionType: 'MANUAL',
+            isEnabled: true,
+            deletedAt: null,
+          },
+        });
+        expect(transaction.badgeAward.createMany).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it('resolves collaboration participants through a family-scoped completed round', async () => {
@@ -237,8 +307,12 @@ describe('PrismaBadgeRepository', () => {
   it('returns awarded display snapshots and live family-scoped wall progress', async () => {
     const originalTemplate = template({
       name: 'Renamed template',
-      conditionType: 'TOTAL_POINTS',
-      condition: { type: 'TOTAL_POINTS', target: 100 },
+      description: 'Renamed description',
+      icon: 'renamed-icon',
+      category: 'renamed-category',
+      conditionType: 'COLLABORATION_COUNT',
+      condition: { type: 'COLLABORATION_COUNT', target: 999 },
+      version: 8,
     });
     const prisma = {
       user: {
@@ -254,8 +328,12 @@ describe('PrismaBadgeRepository', () => {
             awards: [
               award({
                 templateNameSnapshot: 'Original template',
+                templateDescriptionSnapshot: 'Original description',
+                templateIconSnapshot: 'original-icon',
+                templateCategorySnapshot: 'original-category',
                 templateConditionTypeSnapshot: 'TOTAL_POINTS',
                 templateConditionSnapshot: { type: 'TOTAL_POINTS', target: 100 },
+                templateVersion: 2,
               }),
             ],
             progress: [],
@@ -270,7 +348,14 @@ describe('PrismaBadgeRepository', () => {
 
     await expect(repository.getWall('family-a', 'child-a')).resolves.toEqual([
       expect.objectContaining({
-        template: expect.objectContaining({ name: 'Original template' }),
+        template: expect.objectContaining({
+          name: 'Original template',
+          description: 'Original description',
+          icon: 'original-icon',
+          category: 'original-category',
+          condition: { type: 'TOTAL_POINTS', target: 100 },
+          version: 2,
+        }),
         award: expect.objectContaining({ templateNameSnapshot: 'Original template' }),
         progress: expect.objectContaining({ currentValue: 120, targetValue: 100 }),
       }),
@@ -280,5 +365,9 @@ describe('PrismaBadgeRepository', () => {
         where: expect.objectContaining({ familyId: 'family-a' }),
       }),
     );
+    expect(prisma.user.findFirst).toHaveBeenNthCalledWith(1, {
+      where: { id: 'child-a', familyId: 'family-a', role: 'CHILD', deletedAt: null },
+      select: { id: true },
+    });
   });
 });

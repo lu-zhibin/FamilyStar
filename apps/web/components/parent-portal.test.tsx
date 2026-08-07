@@ -148,6 +148,8 @@ describe('ParentPortal', () => {
     );
 
     expect(markup).toMatch(/name="condition_target"[^>]*value="7"/);
+    expect(markup).toMatch(/name="condition_target"[^>]*max="2147483647"/);
+    expect(markup).toMatch(/name="award_level"[^>]*max="2147483647"/);
     expect(markup).toMatch(/name="condition_type"[^>]*disabled=""/);
     expect(markup).toContain('aria-busy="true"');
     expect(markup).toContain('正在保存...');

@@ -24,6 +24,12 @@ describe('route access policy', () => {
     ['GET', '/api/v1/family/submission-reviews/pending', 'parent'],
     ['GET', '/api/v1/family/submission-reviews/history', 'parent'],
     ['POST', '/api/v1/media/access-urls', 'authenticated'],
+    ['GET', '/api/v1/family/badge-templates', 'parent'],
+    ['POST', '/api/v1/family/badge-templates', 'parent'],
+    ['PATCH', '/api/v1/family/badge-templates/template-id', 'parent'],
+    ['DELETE', '/api/v1/family/badge-templates/template-id', 'parent'],
+    ['POST', '/api/v1/family/badge-awards', 'parent'],
+    ['GET', '/api/v1/badges/me', 'child'],
   ] satisfies ReadonlyArray<readonly [string, string, RequiredRole]>)(
     'assigns %s %s to %s',
     (method, path, role) => {
@@ -76,6 +82,15 @@ describe('route access policy', () => {
     expect(resolveRouteAccessPolicy('GET', '/api/v1/auth/child/password')?.role).toBe(
       'authenticated',
     );
+    expect(resolveRouteAccessPolicy('POST', '/api/v1/badges/me')?.role).toBe('authenticated');
+    for (const [method, path] of [
+      ['GET', '/api/v1/family/badge-awards'],
+      ['PATCH', '/api/v1/family/badge-awards/award-id'],
+      ['DELETE', '/api/v1/family/badge-awards/award-id'],
+      ['POST', '/api/v1/family/badge-templates/template-id'],
+    ]) {
+      expect(resolveRouteAccessPolicy(method!, path!)?.role).toBe('authenticated');
+    }
   });
 
   it.each([

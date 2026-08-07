@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { badgeConditionLabel, badgeProgressPercent, buildBadgeTemplatePayload } from './badges';
+import {
+  badgeConditionLabel,
+  badgeConditionTypes,
+  badgeProgressPercent,
+  buildBadgeTemplatePayload,
+} from './badges';
 
 function badgeForm(conditionType: string, target = ''): FormData {
   const form = new FormData();
@@ -35,11 +40,34 @@ describe('badge helpers', () => {
       target: 7,
     });
     expect(() => buildBadgeTemplatePayload(badgeForm('TOTAL_POINTS', '0'))).toThrow(
-      '条件目标必须为正整数',
+      '条件目标必须为 1 至 2147483647 的整数',
     );
     expect(() => buildBadgeTemplatePayload(badgeForm('LEVEL_REACHED', '1.5'))).toThrow(
-      '条件目标必须为正整数',
+      '条件目标必须为 1 至 2147483647 的整数',
     );
+  });
+
+  it('property: every automatic form condition shares the API integer boundary', () => {
+    for (const type of badgeConditionTypes.filter((value) => value !== 'MANUAL')) {
+      for (const target of [1, 2, 97, 2_147_483_647]) {
+        expect(buildBadgeTemplatePayload(badgeForm(type, String(target))).condition).toEqual({
+          type,
+          target,
+        });
+      }
+      for (const target of ['-1', '0', '1.5', '2147483648', '9007199254740991']) {
+        expect(() => buildBadgeTemplatePayload(badgeForm(type, target))).toThrow(
+          '条件目标必须为 1 至 2147483647 的整数',
+        );
+      }
+    }
+  });
+
+  it('enforces the same boundary for the award level', () => {
+    const form = badgeForm('MANUAL');
+    form.set('award_level', '2147483648');
+
+    expect(() => buildBadgeTemplatePayload(form)).toThrow('颁发级别必须为 1 至 2147483647 的整数');
   });
 
   it('formats Chinese condition labels and clamps progress percentages', () => {

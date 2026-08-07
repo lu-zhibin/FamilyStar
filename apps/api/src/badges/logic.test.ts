@@ -51,6 +51,38 @@ describe('badge logic', () => {
     }
   });
 
+  it('property: every automatic condition changes eligibility exactly at its generated boundary', () => {
+    const conditionTypes = [
+      ['TASK_COMPLETION_COUNT', 'taskCompletionCount'],
+      ['STREAK_DAYS', 'streakDays'],
+      ['TOTAL_POINTS', 'totalPoints'],
+      ['LEVEL_REACHED', 'level'],
+      ['COLLABORATION_COUNT', 'collaborationCount'],
+    ] as const;
+
+    for (const [type, metric] of conditionTypes) {
+      for (let seed = 1; seed <= 64; seed += 1) {
+        const target = ((seed * 104_729) % 10_000) + 1;
+        const condition = normalizeBadgeCondition({ type, target });
+
+        for (const currentValue of [target - 1, target, target + 1]) {
+          const generatedMetrics = { ...metrics, [metric]: currentValue };
+          const progress = conditionProgress(condition, generatedMetrics);
+
+          expect(progress).toBe(currentValue);
+          expect(progress >= target).toBe(currentValue >= target);
+        }
+      }
+    }
+
+    for (const target of [1, 2_147_483_647]) {
+      expect(normalizeBadgeCondition({ type: 'TOTAL_POINTS', target })).toEqual({
+        type: 'TOTAL_POINTS',
+        target,
+      });
+    }
+  });
+
   it('normalizes template text and defaults visibility, status, and award level', () => {
     expect(
       normalizeBadgeTemplate({

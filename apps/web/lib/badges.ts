@@ -67,9 +67,13 @@ export const badgeConditionLabels: Readonly<Record<BadgeConditionType, string>> 
 
 type BadgeFormData = Pick<FormData, 'get' | 'has'>;
 
+const MAX_BADGE_INTEGER = 2_147_483_647;
+
 function positiveInteger(value: FormDataEntryValue | null, field: string): number {
   const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${field}必须为正整数`);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > MAX_BADGE_INTEGER) {
+    throw new Error(`${field}必须为 1 至 ${MAX_BADGE_INTEGER} 的整数`);
+  }
   return parsed;
 }
 

@@ -44,6 +44,14 @@ function operations(): BadgeOperations {
   };
 }
 
+const automaticConditionTypes = [
+  'TASK_COMPLETION_COUNT',
+  'STREAK_DAYS',
+  'TOTAL_POINTS',
+  'LEVEL_REACHED',
+  'COLLABORATION_COUNT',
+] as const;
+
 describe('badge HTTP routes', () => {
   it('creates a manual award with session-scoped operations', async () => {
     const badgeOperations = operations();
@@ -84,5 +92,26 @@ describe('badge HTTP routes', () => {
     expect(response.status).toBe(400);
     expect(badgeOperations.createTemplate).not.toHaveBeenCalled();
     expect(await response.json()).toMatchObject({ error: { code: 'INVALID_REQUEST' } });
+  });
+
+  it('property: rejects every automatic condition immediately outside the database boundary', async () => {
+    for (const type of automaticConditionTypes) {
+      for (const target of [0, -1, 1.5, 2_147_483_648]) {
+        const badgeOperations = operations();
+        const response = await app(badgeOperations).request('/family/badge-templates', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: 'Boundary badge',
+            icon: 'star',
+            category: 'growth',
+            condition: { type, target },
+          }),
+        });
+
+        expect(response.status).toBe(400);
+        expect(badgeOperations.createTemplate).not.toHaveBeenCalled();
+      }
+    }
   });
 });

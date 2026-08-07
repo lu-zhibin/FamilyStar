@@ -87,8 +87,20 @@ export const ROUTE_ACCESS_POLICIES: readonly RouteAccessPolicy[] = [
     module: 'levels',
   },
   {
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-    path: /^\/api\/v1\/family\/(?:badge-templates|badge-awards)(?:\/[^/]+)?$/,
+    methods: ['GET', 'POST'],
+    path: /^\/api\/v1\/family\/badge-templates$/,
+    role: 'parent',
+    module: 'badges',
+  },
+  {
+    methods: ['PATCH', 'DELETE'],
+    path: /^\/api\/v1\/family\/badge-templates\/[^/]+$/,
+    role: 'parent',
+    module: 'badges',
+  },
+  {
+    methods: ['POST'],
+    path: /^\/api\/v1\/family\/badge-awards$/,
     role: 'parent',
     module: 'badges',
   },
@@ -198,7 +210,7 @@ export const ROUTE_ACCESS_POLICIES: readonly RouteAccessPolicy[] = [
   },
   {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    path: /^\/api\/v1\/family(?:\/.*)?$/,
+    path: /^\/api\/v1\/family(?:\/(?!badge-(?:templates|awards)(?:\/|$)).*)?$/,
     role: 'parent',
   },
 ];

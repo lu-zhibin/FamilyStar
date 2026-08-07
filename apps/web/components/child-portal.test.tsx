@@ -166,6 +166,48 @@ describe('ChildPortal', () => {
     expect(markup).not.toContain('role="progressbar"');
   });
 
+  it('property: every automatic badge clamps generated progress at its boundary', () => {
+    const types = [
+      'TASK_COMPLETION_COUNT',
+      'STREAK_DAYS',
+      'TOTAL_POINTS',
+      'LEVEL_REACHED',
+      'COLLABORATION_COUNT',
+    ] as const;
+
+    for (const [index, type] of types.entries()) {
+      const target = index + 2;
+      for (const current of [-1, target - 1, target, target + 1]) {
+        const markup = renderToStaticMarkup(
+          <BadgeWall
+            state="live"
+            badges={[
+              {
+                template: {
+                  ...badgeTemplate,
+                  id: `badge-${type}-${current}`,
+                  condition: { type, target },
+                },
+                award: null,
+                progress: {
+                  current_value: current,
+                  target_value: target,
+                  evaluated_at: '2026-08-07T08:00:00.000Z',
+                },
+              },
+            ]}
+          />,
+        );
+
+        expect(markup).toContain('未获得');
+        expect(markup).toContain(`aria-valuenow="${Math.min(Math.max(current, 0), target)}"`);
+        expect(markup).toContain(
+          `width:${Math.min(100, Math.max(0, Math.round((current / target) * 100)))}%`,
+        );
+      }
+    }
+  });
+
   it.each([
     ['loading', '正在读取徽章墙'],
     ['empty', '还没有可展示的徽章'],

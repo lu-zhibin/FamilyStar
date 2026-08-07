@@ -62,4 +62,42 @@ describe('BadgeEventConsumer', () => {
     });
     expect(repository.findEventChildIds).not.toHaveBeenCalled();
   });
+
+  it('property: repeated delivery of one event reports one award for every replay count', async () => {
+    for (let replayCount = 2; replayCount <= 20; replayCount += 1) {
+      let awarded = false;
+      const repository = {
+        findEventChildIds: vi.fn().mockResolvedValue(['child-a']),
+        evaluateChild: vi.fn().mockImplementation(async () => {
+          if (awarded) return { evaluated: 1, awarded: 0 };
+          awarded = true;
+          return { evaluated: 1, awarded: 1 };
+        }),
+      } as unknown as BadgeRepository;
+      const consumer = new BadgeEventConsumer(repository);
+      const event = createDomainEvent({
+        event_id: '00000000-0000-4000-8000-000000000001',
+        event_name: 'points.balance.changed.v1',
+        occurred_at: '2026-08-06T08:00:00.000Z',
+        family_id: '00000000-0000-4000-8000-000000000002',
+        actor_id: null,
+        correlation_id: 'points-a',
+        payload: { user_id: 'child-a' },
+      });
+
+      const results = await Promise.all(
+        Array.from({ length: replayCount }, () => consumer.handle(event)),
+      );
+
+      expect(results.reduce((sum, result) => sum + result.awarded, 0)).toBe(1);
+      expect(repository.evaluateChild).toHaveBeenCalledTimes(replayCount);
+      expect(repository.evaluateChild).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          familyId: event.family_id,
+          childId: 'child-a',
+          sourceEventId: event.event_id,
+        }),
+      );
+    }
+  });
 });
