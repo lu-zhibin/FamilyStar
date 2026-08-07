@@ -1,5 +1,18 @@
 # FamilyStar 开发记录
 
+## 2026-08-08：完成通知中心、偏好与过期清理
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-NOTIFICATIONS-001`
+- 分支：`dev`
+- 状态：已部署到 `8098`，API、Worker 与双端 Chromium 验收通过
+- 提交：`5bba67c`、`20f16dc`、`0402835`、`2cd9575`、`c669458`
+
+### 实施与验证
+
+- 新增通知与偏好模型、稳定 cursor API、幂等已读、七类事件消费者、每日九十天批量清理，以及双端通知中心与家长偏好界面。
+- 通知聚焦 89 项、完整 Web 159 项通过；类型、Lint、格式及 API/Web 生产构建通过。
+- `i48-web` 与 `i46-api/worker` 五服务 healthy；真实验收覆盖事件重投、清理边界、分页、跨家庭隔离、角标、已读、偏好、安全跳转和双视口。
+
 ## 2026-08-07：完成徽章属性与权限回归
 
 - 记录 ID：`FS-PRODUCT-COMPLETION-BADGE-PROPERTIES-001`

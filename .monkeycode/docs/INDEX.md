@@ -24,6 +24,7 @@
 | `专有概念/Rewards.md` | 奖励池、资格、图片与库存配置 | 已同步至任务 7.1 |
 | `专有概念/Redemptions.md` | 兑换预扣、幂等、审批、兑现、退款与双端状态交互 | 已同步至产品补全任务 6.4 |
 | `专有概念/Wishes.md` | 愿望槽位、实时进度、取消、采纳与双端交互 | 已同步至产品补全任务 6.4 |
+| `专有概念/Notifications.md` | 通知事件、偏好、幂等分页、已读、清理与双端通知中心 | 已同步至产品补全任务 9.5 |
 | `专有概念/Levels.md` | 累计积分等级派生、单调同步、进度与权益读取 | 已同步至阶段 6 |
 | `专有概念/PointsLedger.md` | Streak、单人/协作发分、幂等流水、乐观锁与余额事件 | 已同步至阶段 6 |
 | `专有概念/SubmissionReviews.md` | 家庭待审队列、人工与超时审核、历史、幂等与发分衔接 | 已同步至 Phase 1 任务 15 |
@@ -78,6 +79,7 @@
 | `专有概念/Rewards.md` | `Rewards.md` |
 | `专有概念/Redemptions.md` | `Redemptions.md` |
 | `专有概念/Wishes.md` | `Wishes.md` |
+| `专有概念/Notifications.md` | `Notifications.md` |
 | `模块/BusinessModules.md` | `Business-Modules.md` |
 | `模块/Web.md` | `Web-Parent-Portal.md` |
 | `../specs/decisions.md` | `MVP-Development-Decisions.md` |
