@@ -5,6 +5,7 @@ import { parentSections } from '../lib/parent-portal';
 import {
   FamilyCodeCard,
   FamilyProfileFields,
+  Modal,
   ParentPortal,
   ReviewActions,
   ReviewMediaGallery,
@@ -58,6 +59,18 @@ describe('ParentPortal', () => {
     expect(renderToStaticMarkup(<ParentPortal section="reviews" />)).toContain(
       '正在读取待审核提交',
     );
+  });
+
+  it('keeps long modal content scrollable within the viewport', () => {
+    const markup = renderToStaticMarkup(
+      <Modal title="长表单" onClose={() => undefined}>
+        <form>表单内容</form>
+      </Modal>,
+    );
+
+    expect(markup).toContain('max-h-[calc(100dvh-2rem)]');
+    expect(markup).toContain('overflow-y-auto');
+    expect(markup).toContain('overscroll-contain');
   });
 
   it('renders multi-child choices and per-child settings for every task mode', () => {

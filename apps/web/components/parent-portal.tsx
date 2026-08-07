@@ -3391,7 +3391,7 @@ function ComingSoonRow({
     </div>
   );
 }
-function Modal({
+export function Modal({
   children,
   title,
   onClose,
@@ -3403,7 +3403,7 @@ function Modal({
   const content = (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
-        className="modal"
+        className="modal max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
