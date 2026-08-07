@@ -206,8 +206,9 @@ describe('PrismaFamilyAuthRepository', () => {
       now,
     };
 
-    await expect(repository.revoke(transaction, input)).resolves.toEqual({ id: 'invitation-1' });
-    await expect(repository.revoke(transaction, input)).resolves.toEqual({ id: 'invitation-1' });
+    const revokedInvitation = { id: 'invitation-1', email: 'second@example.com' };
+    await expect(repository.revoke(transaction, input)).resolves.toEqual(revokedInvitation);
+    await expect(repository.revoke(transaction, input)).resolves.toEqual(revokedInvitation);
     expect(invitationUpdate).toHaveBeenCalledOnce();
     expect(invitationUpdate).toHaveBeenCalledWith({
       where: { id: 'invitation-1' },
@@ -242,7 +243,9 @@ describe('PrismaFamilyAuthRepository', () => {
       $queryRaw: vi
         .fn()
         .mockResolvedValueOnce([{ id: 'invitation-1' }])
-        .mockResolvedValueOnce([{ id: 'family-1', createdById: 'parent-1' }])
+        .mockResolvedValueOnce([
+          { id: 'family-1', createdById: 'parent-1', familyCode: 'FAMILY01' },
+        ])
         .mockResolvedValueOnce([]),
       invitation: {
         findUnique: vi.fn().mockResolvedValue(invitation),
@@ -262,7 +265,11 @@ describe('PrismaFamilyAuthRepository', () => {
         passwordHash: 'password-hash',
         now,
       }),
-    ).resolves.toEqual(parent);
+    ).resolves.toEqual({
+      ...parent,
+      familyCode: 'FAMILY01',
+      invitationId: 'invitation-1',
+    });
     expect(invitationUpdate).toHaveBeenCalledWith({
       where: { id: 'invitation-1' },
       data: { status: 'ACCEPTED', invitedUserId: 'parent-2', acceptedAt: now },
