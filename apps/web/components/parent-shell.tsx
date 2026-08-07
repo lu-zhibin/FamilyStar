@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  BadgeCheck,
   Bell,
   BookHeart,
   CheckCheck,
@@ -26,6 +27,7 @@ const navItems = [
   { key: 'reviews', label: '审核', icon: CheckCheck },
   { key: 'rewards', label: '奖励', icon: Gift },
   { key: 'levels', label: '等级', icon: Medal },
+  { key: 'badges', label: '徽章', icon: BadgeCheck },
   { key: 'stats', label: '数据', icon: BarChart3 },
   { key: 'records', label: '记录', icon: BookHeart },
   { key: 'family', label: '成员', icon: Users },
@@ -114,7 +116,7 @@ export function ParentShell({
         className="fixed inset-x-0 bottom-0 z-40 border-t border-wood bg-white/95 shadow-[0_-8px_28px_rgba(93,64,55,0.10)] backdrop-blur-xl"
         aria-label="家长端模块导航"
       >
-        <div className="nav-scroll mx-auto flex max-w-content items-center gap-1 overflow-x-auto px-3 py-2 mobile:grid mobile:grid-cols-9 mobile:gap-0 mobile:overflow-x-visible mobile:px-1">
+        <div className="nav-scroll mx-auto flex max-w-content items-center gap-1 overflow-x-auto px-3 py-2 mobile:grid mobile:grid-cols-10 mobile:gap-0 mobile:overflow-x-visible mobile:px-1">
           {navItems.map(({ key, label, icon: Icon }) => {
             const active = section === key;
             return (

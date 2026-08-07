@@ -19,6 +19,7 @@ import Link from 'next/link';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
+import { badgeConditionLabel, badgeProgressPercent, type BadgeWallItem } from '../lib/badges';
 import {
   ChildApiError,
   belongsToCurrentChild,
@@ -388,14 +389,107 @@ function CheckInsPage({ tasks, state }: Readonly<{ tasks: ChildTask[]; state: Lo
   );
 }
 
-function AchievementsPage({ level, state }: Readonly<{ level: LevelView; state: LoadState }>) {
+export function BadgeWall({
+  badges,
+  state,
+}: Readonly<{ badges: readonly BadgeWallItem[]; state: LoadState }>) {
+  if (state === 'loading' || state === 'error' || badges.length === 0) {
+    const content = {
+      loading: ['正在读取徽章墙', '加载完成后会显示已获得和正在努力的徽章。'],
+      error: ['徽章墙读取失败', '请刷新页面后重试。'],
+      empty: ['还没有可展示的徽章', '家长启用可见徽章后会出现在这里。'],
+      live: ['还没有可展示的徽章', '家长启用可见徽章后会出现在这里。'],
+    }[state];
+    return (
+      <div className="empty-state" role={state === 'error' ? 'alert' : 'status'}>
+        <Trophy aria-hidden="true" size={34} />
+        <strong>{content[0]}</strong>
+        <p>{content[1]}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="child-badge-grid">
+      {badges.map(({ template, award, progress }) => {
+        const automatic = template.condition.type !== 'MANUAL';
+        const current = progress?.current_value ?? 0;
+        const target =
+          progress?.target_value ?? (automatic ? template.condition.target : template.award_level);
+        const percent = badgeProgressPercent(current, target);
+        return (
+          <article className={`child-badge ${award ? '' : 'child-badge-locked'}`} key={template.id}>
+            <span className="text-4xl" aria-hidden="true">
+              {award?.icon ?? template.icon}
+            </span>
+            <strong className="mt-1 text-brown">{award?.name ?? template.name}</strong>
+            <span className={`tag ${award ? 'tag-green' : 'bg-sand text-brown-light'}`}>
+              {award ? '已获得' : '未获得'}
+            </span>
+            <p className="text-label font-bold text-brown-light">
+              {award?.description ??
+                template.description ??
+                badgeConditionLabel(template.condition)}
+            </p>
+            {award ? (
+              <div className="mt-2 w-full border-t border-wood pt-2 text-label font-bold text-brown-light">
+                <time dateTime={award.awarded_at}>
+                  {new Date(award.awarded_at).toLocaleString('zh-CN', {
+                    hour12: false,
+                  })}
+                </time>
+                <p>{award.reason ?? '为成长喝彩'}</p>
+              </div>
+            ) : automatic ? (
+              <div className="mt-2 w-full">
+                <div className="mb-1 flex justify-between text-label font-extrabold text-brown-light">
+                  <span>{badgeConditionLabel(template.condition)}</span>
+                  <span>
+                    {current}/{target}
+                  </span>
+                </div>
+                <div
+                  className="h-2.5 overflow-hidden rounded-pill bg-sand"
+                  role="progressbar"
+                  aria-label={`${template.name}进度`}
+                  aria-valuemin={0}
+                  aria-valuemax={target}
+                  aria-valuenow={Math.min(Math.max(current, 0), target)}
+                >
+                  <span
+                    className="block h-full rounded-pill bg-gradient-to-r from-sun to-orange"
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="mt-2 text-label font-extrabold text-brown-light">等待家长颁发</p>
+            )}
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function AchievementsPage({
+  level,
+  state,
+  badges,
+  badgesState,
+}: Readonly<{
+  level: LevelView;
+  state: LoadState;
+  badges: readonly BadgeWallItem[];
+  badgesState: LoadState;
+}>) {
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-gold child-animate-in text-[#6d4c00]">
         <div className="relative z-10">
           <div className="flex items-center justify-between">
             <span className="child-glass-chip">Lv.{level.current_level}</span>
-            <DataStatus state={state} limited="徽章接口待接入" />
+            <DataStatus state={state} />
           </div>
           <h1 className="mt-3 font-display text-[32px]">{level.current.name}</h1>
           <p className="font-extrabold">累计获得 {level.points_earned_total} 星，等级只升不降</p>
@@ -432,12 +526,8 @@ function AchievementsPage({ level, state }: Readonly<{ level: LevelView; state: 
         </div>
       </section>
       <section className="child-animate-in child-delay-2">
-        <SectionHeading title="徽章墙" />
-        <div className="empty-state">
-          <Trophy aria-hidden="true" size={34} />
-          <strong>徽章接口待接入</strong>
-          <p>徽章规则和获得记录开放后会显示在这里。</p>
-        </div>
+        <SectionHeading title="徽章墙" action={<DataStatus state={badgesState} />} />
+        <BadgeWall badges={badges} state={badgesState} />
       </section>
       <ChildPointsPanel />
     </div>
@@ -1031,6 +1121,11 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
     'tasks',
     [],
   );
+  const { data: badges, state: badgesState } = useApiData<BadgeWallItem[]>(
+    '/badges/me',
+    'badges',
+    [],
+  );
   const [reward, setReward] = useState<Reward | null>(null);
   const [switching, setSwitching] = useState(false);
   const [wishing, setWishing] = useState(false);
@@ -1096,7 +1191,14 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
       />
     ),
     'check-ins': <CheckInsPage tasks={tasks} state={tasksState} />,
-    achievements: <AchievementsPage level={level} state={levelState} />,
+    achievements: (
+      <AchievementsPage
+        level={level}
+        state={levelState}
+        badges={badges}
+        badgesState={badgesState}
+      />
+    ),
     rewards: (
       <RewardsPage
         level={level}

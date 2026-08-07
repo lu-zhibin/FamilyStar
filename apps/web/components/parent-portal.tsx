@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  BadgeCheck,
   Bell,
   BookOpen,
   Camera,
@@ -44,6 +45,14 @@ import { createPortal } from 'react-dom';
 
 import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
 import { authApi, type SessionIdentity } from '../lib/auth';
+import {
+  badgeConditionLabel,
+  badgeConditionLabels,
+  badgeConditionTypes,
+  buildBadgeTemplatePayload,
+  type BadgeConditionType,
+  type BadgeTemplate,
+} from '../lib/badges';
 import {
   buildChildCredentialPatch,
   buildChildProfilePatch,
@@ -2790,6 +2799,484 @@ function LevelsPage() {
   );
 }
 
+export function BadgeTemplateCatalog({
+  templates,
+  busyAction,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  templates: readonly BadgeTemplate[];
+  busyAction: string | null;
+  onEdit: (template: BadgeTemplate) => void;
+  onToggle: (template: BadgeTemplate) => void;
+  onDelete: (template: BadgeTemplate) => void;
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {templates.map((template) => {
+        const locked = busyAction !== null;
+        return (
+          <article className="panel" key={template.id}>
+            <div className="flex items-start justify-between gap-3">
+              <span
+                className="grid size-12 shrink-0 place-items-center rounded-card bg-sand text-2xl"
+                aria-hidden="true"
+              >
+                {template.icon}
+              </span>
+              <div className="flex flex-wrap justify-end gap-2">
+                <span className="tag bg-sky/20 text-blue">
+                  {template.preset_code ? '系统预设' : '家庭自定义'}
+                </span>
+                <span className={`tag ${template.is_enabled ? 'tag-green' : 'bg-sand'}`}>
+                  {template.is_enabled ? '已启用' : '已停用'}
+                </span>
+              </div>
+            </div>
+            <h2 className="mt-3 font-display text-section text-brown">{template.name}</h2>
+            <p className="mt-1 min-h-10 text-caption font-bold text-brown-light">
+              {template.description ?? '暂无徽章说明'}
+            </p>
+            <dl className="mt-4 space-y-2 text-caption font-bold">
+              <div className="flex justify-between gap-3">
+                <dt className="text-brown-light">分类</dt>
+                <dd>{template.category}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-brown-light">获得条件</dt>
+                <dd>{badgeConditionLabel(template.condition)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-brown-light">孩子可见</dt>
+                <dd>{template.is_visible ? '可见' : '隐藏'}</dd>
+              </div>
+            </dl>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                className="secondary-button justify-center"
+                type="button"
+                disabled={locked}
+                onClick={() => onEdit(template)}
+              >
+                <Pencil aria-hidden="true" size={16} /> 编辑
+              </button>
+              <button
+                className="secondary-button justify-center"
+                type="button"
+                disabled={locked}
+                onClick={() => onToggle(template)}
+              >
+                {template.is_enabled ? '停用' : '启用'}
+              </button>
+              {!template.preset_code && (
+                <button
+                  className="secondary-button col-span-2 justify-center text-red"
+                  type="button"
+                  disabled={locked}
+                  onClick={() => onDelete(template)}
+                  aria-label={`删除徽章模板 ${template.name}`}
+                >
+                  <Trash2 aria-hidden="true" size={16} /> 删除自定义模板
+                </button>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export function BadgeTemplateFields({
+  template,
+  busy,
+  onSubmit,
+}: {
+  template: BadgeTemplate | null;
+  busy: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const [conditionType, setConditionType] = useState<BadgeConditionType>(
+    template?.condition.type ?? 'MANUAL',
+  );
+  return (
+    <form className="space-y-4" aria-busy={busy} onSubmit={onSubmit}>
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="field-label md:col-span-2">
+          徽章名称
+          <input
+            className="field"
+            name="name"
+            defaultValue={template?.name ?? ''}
+            maxLength={120}
+            required
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label md:col-span-2">
+          徽章说明
+          <textarea
+            className="field min-h-24"
+            name="description"
+            defaultValue={template?.description ?? ''}
+            maxLength={10_000}
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          图标
+          <input
+            className="field"
+            name="icon"
+            defaultValue={template?.icon ?? 'star'}
+            maxLength={80}
+            required
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          分类
+          <input
+            className="field"
+            name="category"
+            defaultValue={template?.category ?? '成长'}
+            maxLength={80}
+            required
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          获得条件
+          <select
+            className="field"
+            name="condition_type"
+            value={conditionType}
+            disabled={busy}
+            onChange={(event) => setConditionType(event.target.value as BadgeConditionType)}
+          >
+            {badgeConditionTypes.map((type) => (
+              <option value={type} key={type}>
+                {badgeConditionLabels[type]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {conditionType !== 'MANUAL' && (
+          <label className="field-label">
+            条件目标
+            <input
+              className="field"
+              name="condition_target"
+              type="number"
+              min={1}
+              step={1}
+              defaultValue={template?.condition.type === 'MANUAL' ? 1 : template?.condition.target}
+              required
+              disabled={busy}
+            />
+          </label>
+        )}
+        <label className="field-label">
+          颁发级别
+          <input
+            className="field"
+            name="award_level"
+            type="number"
+            min={1}
+            step={1}
+            defaultValue={template?.award_level ?? 1}
+            required
+            disabled={busy}
+          />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-5">
+        <label className="flex items-center gap-2 text-sm font-bold">
+          <input
+            name="is_visible"
+            type="checkbox"
+            defaultChecked={template?.is_visible ?? true}
+            disabled={busy}
+          />
+          在孩子徽章墙显示
+        </label>
+        <label className="flex items-center gap-2 text-sm font-bold">
+          <input
+            name="is_enabled"
+            type="checkbox"
+            defaultChecked={template?.is_enabled ?? true}
+            disabled={busy}
+          />
+          启用模板
+        </label>
+      </div>
+      <button className="primary-button w-full justify-center" type="submit" disabled={busy}>
+        <Save aria-hidden="true" size={17} /> {busy ? '正在保存...' : '保存徽章模板'}
+      </button>
+    </form>
+  );
+}
+
+function BadgesPage() {
+  const templates = useApiData<BadgeTemplate[]>('/family/badge-templates', 'templates', []);
+  const children = useApiData<Child[]>('/family/children', 'children', []);
+  const [editingTemplate, setEditingTemplate] = useState<BadgeTemplate | null>(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [awardModalOpen, setAwardModalOpen] = useState(false);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const manualTemplates = templates.data.filter(
+    (template) => template.is_enabled && template.condition.type === 'MANUAL',
+  );
+
+  function reportError(error: unknown, fallback: string) {
+    setFeedback(error instanceof ParentApiError ? error.message : fallback);
+  }
+
+  async function saveTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busyAction) return;
+    const action = editingTemplate ? `badge:${editingTemplate.id}:edit` : 'badge:create';
+    setBusyAction(action);
+    setFeedback('');
+    try {
+      const body = buildBadgeTemplatePayload(new FormData(event.currentTarget));
+      await parentApi(
+        editingTemplate
+          ? `/family/badge-templates/${editingTemplate.id}`
+          : '/family/badge-templates',
+        { method: editingTemplate ? 'PATCH' : 'POST', body: JSON.stringify(body) },
+      );
+      await templates.refresh();
+      setTemplateModalOpen(false);
+      setEditingTemplate(null);
+      setFeedback(editingTemplate ? '徽章模板已更新。' : '徽章模板已创建。');
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        await templates.refresh().catch(() => undefined);
+        setFeedback('模板状态已变化，已刷新为服务端最新状态。');
+      } else {
+        reportError(error, '保存徽章模板失败，请稍后重试。');
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function toggleTemplate(template: BadgeTemplate) {
+    if (busyAction) return;
+    setBusyAction(`badge:${template.id}:toggle`);
+    setFeedback('');
+    try {
+      await parentApi(`/family/badge-templates/${template.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_enabled: !template.is_enabled }),
+      });
+      await templates.refresh();
+      setFeedback(template.is_enabled ? '徽章模板已停用。' : '徽章模板已启用。');
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        await templates.refresh().catch(() => undefined);
+        setFeedback('模板状态已变化，已刷新为服务端最新状态。');
+      } else {
+        reportError(error, '更新徽章模板失败，请稍后重试。');
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteTemplate(template: BadgeTemplate) {
+    if (
+      template.preset_code ||
+      busyAction ||
+      !window.confirm(`确认删除自定义徽章“${template.name}”？`)
+    )
+      return;
+    setBusyAction(`badge:${template.id}:delete`);
+    setFeedback('');
+    try {
+      await parentApi(`/family/badge-templates/${template.id}`, { method: 'DELETE' });
+      await templates.refresh();
+      setFeedback('自定义徽章模板已删除。');
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        await templates.refresh().catch(() => undefined);
+        setFeedback('该模板已有颁发记录或状态已变化，已刷新最新列表。');
+      } else {
+        reportError(error, '删除徽章模板失败，请稍后重试。');
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function awardBadge(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (busyAction) return;
+    const form = new FormData(event.currentTarget);
+    setBusyAction('badge:award');
+    setFeedback('');
+    try {
+      await parentApi('/family/badge-awards', {
+        method: 'POST',
+        body: JSON.stringify({
+          child_id: String(form.get('child_id')),
+          template_id: String(form.get('template_id')),
+          reason: String(form.get('reason') ?? '').trim(),
+        }),
+      });
+      await templates.refresh();
+      setAwardModalOpen(false);
+      setFeedback('徽章已颁发，孩子的徽章墙将显示本次记录。');
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        await templates.refresh().catch(() => undefined);
+        setFeedback('徽章颁发状态已变化，已刷新服务端最新列表。');
+      } else {
+        reportError(error, '颁发徽章失败，请稍后重试。');
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="BADGES"
+        title="徽章管理"
+        description="维护家庭徽章规则，并把手动徽章颁发给孩子。"
+        state={templates.state}
+        action={
+          <div className="flex gap-2">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={
+                busyAction !== null || children.data.length === 0 || manualTemplates.length === 0
+              }
+              onClick={() => setAwardModalOpen(true)}
+            >
+              <BadgeCheck aria-hidden="true" size={17} /> 手动颁发
+            </button>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={busyAction !== null}
+              onClick={() => {
+                setEditingTemplate(null);
+                setTemplateModalOpen(true);
+              }}
+            >
+              <Plus aria-hidden="true" size={17} /> 新建模板
+            </button>
+          </div>
+        }
+      />
+      {feedback && (
+        <div className="notice mb-5" role="status">
+          {feedback}
+        </div>
+      )}
+      {templates.state === 'loading' || templates.state === 'error' ? (
+        <Panel>
+          <EmptyState
+            title={templates.state === 'error' ? '徽章模板读取失败' : '正在读取徽章模板'}
+            detail={
+              templates.state === 'error'
+                ? '请刷新页面后重试。'
+                : '加载完成后即可编辑、启停和颁发徽章。'
+            }
+          />
+        </Panel>
+      ) : templates.data.length === 0 ? (
+        <Panel>
+          <EmptyState title="还没有徽章模板" detail="创建第一个家庭徽章规则吧。" />
+        </Panel>
+      ) : (
+        <BadgeTemplateCatalog
+          templates={templates.data}
+          busyAction={busyAction}
+          onEdit={(template) => {
+            setEditingTemplate(template);
+            setTemplateModalOpen(true);
+          }}
+          onToggle={toggleTemplate}
+          onDelete={deleteTemplate}
+        />
+      )}
+      {templateModalOpen && (
+        <Modal
+          title={editingTemplate ? '编辑徽章模板' : '新建徽章模板'}
+          closeDisabled={busyAction !== null}
+          onClose={() => {
+            setTemplateModalOpen(false);
+            setEditingTemplate(null);
+          }}
+        >
+          <BadgeTemplateFields
+            key={editingTemplate?.id ?? 'new'}
+            template={editingTemplate}
+            busy={busyAction !== null}
+            onSubmit={saveTemplate}
+          />
+        </Modal>
+      )}
+      {awardModalOpen && (
+        <Modal
+          title="手动颁发徽章"
+          closeDisabled={busyAction !== null}
+          onClose={() => setAwardModalOpen(false)}
+        >
+          <form className="space-y-4" aria-busy={busyAction !== null} onSubmit={awardBadge}>
+            <label className="field-label">
+              选择孩子
+              <select className="field" name="child_id" required disabled={busyAction !== null}>
+                {children.data.map((child) => (
+                  <option value={child.id} key={child.id}>
+                    {child.nickname}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-label">
+              选择徽章
+              <select className="field" name="template_id" required disabled={busyAction !== null}>
+                {manualTemplates.map((template) => (
+                  <option value={template.id} key={template.id}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field-label">
+              颁发原因
+              <textarea
+                className="field min-h-24"
+                name="reason"
+                maxLength={2_000}
+                required
+                disabled={busyAction !== null}
+                placeholder="写下值得肯定的具体表现"
+              />
+            </label>
+            <button
+              className="primary-button w-full justify-center"
+              type="submit"
+              disabled={busyAction !== null}
+            >
+              <BadgeCheck aria-hidden="true" size={17} />
+              {busyAction === 'badge:award' ? '正在颁发...' : '确认颁发'}
+            </button>
+          </form>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 function StatsPage() {
   return <ParentAnalyticsSection />;
 }
@@ -4344,6 +4831,7 @@ const pages: Record<ParentSection, () => ReactNode> = {
   reviews: ReviewsPage,
   rewards: RewardsPage,
   levels: LevelsPage,
+  badges: BadgesPage,
   stats: StatsPage,
   records: RecordsPage,
   family: FamilyPage,

@@ -1,9 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import type { BadgeTemplate } from '../lib/badges';
 import { parentSections, type ParentReward } from '../lib/parent-portal';
 import {
   ActiveWishWall,
+  BadgeTemplateCatalog,
+  BadgeTemplateFields,
   FamilyCodeCard,
   FamilyProfileFields,
   FrequencyFields,
@@ -24,6 +27,7 @@ const titles = [
   '打卡审核',
   '奖励管理',
   '等级与成就',
+  '徽章管理',
   '数据面板',
   '成长记录',
   '家庭成员',
@@ -70,9 +74,9 @@ describe('ParentPortal', () => {
     expect(markup).toContain('家长端模块导航');
     expect(markup).toContain('aria-label="退出家长端"');
     expect(markup).toContain('aria-current="page"');
-    expect(markup).toContain('mobile:grid-cols-9');
+    expect(markup).toContain('mobile:grid-cols-10');
     expect(markup).toContain('mobile:overflow-x-visible');
-    expect(markup.match(/class="nav-item/g)).toHaveLength(9);
+    expect(markup.match(/class="nav-item/g)).toHaveLength(10);
   });
 
   it('renders responsive forms and explicit limited states', () => {
@@ -86,6 +90,68 @@ describe('ParentPortal', () => {
     expect(renderToStaticMarkup(<ParentPortal section="reviews" />)).toContain(
       '正在读取待审核提交',
     );
+    expect(renderToStaticMarkup(<ParentPortal section="badges" />)).toContain('正在读取徽章模板');
+  });
+
+  it('renders preset and custom badge actions with protected deletion', () => {
+    const template: BadgeTemplate = {
+      id: 'badge-1',
+      preset_code: 'first-task',
+      name: '任务新星',
+      description: '完成第一个任务',
+      icon: 'star',
+      category: '任务',
+      condition: { type: 'TASK_COMPLETION_COUNT', target: 1 },
+      award_level: 1,
+      is_visible: true,
+      is_enabled: true,
+      version: 1,
+      created_at: '2026-08-07T00:00:00.000Z',
+      updated_at: '2026-08-07T00:00:00.000Z',
+    };
+    const markup = renderToStaticMarkup(
+      <BadgeTemplateCatalog
+        templates={[template, { ...template, id: 'badge-2', preset_code: null, name: '阅读之星' }]}
+        busyAction={null}
+        onEdit={() => undefined}
+        onToggle={() => undefined}
+        onDelete={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('系统预设');
+    expect(markup).toContain('家庭自定义');
+    expect(markup).toContain('累计完成任务 1');
+    expect(markup).toContain('已启用');
+    expect(markup.match(/删除自定义模板/g)).toHaveLength(1);
+    expect(markup).toContain('aria-label="删除徽章模板 阅读之星"');
+  });
+
+  it('shows an automatic target field and locks every badge form control while busy', () => {
+    const template: BadgeTemplate = {
+      id: 'badge-1',
+      preset_code: null,
+      name: '坚持之星',
+      description: null,
+      icon: 'star',
+      category: '习惯',
+      condition: { type: 'STREAK_DAYS', target: 7 },
+      award_level: 1,
+      is_visible: true,
+      is_enabled: false,
+      version: 1,
+      created_at: '2026-08-07T00:00:00.000Z',
+      updated_at: '2026-08-07T00:00:00.000Z',
+    };
+    const markup = renderToStaticMarkup(
+      <BadgeTemplateFields template={template} busy onSubmit={() => undefined} />,
+    );
+
+    expect(markup).toMatch(/name="condition_target"[^>]*value="7"/);
+    expect(markup).toMatch(/name="condition_type"[^>]*disabled=""/);
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toContain('正在保存...');
+    expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(9);
   });
 
   it('keeps long modal content scrollable within the viewport', () => {

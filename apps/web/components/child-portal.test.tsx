@@ -2,7 +2,24 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { childSections } from '../lib/child-portal';
-import { ChildPortal, ChildRedemptionList, ChildWishWall } from './child-portal';
+import type { BadgeWallItem } from '../lib/badges';
+import { BadgeWall, ChildPortal, ChildRedemptionList, ChildWishWall } from './child-portal';
+
+const badgeTemplate = {
+  id: 'badge-1',
+  preset_code: 'tasks-7',
+  name: '任务达人',
+  description: '完成七个任务',
+  icon: 'star',
+  category: '任务',
+  condition: { type: 'TASK_COMPLETION_COUNT' as const, target: 7 },
+  award_level: 1,
+  is_visible: true,
+  is_enabled: true,
+  version: 1,
+  created_at: '2026-08-07T00:00:00.000Z',
+  updated_at: '2026-08-07T00:00:00.000Z',
+};
 
 describe('ChildPortal', () => {
   it.each(childSections)(
@@ -74,5 +91,89 @@ describe('ChildPortal', () => {
     expect(markup).toContain('待兑现');
     expect(markup).toContain('已拒绝，退款完成');
     expect(markup).toContain('已兑现');
+  });
+
+  it('renders awarded snapshots and locked automatic progress', () => {
+    const badges: BadgeWallItem[] = [
+      {
+        template: badgeTemplate,
+        award: {
+          id: 'award-1',
+          template_id: 'badge-1',
+          child_id: 'child-1',
+          level: 1,
+          name: '历史任务之星',
+          description: '颁发时的徽章说明',
+          icon: 'award',
+          category: '历史',
+          condition: { type: 'TASK_COMPLETION_COUNT', target: 7 },
+          template_version: 1,
+          reason: '坚持完成每周任务',
+          awarded_by: 'parent-1',
+          awarded_at: '2026-08-07T08:30:00.000Z',
+        },
+        progress: null,
+      },
+      {
+        template: {
+          ...badgeTemplate,
+          id: 'badge-2',
+          name: '协作伙伴',
+          condition: { type: 'COLLABORATION_COUNT', target: 4 },
+        },
+        award: null,
+        progress: {
+          current_value: 3,
+          target_value: 4,
+          evaluated_at: '2026-08-07T08:00:00.000Z',
+        },
+      },
+    ];
+    const markup = renderToStaticMarkup(<BadgeWall badges={badges} state="live" />);
+
+    expect(markup).toContain('历史任务之星');
+    expect(markup).toContain('颁发时的徽章说明');
+    expect(markup).toContain('坚持完成每周任务');
+    expect(markup).toContain('已获得');
+    expect(markup).toContain('未获得');
+    expect(markup).toContain('child-badge-locked');
+    expect(markup).toContain('3/4');
+    expect(markup).toContain('role="progressbar"');
+    expect(markup).toContain('aria-valuenow="3"');
+    expect(markup).toContain('width:75%');
+  });
+
+  it('shows the manual waiting state for an unearned badge', () => {
+    const markup = renderToStaticMarkup(
+      <BadgeWall
+        state="live"
+        badges={[
+          {
+            template: {
+              ...badgeTemplate,
+              id: 'manual-badge',
+              name: '暖心小帮手',
+              condition: { type: 'MANUAL' },
+            },
+            award: null,
+            progress: null,
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('等待家长颁发');
+    expect(markup).not.toContain('role="progressbar"');
+  });
+
+  it.each([
+    ['loading', '正在读取徽章墙'],
+    ['empty', '还没有可展示的徽章'],
+    ['error', '徽章墙读取失败'],
+  ] as const)('renders the independent %s badge state', (state, message) => {
+    const markup = renderToStaticMarkup(<BadgeWall badges={[]} state={state} />);
+
+    expect(markup).toContain(message);
+    expect(markup).toContain(state === 'error' ? 'role="alert"' : 'role="status"');
   });
 });

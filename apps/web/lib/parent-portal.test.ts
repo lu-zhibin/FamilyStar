@@ -411,9 +411,10 @@ describe('reward management payload', () => {
 });
 
 describe('parent portal routing', () => {
-  it('defines nine unique parent routes', () => {
-    expect(parentSections).toHaveLength(9);
-    expect(new Set(Object.values(parentSectionPaths))).toHaveLength(9);
+  it('defines ten unique parent routes including badges', () => {
+    expect(parentSections).toHaveLength(10);
+    expect(new Set(Object.values(parentSectionPaths))).toHaveLength(10);
+    expect(parentSectionPaths.badges).toBe('/badges');
     expect(parentSections.every((section) => isParentSection(section))).toBe(true);
   });
 
