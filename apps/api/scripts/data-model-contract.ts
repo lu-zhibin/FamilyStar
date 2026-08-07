@@ -32,6 +32,8 @@ const CORE_MODELS = [
   'WorkerJobRun',
   'GrowthRecord',
   'GrowthRecordMedia',
+  'Notification',
+  'NotificationPreference',
 ] as const;
 
 const TENANT_MODELS = CORE_MODELS.filter(
@@ -97,6 +99,15 @@ const MIGRATION_GUARDS = [
   'growth_records_family_id_source_type_source_id_key',
   'growth_records_family_id_deleted_at_occurred_on_id_idx',
   'growth_record_media_sort_order_check',
+  'notifications_source_event_id_recipient_id_key',
+  'notifications_family_id_recipient_id_created_at_id_idx',
+  'notifications_family_id_created_at_id_idx',
+  'notifications_source_event_name_format_check',
+  'notifications_read_time_check',
+  'notification_preferences_user_id_key',
+  'notification_preferences_type_settings_object_check',
+  'notification_preferences_quiet_hours_pair_check',
+  'notification_preferences_quiet_hours_enabled_check',
 ] as const;
 
 function modelBlock(schema: string, model: string): string {
@@ -188,6 +199,19 @@ export function verifyDataModelContract(schema: string, migration: string): void
     modelBlock(schema, 'GrowthRecordMedia'),
     /@@unique\(\[growthRecordId, sortOrder\]\)/,
   );
+  assert.match(modelBlock(schema, 'Notification'), /@@unique\(\[sourceEventId, recipientId\]\)/);
+  assert.match(
+    modelBlock(schema, 'Notification'),
+    /@@index\(\[familyId, recipientId, createdAt, id\]\)/,
+  );
+  assert.match(modelBlock(schema, 'Notification'), /@@index\(\[familyId, createdAt, id\]\)/);
+  assert.match(
+    modelBlock(schema, 'NotificationPreference'),
+    /userId\s+String\s+@unique\s+@map\("user_id"\)\s+@db\.Uuid/,
+  );
+  assert.match(modelBlock(schema, 'NotificationPreference'), /typeSettings\s+Json/);
+  assert.match(modelBlock(schema, 'NotificationPreference'), /quietHoursStart\s+DateTime\?/);
+  assert.match(modelBlock(schema, 'NotificationPreference'), /quietHoursEnd\s+DateTime\?/);
 
   for (const guard of MIGRATION_GUARDS) {
     assert.ok(migration.includes(guard), `Missing migration guard: ${guard}`);

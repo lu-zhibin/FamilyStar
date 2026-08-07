@@ -129,4 +129,19 @@ describe('verifyDataModelContract', () => {
     expect(migration).toContain('growth_record_media_growth_record_id_sort_order_key');
     expect(migration).toContain('growth_record_media_sort_order_check');
   });
+
+  it('requires notification recipient idempotency, family indexes, and preference guards', async () => {
+    const [schema, migration] = await Promise.all([
+      readFile(schemaUrl, 'utf8'),
+      readMigrationHistory(),
+    ]);
+
+    expect(schema).toContain('model Notification {');
+    expect(schema).toContain('model NotificationPreference {');
+    expect(migration).toContain('notifications_source_event_id_recipient_id_key');
+    expect(migration).toContain('notifications_family_id_recipient_id_created_at_id_idx');
+    expect(migration).toContain('notifications_family_id_created_at_id_idx');
+    expect(migration).toContain('notification_preferences_user_id_key');
+    expect(migration).toContain('notification_preferences_quiet_hours_pair_check');
+  });
 });

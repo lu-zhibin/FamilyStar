@@ -237,6 +237,18 @@ enum GrowthRecordType {
   @@map("growth_record_type")
 }
 
+enum NotificationType {
+  REVIEW     @map("review")
+  POINTS     @map("points")
+  LEVEL      @map("level")
+  REDEMPTION @map("redemption")
+  WISH       @map("wish")
+  BADGE      @map("badge")
+  INVITATION @map("invitation")
+
+  @@map("notification_type")
+}
+
 model Family {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   familyCode  String    @unique @map("family_code") @db.VarChar(6)
@@ -280,6 +292,8 @@ model Family {
   badgeProgress                   BadgeProgress[]
   growthRecords                   GrowthRecord[]
   growthRecordMedia               GrowthRecordMedia[]
+  notifications                   Notification[]
+  notificationPreferences         NotificationPreference[]
 
   @@index([deletedAt])
   @@map("families")
@@ -338,6 +352,8 @@ model User {
   badgeProgress                   BadgeProgress[]                  @relation("BadgeProgressChild")
   growthRecords                   GrowthRecord[]                   @relation("GrowthRecordChild")
   growthRecordsCreated            GrowthRecord[]                   @relation("GrowthRecordCreator")
+  notificationsReceived           Notification[]                   @relation("NotificationRecipient")
+  notificationPreference          NotificationPreference?          @relation("NotificationPreferenceUser")
 
   @@index([familyId, role, deletedAt])
   @@index([familyId, currentLevel])
@@ -949,6 +965,51 @@ model GrowthRecordMedia {
   @@unique([growthRecordId, sortOrder])
   @@index([familyId, mediaAssetId])
   @@map("growth_record_media")
+}
+
+model Notification {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId        String           @map("family_id") @db.Uuid
+  recipientId     String           @map("recipient_id") @db.Uuid
+  type            NotificationType
+  title           String           @db.VarChar(160)
+  content         String           @db.Text
+  targetType      String           @map("target_type") @db.VarChar(80)
+  targetId        String?          @map("target_id") @db.Uuid
+  targetUrl       String           @map("target_url") @db.Text
+  sourceEventId   String           @map("source_event_id") @db.Uuid
+  sourceEventName String           @map("source_event_name") @db.VarChar(160)
+  readAt          DateTime?        @map("read_at") @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  family    Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  recipient User   @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceEventId, recipientId])
+  @@index([familyId, recipientId, createdAt, id])
+  @@index([familyId, recipientId, readAt])
+  @@index([familyId, createdAt, id])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  familyId          String    @map("family_id") @db.Uuid
+  userId            String    @unique @map("user_id") @db.Uuid
+  inAppEnabled      Boolean   @default(true) @map("in_app_enabled")
+  browserEnabled    Boolean   @default(false) @map("browser_enabled")
+  typeSettings      Json      @default("{}") @map("type_settings") @db.JsonB
+  quietHoursEnabled Boolean   @default(false) @map("quiet_hours_enabled")
+  quietHoursStart   DateTime? @map("quiet_hours_start") @db.Time(0)
+  quietHoursEnd     DateTime? @map("quiet_hours_end") @db.Time(0)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Restrict)
+  user   User   @relation("NotificationPreferenceUser", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([familyId, userId])
+  @@map("notification_preferences")
 }
 
 model BadgeTemplate {
