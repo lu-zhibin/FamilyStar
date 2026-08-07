@@ -12,14 +12,20 @@ import {
   Star,
   Target,
   Trophy,
+  Upload,
   UserRound,
   X,
 } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
 import { badgeConditionLabel, badgeProgressPercent, type BadgeWallItem } from '../lib/badges';
+import {
+  createCheckInIntent,
+  submitChildCheckIn,
+  type CheckInIntent,
+} from '../lib/check-in-submission';
 import {
   ChildApiError,
   belongsToCurrentChild,
@@ -31,6 +37,7 @@ import {
   formatCountdown,
   type ChildSection,
 } from '../lib/child-portal';
+import { getOfflineCheckInRepository } from '../lib/offline-check-in-repository';
 import {
   activeWishes,
   redemptionStatusLabel,
@@ -373,7 +380,186 @@ function TaskList({
   );
 }
 
-function CheckInsPage({ tasks, state }: Readonly<{ tasks: ChildTask[]; state: LoadState }>) {
+type LocalCheckInStatus = 'idle' | 'submitting' | 'submitted' | 'queued' | 'media-drafted';
+
+export function CheckInSubmissionStatus({ status }: Readonly<{ status: LocalCheckInStatus }>) {
+  if (status === 'queued') {
+    return (
+      <div className="notice mt-3 border-orange bg-sand text-brown" role="status">
+        已离线保存，恢复联网后可继续同步。
+      </div>
+    );
+  }
+  if (status === 'media-drafted') {
+    return (
+      <div className="notice mt-3 border-orange bg-sand text-brown" role="status">
+        媒体已保存为本地待确认草稿，尚未上传或创建服务端打卡。联网后请确认上传。
+      </div>
+    );
+  }
+  if (status === 'submitted') {
+    return (
+      <div className="notice mt-3 border-leaf bg-leaf-light text-leaf-dark" role="status">
+        打卡已提交。
+      </div>
+    );
+  }
+  return null;
+}
+
+export function CheckInSubmissionCard({ task }: Readonly<{ task: ChildTask }>) {
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [status, setStatus] = useState<LocalCheckInStatus>('idle');
+  const [error, setError] = useState('');
+  const writeLock = useRef(false);
+  const intent = useRef<CheckInIntent | null>(null);
+  const mediaSubmission = !['TICK', 'TEXT'].includes(task.check_type);
+
+  useEffect(() => {
+    const repository = getOfflineCheckInRepository();
+    if (!repository) return;
+    let active = true;
+    Promise.all([repository.listCheckIns(), repository.listMediaDrafts()])
+      .then(([queued, drafts]) => {
+        if (!active) return;
+        if (queued.some((record) => record.taskAssignmentId === task.task_assignment_id)) {
+          setStatus('queued');
+        } else if (drafts.some((record) => record.taskAssignmentId === task.task_assignment_id)) {
+          setStatus('media-drafted');
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [task.task_assignment_id]);
+
+  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (writeLock.current || ['submitted', 'queued', 'media-drafted'].includes(status)) return;
+    writeLock.current = true;
+    setStatus('submitting');
+    setError('');
+    intent.current ??= createCheckInIntent(files.length);
+    try {
+      const result = await submitChildCheckIn(
+        {
+          intent: intent.current,
+          taskId: task.task_id,
+          taskAssignmentId: task.task_assignment_id,
+          submissionType: task.check_type,
+          ...(text.trim() ? { text } : {}),
+          ...(files.length > 0 ? { files } : {}),
+        },
+        { repository: getOfflineCheckInRepository() },
+      );
+      setStatus(result.status);
+    } catch (caught) {
+      setStatus('idle');
+      setError(caught instanceof Error ? caught.message : '打卡提交失败，请重试。');
+    } finally {
+      writeLock.current = false;
+    }
+  }
+
+  const finished = ['submitted', 'queued', 'media-drafted'].includes(status);
+  const acceptedMedia =
+    task.check_type === 'PHOTO'
+      ? 'image/jpeg,image/png,image/webp'
+      : task.check_type === 'VIDEO'
+        ? 'video/mp4,video/quicktime,video/x-m4v'
+        : 'image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-m4v';
+
+  return (
+    <article className="child-card">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-display text-subtitle">{task.name}</h3>
+            <span className="tag">{task.collaboration_mode === 'COLLAB' ? '协作' : '个人'}</span>
+          </div>
+          {task.description && (
+            <p className="mt-1 font-bold text-brown-light">{task.description}</p>
+          )}
+        </div>
+        <strong className="whitespace-nowrap font-display text-orange">+{task.points} 星</strong>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-caption font-extrabold text-brown-light">
+        <span className="tag">
+          {task.check_type === 'TICK' ? '勾选打卡' : `${task.check_type} 打卡`}
+        </span>
+        <span className="tag">{task.verify_mode === 'AUTO' ? '自动验收' : '家长审核'}</span>
+      </div>
+      {task.submission_guide && <p className="notice mt-3">提交说明：{task.submission_guide}</p>}
+      {task.collaboration_mode === 'COLLAB' ? (
+        <div className="notice mt-3" role="note">
+          协作任务将在对应协作周期入口提交。
+        </div>
+      ) : (
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={(event) => void submit(event)}
+          aria-busy={status === 'submitting'}
+        >
+          {(task.check_type === 'TEXT' || task.check_type === 'MIXED') && (
+            <label className="field-label">
+              打卡文字
+              <textarea
+                className="field min-h-24"
+                required={task.check_type === 'TEXT'}
+                maxLength={10000}
+                value={text}
+                disabled={finished}
+                onChange={(event) => setText(event.target.value)}
+              />
+            </label>
+          )}
+          {mediaSubmission && (
+            <label className="field-label">
+              打卡图片或视频
+              <span className="flex min-h-12 items-center gap-2 rounded-btn border border-dashed border-wood bg-cream px-4">
+                <Upload aria-hidden="true" size={18} />
+                <span>{files.length > 0 ? `已选择 ${files.length} 个文件` : '选择本地文件'}</span>
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept={acceptedMedia}
+                  multiple={task.check_type !== 'VIDEO'}
+                  required
+                  disabled={finished}
+                  onChange={(event) => {
+                    setFiles(Array.from(event.target.files ?? []));
+                    intent.current = null;
+                  }}
+                />
+              </span>
+            </label>
+          )}
+          <button
+            className="button-primary w-full sm:w-auto"
+            type="submit"
+            disabled={finished || status === 'submitting'}
+          >
+            {status === 'submitting'
+              ? '正在保存'
+              : task.check_type === 'TICK'
+                ? '完成打卡'
+                : '提交打卡'}
+          </button>
+        </form>
+      )}
+      {error && (
+        <div className="notice mt-3 text-red" role="alert">
+          {error}
+        </div>
+      )}
+      <CheckInSubmissionStatus status={status} />
+    </article>
+  );
+}
+
+export function CheckInsPage({ tasks, state }: Readonly<{ tasks: ChildTask[]; state: LoadState }>) {
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-orange child-animate-in">
@@ -387,11 +573,19 @@ function CheckInsPage({ tasks, state }: Readonly<{ tasks: ChildTask[]; state: Lo
       </section>
       <section className="child-animate-in child-delay-1">
         <SectionHeading title="个人任务与协作任务" />
-        <TaskList tasks={tasks} state={state} />
+        {state === 'loading' || state === 'error' || tasks.length === 0 ? (
+          <TaskList tasks={tasks} state={state} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {tasks.map((task) => (
+              <CheckInSubmissionCard key={task.task_assignment_id} task={task} />
+            ))}
+          </div>
+        )}
       </section>
       <div className="notice" role="note">
         <ShieldAlert aria-hidden="true" className="shrink-0 text-blue" />
-        <p>任务来自当前账号的真实分配。完整文字与媒体提交入口将在打卡表单接入后开放。</p>
+        <p>离线文字和勾选打卡保存在当前设备；媒体离线时仅保存待确认草稿。</p>
       </div>
     </div>
   );

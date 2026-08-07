@@ -6,11 +6,28 @@ import type { BadgeWallItem } from '../lib/badges';
 import { findTheme, THEME_CATALOG } from '@familystar/shared';
 import {
   BadgeWall,
+  CheckInSubmissionCard,
+  CheckInSubmissionStatus,
   ChildPortal,
   ChildRedemptionList,
   ChildWishWall,
   ThemeCatalog,
 } from './child-portal';
+
+const checkInTask = {
+  task_id: 'task-1',
+  task_assignment_id: 'assignment-1',
+  name: '阅读二十分钟',
+  description: '完成今日阅读',
+  submission_guide: '写下今天读到的内容',
+  collaboration_mode: 'SOLO' as const,
+  frequency: { kind: 'daily' },
+  points: 10,
+  check_type: 'TEXT' as const,
+  verify_mode: 'MANUAL' as const,
+  start_date: '2026-08-07',
+  end_date: null,
+};
 
 const badgeTemplate = {
   id: 'badge-1',
@@ -33,6 +50,20 @@ function validatesCriteria(criteria: readonly string[]): string {
 }
 
 describe('ChildPortal', () => {
+  it('renders child check-in controls and explicit local persistence states', () => {
+    const form = renderToStaticMarkup(<CheckInSubmissionCard task={checkInTask} />);
+    const queued = renderToStaticMarkup(<CheckInSubmissionStatus status="queued" />);
+    const mediaDrafted = renderToStaticMarkup(<CheckInSubmissionStatus status="media-drafted" />);
+
+    expect(form).toContain('阅读二十分钟');
+    expect(form).toContain('打卡文字');
+    expect(form).toContain('maxLength="10000"');
+    expect(form).toContain('提交打卡');
+    expect(queued).toContain('已离线保存');
+    expect(mediaDrafted).toContain('尚未上传或创建服务端打卡');
+    expect(mediaDrafted).toContain('联网后请确认上传');
+  });
+
   it(`property: theme controls enable only unlocked catalog entries and render controlled CSS tokens ${validatesCriteria(['Requirement 12.3', 'Requirement 12.4', 'Requirement 12.5'])}`, () => {
     for (let run = 0; run < 128; run += 1) {
       const definition = THEME_CATALOG[run % THEME_CATALOG.length]!;
