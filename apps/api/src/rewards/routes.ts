@@ -381,12 +381,14 @@ export function registerRewardRoutes(
   for (const action of ['approve', 'fulfill'] as const) {
     api.post(`/redemptions/:id/${action}`, async (context) => {
       try {
-        const operation =
-          action === 'approve' ? operations.approveRedemption : operations.fulfillRedemption;
-        const result = await operation({
+        const input = {
           ...sessionInput(context),
           redemptionId: context.req.param('id'),
-        });
+        };
+        const result =
+          action === 'approve'
+            ? await operations.approveRedemption(input)
+            : await operations.fulfillRedemption(input);
         renew(context, secureCookies);
         return context.json(
           createSuccessResponse(

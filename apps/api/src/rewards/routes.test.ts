@@ -138,6 +138,31 @@ describe('reward HTTP routes', () => {
     });
   });
 
+  it.each(['approve', 'fulfill'] as const)(
+    'preserves the operation receiver for %s',
+    async (action) => {
+      const rewardOperations = operations();
+      const operation = vi.fn(function (this: RewardOperations) {
+        expect(this).toBe(rewardOperations);
+        return Promise.resolve({ redemption });
+      });
+      rewardOperations[action === 'approve' ? 'approveRedemption' : 'fulfillRedemption'] =
+        operation;
+      const app = createApp({ publicBaseUrl: 'http://localhost:3000', rewardOperations });
+
+      const response = await app.request(`/api/v1/redemptions/redemption-1/${action}`, {
+        method: 'POST',
+        headers: { cookie: 'familystar_session=parent' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(operation).toHaveBeenCalledWith({
+        sessionToken: 'parent',
+        redemptionId: 'redemption-1',
+      });
+    },
+  );
+
   it('returns live wish progress and maps adoption input', async () => {
     const rewardOperations = operations();
     const app = createApp({ publicBaseUrl: 'http://localhost:3000', rewardOperations });
