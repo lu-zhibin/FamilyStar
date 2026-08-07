@@ -17,6 +17,7 @@ describe('Worker container contract', () => {
     expect(dockerfile).toContain('ARG API_INTERNAL_URL=http://api:3001');
     expect(dockerfile).toContain('ENV API_INTERNAL_URL=$API_INTERNAL_URL');
     expect(dockerfile).toContain('FROM node:${NODE_VERSION}-alpine AS web');
+    expect(dockerfile).toContain('/app/apps/web/public ./apps/web/public');
     expect(dockerfile).toContain('FROM backend-runtime AS api');
     expect(dockerfile).toContain('FROM backend-runtime AS worker');
     expect(dockerfile.match(/USER node/g)).toHaveLength(2);
