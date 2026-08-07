@@ -2198,6 +2198,7 @@ function RewardsPage() {
   const wishes = useApiData<Wish[]>('/wishes', 'wishes', []);
   const [createOpen, setCreateOpen] = useState(false);
   const [editingReward, setEditingReward] = useState<ParentReward | null>(null);
+  const [editorRevision, setEditorRevision] = useState(0);
   const [imageRemoved, setImageRemoved] = useState(false);
   const [imageUrls, setImageUrls] = useState<Readonly<Record<string, string>>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -2226,6 +2227,7 @@ function RewardsPage() {
   function openEditor(reward: ParentReward | null) {
     setActionMessage('');
     setImageRemoved(false);
+    setEditorRevision(0);
     setEditingReward(reward);
     setCreateOpen(reward === null);
   }
@@ -2275,7 +2277,10 @@ function RewardsPage() {
         const authoritative = await refreshRewardsSafely();
         if (editingReward && authoritative) {
           const current = authoritative.find(({ id }) => id === editingReward.id);
-          if (current) setEditingReward(current);
+          if (current) {
+            setEditingReward(current);
+            setEditorRevision((revision) => revision + 1);
+          }
         }
         setActionMessage(
           error instanceof ParentApiError && error.status === 409
@@ -2450,7 +2455,7 @@ function RewardsPage() {
           closeDisabled={busyAction !== null}
         >
           <RewardEditorFields
-            key={editingReward?.updated_at ?? 'create'}
+            key={`${editingReward?.updated_at ?? 'create'}-${editorRevision}`}
             reward={editingReward}
             imageUrl={
               editingReward?.image_media_id ? imageUrls[editingReward.image_media_id] : undefined
