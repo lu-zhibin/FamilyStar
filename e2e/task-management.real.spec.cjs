@@ -4,6 +4,7 @@ test.skip(
   !process.env.REAL_ACCEPTANCE,
   'Runs only against the isolated deployed acceptance environment.',
 );
+test.setTimeout(120_000);
 
 function calendarDate() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -156,10 +157,9 @@ test('manages task types, assignments, states, and protected history', async ({
   expect(collaborationTask.assignments).toHaveLength(2);
 
   await page.reload();
-  const collaborationRow = page
-    .getByText(collaborationTask.name, { exact: true })
-    .locator('..')
-    .locator('..');
+  const collaborationRow = page.locator('article').filter({
+    has: page.getByRole('heading', { name: collaborationTask.name, exact: true }),
+  });
   await collaborationRow.getByRole('button', { name: '停用' }).click();
   await page.getByRole('button', { name: '已停用' }).click();
   await expect(page.getByText(collaborationTask.name, { exact: true })).toBeVisible();

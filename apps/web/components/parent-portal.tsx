@@ -159,12 +159,13 @@ function useApiData<T>(path: string, key: string, initialValue: T) {
       active = false;
     };
   }, [key, path]);
-  async function refresh(): Promise<void> {
+  async function refresh(): Promise<T> {
     try {
       const payload = await parentApi<Record<string, unknown>>(path);
       const value = readApiField<T>(payload, key);
       setData(value);
       setState(loadedState(value));
+      return value;
     } catch (error) {
       setState('error');
       throw error;
@@ -606,7 +607,8 @@ function TasksPage() {
     : familyNaturalDate(new Date(), 'Asia/Shanghai');
 
   async function refreshAuthority() {
-    await Promise.allSettled([resource.refresh(), types.refresh()]);
+    const [tasksResult] = await Promise.allSettled([resource.refresh(), types.refresh()]);
+    return tasksResult.status === 'fulfilled' ? tasksResult.value : null;
   }
 
   function writeError(error: unknown, fallback: string) {
@@ -661,7 +663,13 @@ function TasksPage() {
       setEditingTask(null);
     } catch (error) {
       writeError(error, '任务更新失败，请检查输入后重试，服务端状态已刷新。');
-      await refreshAuthority();
+      const authoritativeTasks = await refreshAuthority();
+      const authoritativeTask = authoritativeTasks?.find(({ id }) => id === editingTask.id);
+      if (authoritativeTask) {
+        setEditFrequencyKind(authoritativeTask.frequency.kind);
+        setEditCollaborationMode(authoritativeTask.collaboration_mode);
+        setEditingTask(authoritativeTask);
+      }
     } finally {
       setBusyAction('');
     }
@@ -1070,7 +1078,7 @@ function TasksPage() {
       )}
       {editingTask && (
         <Modal title="编辑家庭任务" onClose={() => setEditingTask(null)}>
-          <form className="space-y-4" onSubmit={updateTask}>
+          <form key={JSON.stringify(editingTask)} className="space-y-4" onSubmit={updateTask}>
             <label className="field-label">
               任务名称
               <input
