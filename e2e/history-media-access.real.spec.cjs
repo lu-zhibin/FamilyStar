@@ -149,13 +149,10 @@ test('reads reviewed solo and collaboration history with scoped media batches', 
     [firstSubmission, 'one'],
     [secondSubmission, 'two'],
   ]) {
-    const review = await parent.post(
-      `/api/v1/collaboration-submissions/${submission.id}/reviews`,
-      {
-        headers: { 'Idempotency-Key': `history-collab-review-${key}-${suffix}` },
-        data: { status: 'APPROVED' },
-      },
-    );
+    const review = await parent.post(`/api/v1/collaboration-submissions/${submission.id}/reviews`, {
+      headers: { 'Idempotency-Key': `history-collab-review-${key}-${suffix}` },
+      data: { status: 'APPROVED' },
+    });
     expect(review.status()).toBe(200);
   }
 
