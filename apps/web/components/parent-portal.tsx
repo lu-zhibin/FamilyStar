@@ -42,9 +42,11 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
+import type { FamilyModuleId, FamilyModulesReadModel } from '@familystar/shared';
 
 import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
 import { authApi, type SessionIdentity } from '../lib/auth';
+import { dependencyFeedback, familyModuleLabels, updateFamilyModule } from '../lib/family-modules';
 import {
   badgeConditionLabel,
   badgeConditionLabels,
@@ -96,6 +98,7 @@ import {
 import { ParentGrowthRecordsSection } from './growth-records';
 import { ParentAnalyticsSection, ParentDashboardSection } from './parent-read-models';
 import { ParentShell } from './parent-shell';
+import { publishFamilyModules } from './use-family-modules';
 
 type LoadState = ApiLoadState;
 type FamilyCodeLoadState = 'loading' | 'ready' | 'error';
@@ -4570,6 +4573,150 @@ function IntegrationSettingsCard({ type }: { type: IntegrationType }) {
   );
 }
 
+export function FamilyModulesSettingsPanel({
+  readModel,
+  state,
+  busyModule,
+  feedback,
+  onToggle,
+  onRefresh,
+}: Readonly<{
+  readModel: FamilyModulesReadModel | null;
+  state: LoadState;
+  busyModule: FamilyModuleId | null;
+  feedback: string;
+  onToggle: (moduleId: FamilyModuleId, enabled: boolean) => void;
+  onRefresh: () => void;
+}>) {
+  return (
+    <Panel>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <SectionTitle>家庭模块</SectionTitle>
+          <p className="text-caption font-bold text-brown-light">
+            核心模块始终启用。关闭可选模块会隐藏双端入口，已有数据保持原样。
+          </p>
+        </div>
+        {readModel && <span className="tag">配置版本 {readModel.version}</span>}
+      </div>
+      {readModel ? (
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {readModel.modules.map((module) => {
+            const dependencyNames = module.dependencies.map(
+              (dependency) => familyModuleLabels[dependency],
+            );
+            return (
+              <label
+                key={module.id}
+                className="flex min-h-24 items-start gap-3 rounded-card border border-wood bg-cream p-4"
+              >
+                <input
+                  className="mt-1 size-5 shrink-0 accent-leaf"
+                  type="checkbox"
+                  checked={module.enabled}
+                  disabled={!module.configurable || busyModule !== null}
+                  onChange={(event) => onToggle(module.id, event.target.checked)}
+                />
+                <span className="min-w-0">
+                  <strong className="block">{familyModuleLabels[module.id]}</strong>
+                  <small className="block font-bold text-brown-light">
+                    {module.category === 'core'
+                      ? '核心模块，持续可用'
+                      : dependencyNames.length > 0
+                        ? `依赖：${dependencyNames.join('、')}`
+                        : '独立可选模块'}
+                  </small>
+                  {busyModule === module.id && (
+                    <small className="mt-1 block font-extrabold text-leaf-dark" role="status">
+                      正在写入并锁定模块设置…
+                    </small>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state mt-4">
+          <ShieldCheck aria-hidden="true" />
+          <strong>{state === 'error' ? '模块设置读取失败' : '正在读取模块设置'}</strong>
+          {state === 'error' && (
+            <button className="secondary-button" type="button" onClick={onRefresh}>
+              刷新模块设置
+            </button>
+          )}
+        </div>
+      )}
+      {feedback && (
+        <p
+          className={`notice mt-4 ${feedback.includes('已') ? 'text-leaf-dark' : 'text-red'}`}
+          role={feedback.includes('已') ? 'status' : 'alert'}
+        >
+          {feedback}
+        </p>
+      )}
+      <p className="mt-4 text-label font-bold text-brown-light">
+        写入期间所有模块开关会暂时锁定。模块关闭只影响入口与访问，任务、积分、奖励和成长记录数据均会保留。
+      </p>
+    </Panel>
+  );
+}
+
+function FamilyModulesSettings() {
+  const resource = useApiData<FamilyModulesReadModel | null>('/family/modules', 'modules', null);
+  const [busyModule, setBusyModule] = useState<FamilyModuleId | null>(null);
+  const [feedback, setFeedback] = useState('');
+
+  async function toggle(moduleId: FamilyModuleId, enabled: boolean) {
+    if (!resource.data || busyModule) return;
+    const dependencyIssue = dependencyFeedback(resource.data, moduleId, enabled);
+    if (dependencyIssue) {
+      setFeedback(dependencyIssue);
+      return;
+    }
+    setBusyModule(moduleId);
+    setFeedback('');
+    try {
+      const result = await updateFamilyModule(parentApi, resource.data, moduleId, enabled);
+      resource.setData(result);
+      publishFamilyModules(result);
+      setFeedback(`${familyModuleLabels[moduleId]}已${enabled ? '启用' : '关闭'}。`);
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        const latest = await resource.refresh().catch(() => null);
+        if (latest) publishFamilyModules(latest);
+        const dependencies = Array.isArray(error.details?.dependencies)
+          ? (error.details.dependencies as FamilyModuleId[])
+              .map((dependency) => familyModuleLabels[dependency])
+              .join('、')
+          : '';
+        setFeedback(
+          error.details?.reason === 'VERSION_CONFLICT'
+            ? '配置已被其他家长更新，已刷新为最新版本，请重新操作。'
+            : dependencies
+              ? `依赖冲突，请先处理：${dependencies}`
+              : '模块依赖发生冲突，已刷新最新状态。',
+        );
+      } else {
+        setFeedback(error instanceof ParentApiError ? error.message : '模块设置保存失败，请重试。');
+      }
+    } finally {
+      setBusyModule(null);
+    }
+  }
+
+  return (
+    <FamilyModulesSettingsPanel
+      readModel={resource.data}
+      state={resource.state}
+      busyModule={busyModule}
+      feedback={feedback}
+      onToggle={(moduleId, enabled) => void toggle(moduleId, enabled)}
+      onRefresh={() => void resource.refresh().catch(() => undefined)}
+    />
+  );
+}
+
 function SettingsPage() {
   const resource = useApiData<FamilySettings | null>('/family/settings', 'settings', null);
   const [settings, setSettings] = useState(defaultSettings);
@@ -4599,6 +4746,9 @@ function SettingsPage() {
         description="维护打卡、审核、兑换和连续奖励规则。"
         state={resource.state}
       />
+      <div className="mb-5">
+        <FamilyModulesSettings />
+      </div>
       {resource.data ? (
         <form onSubmit={save}>
           <div className="grid gap-5 lg:grid-cols-2">

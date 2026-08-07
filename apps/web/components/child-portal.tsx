@@ -37,6 +37,14 @@ import {
   type RewardWorkflowRedemption,
   type RewardWorkflowWish,
 } from '../lib/reward-workflow';
+import {
+  publishSelectedTheme,
+  selectTheme,
+  selectionFromResponse,
+  trustedThemeTokens,
+  type ThemeCatalogItem,
+  type ThemeCatalogReadModel,
+} from '../lib/themes';
 import { ChildPointsBalance, ChildPointsPanel, ChildRankingsPanel } from './child-points-rankings';
 import { ChildShell } from './child-shell';
 import { ChildGrowthRecordsSection } from './growth-records';
@@ -727,6 +735,164 @@ function RecordsPage() {
   return <ChildGrowthRecordsSection />;
 }
 
+export function ThemeCatalog({
+  catalog,
+  state,
+  busyTheme,
+  feedback,
+  onSelect,
+  onRefresh,
+}: Readonly<{
+  catalog: ThemeCatalogReadModel | null;
+  state: LoadState;
+  busyTheme: string | null;
+  feedback: FeedbackState;
+  onSelect: (theme: ThemeCatalogItem) => void;
+  onRefresh: () => void;
+}>) {
+  return (
+    <section className="child-card child-animate-in child-delay-3">
+      <SectionHeading
+        title="主题皮肤"
+        action={catalog ? <span className="tag">当前 Lv.{catalog.current_level}</span> : undefined}
+      />
+      <p className="mb-4 text-caption font-bold text-brown-light">
+        等级达标后即可解锁。选择会立即应用到成长空间，并跟随账号保留。
+      </p>
+      {catalog ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {catalog.themes.map((theme) => {
+            const trusted = trustedThemeTokens(theme);
+            const selected = catalog.selected_theme === theme.key && theme.selected;
+            const locked = !theme.unlocked || !trusted;
+            return (
+              <article
+                key={theme.key}
+                className={`rounded-card border-2 p-4 ${selected ? 'border-leaf bg-leaf-light' : 'border-wood bg-cream'} ${locked ? 'opacity-70' : ''}`}
+                aria-label={`${theme.name}主题，${selected ? '当前选择' : locked ? '锁定' : '已解锁'}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <strong className="font-display text-section">{theme.name}</strong>
+                    <p className="text-label font-bold text-brown-light">{theme.description}</p>
+                  </div>
+                  {locked ? <LockKeyhole aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+                </div>
+                <div className="my-3 flex gap-2" aria-hidden="true">
+                  {trusted &&
+                    [
+                      trusted['--color-primary'],
+                      trusted['--color-secondary'],
+                      trusted['--color-background'],
+                    ].map((color) => (
+                      <span
+                        key={color}
+                        className="size-8 rounded-full border border-wood"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="tag">Lv.{theme.minimum_level} 解锁</span>
+                  <button
+                    type="button"
+                    className={selected ? 'secondary-button' : 'child-action-button'}
+                    disabled={locked || selected || busyTheme !== null}
+                    aria-pressed={selected}
+                    onClick={() => onSelect(theme)}
+                  >
+                    {busyTheme === theme.key
+                      ? '选择中…'
+                      : selected
+                        ? '当前选择'
+                        : locked
+                          ? '尚未解锁'
+                          : '选择主题'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty-state min-h-32">
+          <Sparkles aria-hidden="true" />
+          <strong>{state === 'error' ? '主题目录读取失败' : '正在读取主题目录'}</strong>
+          {state === 'error' && (
+            <button className="secondary-button" type="button" onClick={onRefresh}>
+              重新读取
+            </button>
+          )}
+        </div>
+      )}
+      <Feedback value={feedback} />
+    </section>
+  );
+}
+
+function ChildThemeSelector() {
+  const [catalog, setCatalog] = useState<ThemeCatalogReadModel | null>(null);
+  const [state, setState] = useState<LoadState>('loading');
+  const [busyTheme, setBusyTheme] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackState>(null);
+
+  async function refresh() {
+    setState('loading');
+    try {
+      const result = await childApi<ThemeCatalogReadModel>('/themes');
+      setCatalog(result);
+      setState('live');
+    } catch {
+      setState('error');
+    }
+  }
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  async function select(theme: ThemeCatalogItem) {
+    if (!catalog || busyTheme || !theme.unlocked || !trustedThemeTokens(theme)) return;
+    setBusyTheme(theme.key);
+    setFeedback(null);
+    try {
+      const response = await selectTheme(childApi, theme.key);
+      const updated = selectionFromResponse(catalog, response);
+      if (updated === catalog) {
+        setFeedback({ tone: 'error', message: '服务端主题配置未通过安全校验。' });
+        return;
+      }
+      setCatalog(updated);
+      publishSelectedTheme(response.theme);
+      setFeedback({ tone: 'success', message: `${response.theme.name} 主题已应用。` });
+    } catch (error) {
+      if (error instanceof ChildApiError && error.status === 409) await refresh();
+      setFeedback({
+        tone: 'error',
+        message:
+          error instanceof ChildApiError && error.status === 409
+            ? '当前等级尚未解锁该主题，目录已刷新。'
+            : error instanceof ChildApiError
+              ? error.message
+              : '主题选择失败，请稍后重试。',
+      });
+    } finally {
+      setBusyTheme(null);
+    }
+  }
+
+  return (
+    <ThemeCatalog
+      catalog={catalog}
+      state={state}
+      busyTheme={busyTheme}
+      feedback={feedback}
+      onSelect={(theme) => void select(theme)}
+      onRefresh={() => void refresh()}
+    />
+  );
+}
+
 function ProfilePage({
   level,
   child,
@@ -754,6 +920,7 @@ function ProfilePage({
         </div>
       </section>
       <ChildRankingsPanel />
+      <ChildThemeSelector />
       <section className="child-card child-animate-in child-delay-2">
         <SectionHeading title="我的空间" />
         <Link href={childSectionPaths.records} className="child-menu-item">
@@ -766,11 +933,6 @@ function ProfilePage({
           <span className="flex-1 text-left">修改密码</span>
           <span aria-hidden="true">›</span>
         </button>
-        <div className="child-menu-item opacity-70">
-          <Sparkles aria-hidden="true" className="text-pink-dark" />
-          <span className="flex-1">主题皮肤</span>
-          <span className="tag">即将推出</span>
-        </div>
       </section>
     </div>
   );

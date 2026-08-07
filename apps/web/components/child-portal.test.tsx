@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import { childSections } from '../lib/child-portal';
 import type { BadgeWallItem } from '../lib/badges';
-import { BadgeWall, ChildPortal, ChildRedemptionList, ChildWishWall } from './child-portal';
+import { findTheme } from '@familystar/shared';
+import {
+  BadgeWall,
+  ChildPortal,
+  ChildRedemptionList,
+  ChildWishWall,
+  ThemeCatalog,
+} from './child-portal';
 
 const badgeTemplate = {
   id: 'badge-1',
@@ -22,6 +29,50 @@ const badgeTemplate = {
 };
 
 describe('ChildPortal', () => {
+  it('renders unlocked, locked, and selected theme catalog states', () => {
+    const starlight = findTheme('starlight')!;
+    const forest = findTheme('forest')!;
+    const markup = renderToStaticMarkup(
+      <ThemeCatalog
+        catalog={{
+          current_level: 3,
+          selected_theme: 'starlight',
+          themes: [
+            {
+              key: starlight.key,
+              name: starlight.name,
+              description: starlight.description,
+              minimum_level: starlight.minimumLevel,
+              tokens: starlight.tokens,
+              unlocked: true,
+              selected: true,
+            },
+            {
+              key: forest.key,
+              name: forest.name,
+              description: forest.description,
+              minimum_level: forest.minimumLevel,
+              tokens: forest.tokens,
+              unlocked: false,
+              selected: false,
+            },
+          ],
+        }}
+        state="live"
+        busyTheme={null}
+        feedback={null}
+        onSelect={() => undefined}
+        onRefresh={() => undefined}
+      />,
+    );
+    expect(markup).toContain('Starlight主题，当前选择');
+    expect(markup).toContain('Forest主题，锁定');
+    expect(markup).toContain('Lv.5 解锁');
+    expect(markup).toContain('尚未解锁');
+    expect(markup.match(/disabled=""/g)).toHaveLength(2);
+    expect(markup).toContain('background-color:#4f46e5');
+  });
+
   it.each(childSections)(
     'renders the %s route loading boundary with shared navigation',
     (section) => {

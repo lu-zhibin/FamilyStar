@@ -8,6 +8,7 @@ import {
   BadgeTemplateCatalog,
   BadgeTemplateFields,
   FamilyCodeCard,
+  FamilyModulesSettingsPanel,
   FamilyProfileFields,
   FrequencyFields,
   Modal,
@@ -65,6 +66,50 @@ const reward: ParentReward = {
 };
 
 describe('ParentPortal', () => {
+  it('renders module dependencies, retained-data guidance, and a global write lock', () => {
+    const markup = renderToStaticMarkup(
+      <FamilyModulesSettingsPanel
+        readModel={{
+          version: 4,
+          modules: [
+            {
+              id: 'points',
+              category: 'core',
+              enabled: true,
+              configurable: false,
+              dependencies: ['check-in'],
+            },
+            {
+              id: 'rewards',
+              category: 'optional',
+              enabled: true,
+              configurable: true,
+              dependencies: ['points', 'levels'],
+            },
+            {
+              id: 'levels',
+              category: 'optional',
+              enabled: true,
+              configurable: true,
+              dependencies: ['points'],
+            },
+          ],
+        }}
+        state="live"
+        busyModule="rewards"
+        feedback="配置已被其他家长更新，已刷新为最新版本，请重新操作。"
+        onToggle={() => undefined}
+        onRefresh={() => undefined}
+      />,
+    );
+    expect(markup).toContain('配置版本 4');
+    expect(markup).toContain('依赖：积分、等级');
+    expect(markup).toContain('已有数据保持原样');
+    expect(markup).toContain('正在写入并锁定模块设置');
+    expect(markup.match(/disabled=""/g)).toHaveLength(3);
+    expect(markup).toContain('已刷新为最新版本');
+  });
+
   it.each(parentSections)('renders the %s route with shared navigation', (section) => {
     const markup = renderToStaticMarkup(<ParentPortal section={section} />);
 

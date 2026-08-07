@@ -463,6 +463,8 @@ export class ParentApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ParentApiError';
@@ -479,8 +481,13 @@ export async function parentApi<T>(path: string, init?: RequestInit): Promise<T>
   const payload = (await response.json().catch(() => null)) as ApiResponse<T> | null;
 
   if (!response.ok || !payload?.success) {
-    const message = payload && !payload.success ? payload.error.message : '服务暂时不可用';
-    throw new ParentApiError(message, response.status);
+    const error = payload && !payload.success ? payload.error : undefined;
+    throw new ParentApiError(
+      error?.message ?? '服务暂时不可用',
+      response.status,
+      error?.code,
+      error?.details,
+    );
   }
 
   return payload.data;

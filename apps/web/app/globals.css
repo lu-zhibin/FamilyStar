@@ -284,6 +284,18 @@
     @apply rounded-card-lg border border-wood bg-white p-5 shadow-warm mobile:p-4;
   }
 
+  .child-theme-shell {
+    background: var(--color-background, var(--color-cream));
+    color: var(--color-text, var(--color-brown));
+    transition:
+      background-color 180ms ease,
+      color 180ms ease;
+  }
+
+  .child-theme-shell[data-theme] .child-card {
+    background-color: var(--color-surface);
+  }
+
   .child-avatar,
   .child-profile-avatar {
     @apply grid size-12 shrink-0 place-items-center rounded-full bg-gradient-to-br from-sun to-orange font-display text-title text-brown shadow-warm;
