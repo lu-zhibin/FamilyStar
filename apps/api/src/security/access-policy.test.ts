@@ -30,6 +30,12 @@ describe('route access policy', () => {
     ['DELETE', '/api/v1/family/badge-templates/template-id', 'parent'],
     ['POST', '/api/v1/family/badge-awards', 'parent'],
     ['GET', '/api/v1/badges/me', 'child'],
+    ['GET', '/api/v1/notifications', 'authenticated'],
+    ['GET', '/api/v1/notifications/unread-count', 'authenticated'],
+    ['PATCH', '/api/v1/notifications/notification-id/read', 'authenticated'],
+    ['PATCH', '/api/v1/notifications/read-all', 'authenticated'],
+    ['GET', '/api/v1/notification-preferences', 'authenticated'],
+    ['PATCH', '/api/v1/notification-preferences', 'authenticated'],
   ] satisfies ReadonlyArray<readonly [string, string, RequiredRole]>)(
     'assigns %s %s to %s',
     (method, path, role) => {
@@ -88,8 +94,15 @@ describe('route access policy', () => {
       ['PATCH', '/api/v1/family/badge-awards/award-id'],
       ['DELETE', '/api/v1/family/badge-awards/award-id'],
       ['POST', '/api/v1/family/badge-templates/template-id'],
+      ['POST', '/api/v1/notifications'],
+      ['PATCH', '/api/v1/notifications/unread-count'],
+      ['GET', '/api/v1/notifications/notification-id/read'],
+      ['POST', '/api/v1/notifications/read-all'],
+      ['POST', '/api/v1/notification-preferences'],
     ]) {
-      expect(resolveRouteAccessPolicy(method!, path!)?.role).toBe('authenticated');
+      const policy = resolveRouteAccessPolicy(method!, path!);
+      expect(policy?.role).toBe('authenticated');
+      if (path!.includes('notification')) expect(policy?.module).toBeUndefined();
     }
   });
 

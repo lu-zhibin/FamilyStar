@@ -1,0 +1,140 @@
+import type { PrismaClient } from '@prisma/client';
+import { describe, expect, it, vi } from 'vitest';
+
+import { PrismaNotificationRepository } from './prisma-repository.js';
+
+const familyId = '01989a58-c542-7abc-8def-0123456789ac';
+const recipientId = '01989a58-c542-7abc-8def-0123456789ab';
+
+describe('PrismaNotificationRepository', () => {
+  it('queries limit plus one notifications after a descending compound cursor', async () => {
+    const findMany = vi.fn().mockResolvedValue([]);
+    const repository = new PrismaNotificationRepository({
+      notification: { findMany },
+    } as unknown as PrismaClient);
+    const cursor = {
+      createdAt: new Date('2026-08-07T10:00:00.000Z'),
+      id: '01989a58-c542-7abc-8def-0123456789ad',
+    };
+
+    await repository.list({ familyId, recipientId, cursor, limit: 20 });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          familyId,
+          recipientId,
+          OR: [
+            { createdAt: { lt: cursor.createdAt } },
+            { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+          ],
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: 21,
+      }),
+    );
+  });
+
+  it('counts unread notifications inside both family and recipient boundaries', async () => {
+    const count = vi.fn().mockResolvedValue(3);
+    const repository = new PrismaNotificationRepository({
+      notification: { count },
+    } as unknown as PrismaClient);
+
+    await expect(repository.countUnread(familyId, recipientId)).resolves.toBe(3);
+    expect(count).toHaveBeenCalledWith({ where: { familyId, recipientId, readAt: null } });
+  });
+
+  it('marks one notification idempotently and then reads only the scoped record', async () => {
+    const record = { id: 'notification-1', readAt: new Date('2026-08-07T12:00:00.000Z') };
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const findFirst = vi.fn().mockResolvedValue(record);
+    const transaction = { notification: { updateMany, findFirst } };
+    const repository = new PrismaNotificationRepository({
+      $transaction: vi.fn(async (work) => work(transaction)),
+    } as unknown as PrismaClient);
+    const readAt = new Date('2026-08-07T12:00:00.000Z');
+
+    await expect(
+      repository.markRead({ familyId, recipientId, notificationId: 'notification-1', readAt }),
+    ).resolves.toBe(record);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'notification-1', familyId, recipientId, readAt: null },
+      data: { readAt },
+    });
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'notification-1', familyId, recipientId } }),
+    );
+  });
+
+  it('marks every unread notification idempotently within the same scope', async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 2 });
+    const repository = new PrismaNotificationRepository({
+      notification: { updateMany },
+    } as unknown as PrismaClient);
+    const readAt = new Date('2026-08-07T12:00:00.000Z');
+
+    await expect(repository.markAllRead({ familyId, recipientId, readAt })).resolves.toBe(2);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { familyId, recipientId, readAt: null },
+      data: { readAt },
+    });
+  });
+
+  it('distinguishes an inactive recipient from a missing preference', async () => {
+    const userFindFirst = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: recipientId });
+    const preferenceFindFirst = vi.fn().mockResolvedValue(null);
+    const repository = new PrismaNotificationRepository({
+      user: { findFirst: userFindFirst },
+      notificationPreference: { findFirst: preferenceFindFirst },
+    } as unknown as PrismaClient);
+
+    await expect(repository.findPreference(familyId, recipientId)).resolves.toBeUndefined();
+    await expect(repository.findPreference(familyId, recipientId)).resolves.toBeNull();
+    expect(userFindFirst).toHaveBeenCalledWith({
+      where: { id: recipientId, familyId, deletedAt: null },
+      select: { id: true },
+    });
+    expect(preferenceFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { familyId, userId: recipientId } }),
+    );
+  });
+
+  it('upserts a preference only after verifying active family membership', async () => {
+    const userFindFirst = vi.fn().mockResolvedValue({ id: recipientId });
+    const saved = {
+      inAppEnabled: false,
+      browserEnabled: true,
+      typeSettings: { REVIEW: false },
+      quietHoursEnabled: false,
+      quietHoursStart: null,
+      quietHoursEnd: null,
+    };
+    const upsert = vi.fn().mockResolvedValue(saved);
+    const transaction = {
+      user: { findFirst: userFindFirst },
+      notificationPreference: { upsert },
+    };
+    const repository = new PrismaNotificationRepository({
+      $transaction: vi.fn(async (work) => work(transaction)),
+    } as unknown as PrismaClient);
+
+    await expect(
+      repository.savePreference({ familyId, userId: recipientId, preference: saved }),
+    ).resolves.toEqual(saved);
+    expect(userFindFirst).toHaveBeenCalledWith({
+      where: { id: recipientId, familyId, deletedAt: null },
+      select: { id: true },
+    });
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: recipientId },
+        create: expect.objectContaining({ familyId, userId: recipientId }),
+        update: expect.objectContaining({ familyId, inAppEnabled: false }),
+      }),
+    );
+  });
+});

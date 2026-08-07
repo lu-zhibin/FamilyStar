@@ -46,6 +46,8 @@ import { registerAnalyticsRoutes } from './analytics/routes.js';
 import type { AnalyticsOperations } from './analytics/types.js';
 import { registerGrowthRecordRoutes } from './growth-records/routes.js';
 import type { GrowthRecordOperations } from './growth-records/types.js';
+import { registerNotificationRoutes } from './notifications/routes.js';
+import type { NotificationOperations } from './notifications/types.js';
 
 const service: ServiceInfo = {
   name: 'FamilyStar API',
@@ -76,6 +78,7 @@ export type CreateAppOptions = {
   badgeOperations?: BadgeOperations;
   analyticsOperations?: AnalyticsOperations;
   growthRecordOperations?: GrowthRecordOperations;
+  notificationOperations?: NotificationOperations;
   secureCookies?: boolean;
 };
 
@@ -103,6 +106,7 @@ export function createApp({
   badgeOperations,
   analyticsOperations,
   growthRecordOperations,
+  notificationOperations,
   secureCookies = false,
 }: CreateAppOptions) {
   const app = new Hono<AppEnvironment>();
@@ -199,6 +203,9 @@ export function createApp({
   }
   if (growthRecordOperations) {
     registerGrowthRecordRoutes(apiV1, growthRecordOperations, secureCookies);
+  }
+  if (notificationOperations) {
+    registerNotificationRoutes(apiV1, notificationOperations, secureCookies);
   }
 
   app.notFound((context) =>

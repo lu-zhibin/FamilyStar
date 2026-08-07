@@ -54,6 +54,8 @@ import { PrismaAnalyticsRepository } from './analytics/prisma-repository.js';
 import { AnalyticsService } from './analytics/service.js';
 import { PrismaGrowthRecordRepository } from './growth-records/prisma-repository.js';
 import { GrowthRecordService } from './growth-records/service.js';
+import { PrismaNotificationRepository } from './notifications/prisma-repository.js';
+import { NotificationService } from './notifications/service.js';
 
 const environment = parseEnvironment(process.env);
 const credentialVault = initializeCredentialVault(environment);
@@ -145,6 +147,10 @@ const growthRecordOperations = new GrowthRecordService({
   repository: new PrismaGrowthRecordRepository(prisma),
   sessions: sessionStore,
 });
+const notificationOperations = new NotificationService({
+  repository: new PrismaNotificationRepository(prisma),
+  sessions: sessionStore,
+});
 const levelOperations = new LevelService({
   repository: new PrismaLevelRepository(prisma),
   sessions: sessionStore,
@@ -195,6 +201,7 @@ const app = createApp({
   badgeOperations,
   analyticsOperations,
   growthRecordOperations,
+  notificationOperations,
   secureCookies: environment.NODE_ENV === 'production',
 });
 
