@@ -1,7 +1,8 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 
-import { InvalidTaskError } from './task-service.js';
+import { InvalidTaskError, TaskStateConflictError } from './task-service.js';
 import type {
+  ChildCollaborationRoundRecord,
   TaskAssignmentInput,
   TaskCreateInput,
   TaskFrequency,
@@ -77,6 +78,46 @@ function assignmentData(familyId: string, taskId: string | undefined, input: Tas
   };
 }
 
+function semanticAssignment(input: TaskAssignmentInput) {
+  return {
+    childId: input.childId,
+    customPoints: input.customPoints ?? null,
+    customFrequency: input.customFrequency ?? null,
+    customCheckType: input.customCheckType ?? null,
+    customVerifyMode: input.customVerifyMode ?? null,
+    startDate: input.startDate,
+    endDate: input.endDate ?? null,
+  };
+}
+
+function changesHistoricalMeaning(current: TaskRecord, input: TaskPatch): boolean {
+  const fields = [
+    ['taskTypeId', current.taskTypeId],
+    ['name', current.name],
+    ['checkType', current.checkType],
+    ['verifyMode', current.verifyMode],
+    ['collaborationMode', current.collaborationMode],
+    ['basePoints', current.basePoints],
+  ] as const;
+  if (fields.some(([key, value]) => input[key] !== undefined && input[key] !== value)) return true;
+  if (
+    input.frequency !== undefined &&
+    JSON.stringify(input.frequency) !== JSON.stringify(current.frequency)
+  ) {
+    return true;
+  }
+  if (input.assignments !== undefined) {
+    const next = [...input.assignments]
+      .map(semanticAssignment)
+      .sort((left, right) => left.childId.localeCompare(right.childId));
+    const existing = [...current.assignments]
+      .map(semanticAssignment)
+      .sort((left, right) => left.childId.localeCompare(right.childId));
+    return JSON.stringify(next) !== JSON.stringify(existing);
+  }
+  return false;
+}
+
 async function validateRelations(
   transaction: Prisma.TransactionClient,
   familyId: string,
@@ -129,6 +170,74 @@ export class PrismaTaskRepository implements TaskRepository {
     return tasks.map(record);
   }
 
+  async listCollaborationRoundsForChild(
+    familyId: string,
+    childId: string,
+    taskIds: readonly string[],
+    dateValue: string,
+  ): Promise<readonly ChildCollaborationRoundRecord[]> {
+    if (taskIds.length === 0) return [];
+    const roundDate = new Date(`${dateValue}T00:00:00.000Z`);
+    const rounds = await this.prisma.collaborationRound.findMany({
+      where: {
+        familyId,
+        taskId: { in: [...taskIds] },
+        startDate: { lte: roundDate },
+        endDate: { gte: roundDate },
+        participants: { some: { familyId, childId, status: 'ACTIVE' } },
+      },
+      select: {
+        id: true,
+        taskId: true,
+        status: true,
+        startDate: true,
+        endDate: true,
+        participants: {
+          where: { familyId, status: 'ACTIVE' },
+          orderBy: { createdAt: 'asc' },
+          select: { childId: true, child: { select: { nickname: true } } },
+        },
+        submissions: {
+          where: { familyId },
+          select: {
+            id: true,
+            childId: true,
+            status: true,
+            submittedAt: true,
+            reviewComment: true,
+          },
+        },
+      },
+      orderBy: [{ taskId: 'asc' }, { startDate: 'desc' }],
+    });
+    return rounds.map((round) => {
+      const submissionByChild = new Map(
+        round.submissions.map((submission) => [submission.childId, submission]),
+      );
+      const mySubmission = submissionByChild.get(childId);
+      return {
+        id: round.id,
+        taskId: round.taskId,
+        status: round.status,
+        startDate: date(round.startDate),
+        endDate: date(round.endDate),
+        participants: round.participants.map((participant) => ({
+          nickname: participant.child.nickname,
+          isCurrentChild: participant.childId === childId,
+          submissionStatus: submissionByChild.get(participant.childId)?.status ?? null,
+        })),
+        mySubmission: mySubmission
+          ? {
+              id: mySubmission.id,
+              status: mySubmission.status,
+              submittedAt: mySubmission.submittedAt,
+              reviewComment: mySubmission.reviewComment,
+            }
+          : null,
+      };
+    });
+  }
+
   async findById(familyId: string, taskId: string): Promise<TaskRecord | null> {
     const task = await this.prisma.task.findFirst({
       where: { id: taskId, familyId, deletedAt: null },
@@ -170,9 +279,18 @@ export class PrismaTaskRepository implements TaskRepository {
     return this.prisma.$transaction(async (transaction) => {
       const current = await transaction.task.findFirst({
         where: { id: taskId, familyId, deletedAt: null },
-        select: { taskTypeId: true },
+        include: {
+          ...taskInclude,
+          _count: { select: { checkIns: true, collaborationRounds: true } },
+        },
       });
       if (!current) return null;
+      if (
+        (current._count.checkIns > 0 || current._count.collaborationRounds > 0) &&
+        changesHistoricalMeaning(record(current), input)
+      ) {
+        throw new TaskStateConflictError();
+      }
       if (input.assignments || input.taskTypeId !== undefined) {
         await validateRelations(
           transaction,

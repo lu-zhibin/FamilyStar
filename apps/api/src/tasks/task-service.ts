@@ -164,7 +164,27 @@ export class TaskService implements TaskOperations {
         endDate: assignment.endDate ?? null,
       });
     }
-    return { date: input.date, tasks: visibleTasks };
+    const collaborationTaskIds = visibleTasks
+      .filter(({ collaborationMode }) => collaborationMode === 'COLLAB')
+      .map(({ taskId }) => taskId);
+    const rounds = await this.dependencies.repository.listCollaborationRoundsForChild(
+      session.familyId,
+      session.subjectId,
+      collaborationTaskIds,
+      input.date,
+    );
+    const roundByTaskId = new Map<string, (typeof rounds)[number]>();
+    for (const round of rounds) {
+      if (!roundByTaskId.has(round.taskId)) roundByTaskId.set(round.taskId, round);
+    }
+    return {
+      date: input.date,
+      tasks: visibleTasks.map((task) =>
+        task.collaborationMode === 'COLLAB'
+          ? { ...task, collaborationRound: roundByTaskId.get(task.taskId) ?? null }
+          : task,
+      ),
+    };
   }
 
   async create(input: { sessionToken?: string; task: TaskCreateInput }) {

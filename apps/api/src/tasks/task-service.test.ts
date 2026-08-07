@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { InvalidTaskError, TaskService, TaskStateConflictError } from './task-service.js';
-import type { TaskCreateInput, TaskRecord, TaskRepository } from './types.js';
+import type {
+  ChildCollaborationRoundRecord,
+  TaskCreateInput,
+  TaskRecord,
+  TaskRepository,
+} from './types.js';
 
 const familyId = 'family-1';
 const parentSession = {
@@ -26,15 +31,22 @@ function input(overrides: Partial<TaskCreateInput> = {}): TaskCreateInput {
   };
 }
 
-function repository(): TaskRepository & { values: TaskRecord[] } {
+function repository(): TaskRepository & {
+  values: TaskRecord[];
+  rounds: ChildCollaborationRoundRecord[];
+} {
   const values: TaskRecord[] = [];
   return {
     values,
+    rounds: [],
     async list() {
       return this.values;
     },
     async listForChild() {
       return this.values;
+    },
+    async listCollaborationRoundsForChild(_familyId, _childId, taskIds) {
+      return this.rounds.filter(({ taskId }) => taskIds.includes(taskId));
     },
     async findById(_familyId, taskId) {
       return this.values.find(({ id }) => id === taskId) ?? null;
@@ -244,5 +256,66 @@ describe('TaskService', () => {
         }),
       ],
     });
+  });
+
+  it('attaches the current child collaboration round and preserves solo task shape', async () => {
+    const repo = repository();
+    await repo.create(familyId, input());
+    const collaborationTask = await repo.create(
+      familyId,
+      input({
+        collaborationMode: 'COLLAB',
+        assignments: [
+          { childId: 'child-1', startDate: '2026-08-01' },
+          { childId: 'child-2', startDate: '2026-08-01' },
+        ],
+      }),
+    );
+    repo.rounds.push({
+      id: 'round-1',
+      taskId: collaborationTask.id,
+      status: 'COMPLETED',
+      startDate: '2026-08-05',
+      endDate: '2026-08-05',
+      participants: [
+        { nickname: '小星', isCurrentChild: true, submissionStatus: 'APPROVED' },
+        { nickname: '小月', isCurrentChild: false, submissionStatus: 'APPROVED' },
+      ],
+      mySubmission: {
+        id: 'submission-1',
+        status: 'APPROVED',
+        submittedAt: new Date('2026-08-05T10:00:00.000Z'),
+        reviewComment: null,
+      },
+    });
+
+    const result = await service(repo, childSession).service.listMine({
+      sessionToken: 'session',
+      date: '2026-08-05',
+    });
+
+    expect(result.tasks[0]).not.toHaveProperty('collaborationRound');
+    expect(result.tasks[1]).toMatchObject({
+      collaborationMode: 'COLLAB',
+      collaborationRound: { id: 'round-1', status: 'COMPLETED' },
+    });
+  });
+
+  it('returns a null round for a due collaboration task before scheduling', async () => {
+    const repo = repository();
+    await repo.create(
+      familyId,
+      input({
+        collaborationMode: 'COLLAB',
+        assignments: [
+          { childId: 'child-1', startDate: '2026-08-01' },
+          { childId: 'child-2', startDate: '2026-08-01' },
+        ],
+      }),
+    );
+
+    await expect(
+      service(repo, childSession).service.listMine({ sessionToken: 'session', date: '2026-08-05' }),
+    ).resolves.toMatchObject({ tasks: [{ collaborationRound: null }] });
   });
 });

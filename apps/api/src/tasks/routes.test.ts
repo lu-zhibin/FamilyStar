@@ -77,6 +77,22 @@ function taskOperations(): TaskOperations {
             verifyMode: task.verifyMode,
             startDate: task.assignments[0]!.startDate,
             endDate: null,
+            collaborationRound: {
+              id: 'round-1',
+              status: 'ACTIVE',
+              startDate: '2026-08-01',
+              endDate: '2026-08-01',
+              participants: [
+                { nickname: '小星', isCurrentChild: true, submissionStatus: 'REJECTED' },
+                { nickname: '小月', isCurrentChild: false, submissionStatus: 'APPROVED' },
+              ],
+              mySubmission: {
+                id: 'submission-1',
+                status: 'REJECTED',
+                submittedAt: new Date('2026-08-01T10:00:00.000Z'),
+                reviewComment: '请补拍全景',
+              },
+            },
           },
         ],
       };
@@ -251,10 +267,27 @@ describe('task type HTTP routes', () => {
           name: '一起整理房间',
           points: 10,
           check_type: 'PHOTO',
+          collaboration_round: {
+            id: 'round-1',
+            status: 'ACTIVE',
+            participant_count: 2,
+            approved_count: 1,
+            participants: [
+              { nickname: '小星', is_me: true, submission_status: 'REJECTED' },
+              { nickname: '小月', is_me: false, submission_status: 'APPROVED' },
+            ],
+            my_submission: {
+              id: 'submission-1',
+              status: 'REJECTED',
+              submitted_at: '2026-08-01T10:00:00.000Z',
+              review_comment: '请补拍全景',
+            },
+          },
         },
       ],
     });
     expect(JSON.stringify(body.data)).not.toContain('family_id');
     expect(JSON.stringify(body.data)).not.toContain('child_id');
+    expect(JSON.stringify(body.data)).not.toMatch(/content_text|media_ids|attempts|reviewed_by/);
   });
 });

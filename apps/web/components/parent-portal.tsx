@@ -53,8 +53,10 @@ import {
   buildTaskDraft,
   buildTaskPatch,
   copyTextToClipboard,
+  familyNaturalDate,
   formatFrequency,
   parentApi,
+  ParentApiError,
   type CosIntegrationDraft,
   type EmailIntegrationDraft,
   type FamilyProfile,
@@ -62,8 +64,12 @@ import {
   type IntegrationType,
   type ParentChild,
   type ParentSection,
+  type ParentTask,
+  type ParentTaskType,
   type ReviewTargetType,
+  type TaskAssignment,
   type TaskCollaborationMode,
+  type TaskFrequency,
 } from '../lib/parent-portal';
 import { uploadMediaFile } from '../lib/media-upload';
 import { ParentGrowthRecordsSection } from './growth-records';
@@ -74,27 +80,9 @@ type LoadState = ApiLoadState;
 type FamilyCodeLoadState = 'loading' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'error';
 type FrequencyKind = 'daily' | 'weekly_count' | 'weekdays' | 'date_range';
-type TaskFrequency =
-  | { kind: 'daily' }
-  | { kind: 'weekly_count'; count: number }
-  | { kind: 'weekdays'; weekdays: number[] }
-  | { kind: 'date_range'; start_date: string; end_date: string };
 type Child = ParentChild;
-type Task = {
-  id: string;
-  task_type_id: string;
-  name: string;
-  description: string | null;
-  submission_guide: string | null;
-  base_points: number;
-  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
-  check_type: string;
-  verify_mode: string;
-  collaboration_mode: string;
-  frequency: TaskFrequency;
-  assignments: Array<{ child_id: string }>;
-};
-type TaskType = { id: string; name: string };
+type Task = ParentTask;
+type TaskType = ParentTaskType;
 type Reward = {
   id: string;
   name: string;
@@ -375,39 +363,222 @@ function FrequencyFields({
 export function TaskAssigneeFields({
   mode,
   assignees,
+  naturalDate = new Date().toISOString().slice(0, 10),
+  assignments = [],
 }: {
   mode: TaskCollaborationMode;
   assignees: ReadonlyArray<Pick<Child, 'id' | 'nickname'>>;
+  naturalDate?: string;
+  assignments?: readonly TaskAssignment[];
 }) {
-  if (mode === 'SOLO') {
-    return (
-      <label className="field-label">
-        分配孩子
-        <select className="field" name="child_id" required>
-          {assignees.map((child) => (
-            <option key={child.id} value={child.id}>
-              {child.nickname}
-            </option>
-          ))}
-        </select>
-      </label>
+  const initialIds = assignments.length
+    ? assignments.map(({ child_id }) => child_id)
+    : assignees[0]
+      ? [assignees[0].id]
+      : [];
+  const [selectedIds, setSelectedIds] = useState(initialIds);
+  const [frequencyKinds, setFrequencyKinds] = useState<Record<string, string>>(
+    Object.fromEntries(
+      assignments.map((assignment) => [
+        assignment.child_id,
+        assignment.custom_frequency?.kind ?? '',
+      ]),
+    ),
+  );
+  const assignmentByChild = new Map(
+    assignments.map((assignment) => [assignment.child_id, assignment]),
+  );
+
+  function toggleChild(childId: string, selected: boolean) {
+    setSelectedIds((current) =>
+      selected ? [...new Set([...current, childId])] : current.filter((id) => id !== childId),
     );
   }
 
   return (
     <fieldset className="field-label md:col-span-2">
       <legend>参与孩子</legend>
-      <p className="mt-1 font-semibold text-brown-light">至少选择两名孩子共同完成任务</p>
+      <p className="mt-1 font-semibold text-brown-light">
+        {mode === 'COLLAB'
+          ? '至少选择两名孩子共同完成任务'
+          : '可选择多名孩子，每名孩子独立完成任务'}
+      </p>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {assignees.map((child) => (
           <label
             key={child.id}
             className="flex min-h-11 cursor-pointer items-center gap-3 rounded-btn border border-wood bg-cream px-3 text-body font-bold text-brown transition focus-within:border-leaf focus-within:ring-2 focus-within:ring-leaf"
           >
-            <input name="child_id" type="checkbox" value={child.id} />
+            <input
+              name="child_id"
+              type="checkbox"
+              value={child.id}
+              checked={selectedIds.includes(child.id)}
+              onChange={(event) => toggleChild(child.id, event.target.checked)}
+            />
             {child.nickname}
           </label>
         ))}
+      </div>
+      <div className="mt-3 space-y-3">
+        {assignees
+          .filter(({ id }) => selectedIds.includes(id))
+          .map((child) => {
+            const assignment = assignmentByChild.get(child.id);
+            const suffix = `:${child.id}`;
+            const customFrequency = assignment?.custom_frequency;
+            const frequencyKind = frequencyKinds[child.id] ?? customFrequency?.kind ?? '';
+            return (
+              <section key={child.id} className="rounded-card border border-wood bg-paper p-3">
+                <strong>{child.nickname}的独立配置</strong>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="field-label">
+                    自定义积分
+                    <input
+                      className="field"
+                      name={`custom_points${suffix}`}
+                      type="number"
+                      min="1"
+                      defaultValue={assignment?.custom_points}
+                      placeholder="使用基础积分"
+                    />
+                  </label>
+                  <label className="field-label">
+                    自定义频率
+                    <select
+                      className="field"
+                      name={`custom_frequency_kind${suffix}`}
+                      value={frequencyKind}
+                      onChange={(event) =>
+                        setFrequencyKinds((current) => ({
+                          ...current,
+                          [child.id]: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">使用任务频率</option>
+                      <option value="daily">每天</option>
+                      <option value="weekly_count">每周次数</option>
+                      <option value="weekdays">指定星期</option>
+                      <option value="date_range">日期范围</option>
+                    </select>
+                  </label>
+                  {frequencyKind === 'weekly_count' && (
+                    <label className="field-label">
+                      每周次数
+                      <input
+                        className="field"
+                        name={`custom_frequency_count${suffix}`}
+                        type="number"
+                        min="1"
+                        max="7"
+                        defaultValue={
+                          customFrequency?.kind === 'weekly_count' ? customFrequency.count : 1
+                        }
+                      />
+                    </label>
+                  )}
+                  {frequencyKind === 'weekdays' && (
+                    <fieldset className="field-label">
+                      <legend>执行星期</legend>
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        {[1, 2, 3, 4, 5, 6, 7].map((weekday) => (
+                          <label key={weekday} className="flex items-center gap-1 text-sm">
+                            <input
+                              name={`custom_frequency_weekdays${suffix}`}
+                              type="checkbox"
+                              value={weekday}
+                              defaultChecked={
+                                customFrequency?.kind === 'weekdays' &&
+                                customFrequency.weekdays.includes(weekday)
+                              }
+                            />
+                            {weekday}
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  )}
+                  {frequencyKind === 'date_range' && (
+                    <>
+                      <label className="field-label">
+                        频率开始日期
+                        <input
+                          className="field"
+                          name={`custom_frequency_start_date${suffix}`}
+                          type="date"
+                          defaultValue={
+                            customFrequency?.kind === 'date_range'
+                              ? customFrequency.start_date
+                              : naturalDate
+                          }
+                        />
+                      </label>
+                      <label className="field-label">
+                        频率结束日期
+                        <input
+                          className="field"
+                          name={`custom_frequency_end_date${suffix}`}
+                          type="date"
+                          defaultValue={
+                            customFrequency?.kind === 'date_range'
+                              ? customFrequency.end_date
+                              : naturalDate
+                          }
+                        />
+                      </label>
+                    </>
+                  )}
+                  <label className="field-label">
+                    自定义打卡方式
+                    <select
+                      className="field"
+                      name={`custom_check_type${suffix}`}
+                      defaultValue={assignment?.custom_check_type ?? ''}
+                    >
+                      <option value="">使用任务设置</option>
+                      <option value="TICK">勾选</option>
+                      <option value="TEXT">文字</option>
+                      <option value="PHOTO">照片</option>
+                      <option value="VIDEO">视频</option>
+                      <option value="MIXED">混合</option>
+                    </select>
+                  </label>
+                  <label className="field-label">
+                    自定义验收方式
+                    <select
+                      className="field"
+                      name={`custom_verify_mode${suffix}`}
+                      defaultValue={assignment?.custom_verify_mode ?? ''}
+                    >
+                      <option value="">使用任务设置</option>
+                      <option value="AUTO">自动验收</option>
+                      <option value="MANUAL">人工审核</option>
+                    </select>
+                  </label>
+                  <label className="field-label">
+                    开始日期
+                    <input
+                      className="field"
+                      name={`start_date${suffix}`}
+                      type="date"
+                      defaultValue={assignment?.start_date ?? naturalDate}
+                      required
+                    />
+                  </label>
+                  <label className="field-label">
+                    结束日期
+                    <input
+                      className="field"
+                      name={`end_date${suffix}`}
+                      type="date"
+                      defaultValue={assignment?.end_date ?? ''}
+                    />
+                  </label>
+                </div>
+              </section>
+            );
+          })}
       </div>
     </fieldset>
   );
@@ -417,30 +588,48 @@ function TasksPage() {
   const resource = useApiData<Task[]>('/family/tasks', 'tasks', []);
   const types = useApiData<TaskType[]>('/family/task-types', 'task_types', []);
   const children = useApiData<Child[]>('/family/children', 'children', []);
+  const profile = useApiData<FamilyProfile | null>('/family/profile', 'profile', null);
   const [filter, setFilter] = useState('all');
   const [open, setOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editingType, setEditingType] = useState<TaskType | 'create' | null>(null);
   const [createCollaborationMode, setCreateCollaborationMode] =
     useState<TaskCollaborationMode>('SOLO');
+  const [editCollaborationMode, setEditCollaborationMode] = useState<TaskCollaborationMode>('SOLO');
   const [createFrequencyKind, setCreateFrequencyKind] = useState<FrequencyKind>('daily');
   const [editFrequencyKind, setEditFrequencyKind] = useState<FrequencyKind>('daily');
   const [actionMessage, setActionMessage] = useState('');
+  const [busyAction, setBusyAction] = useState('');
   const tasks = resource.data.filter((task) => filter === 'all' || task.status === filter);
+  const naturalDate = profile.data
+    ? familyNaturalDate(new Date(), profile.data.time_zone)
+    : familyNaturalDate(new Date(), 'Asia/Shanghai');
+
+  async function refreshAuthority() {
+    await Promise.allSettled([resource.refresh(), types.refresh()]);
+  }
+
+  function writeError(error: unknown, fallback: string) {
+    setActionMessage(
+      error instanceof ParentApiError && error.status === 409
+        ? `操作冲突：${error.message} 已刷新服务端状态。`
+        : fallback,
+    );
+  }
 
   async function createTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busyAction) return;
     setActionMessage('');
     let draft: ReturnType<typeof buildTaskDraft>;
     try {
-      draft = buildTaskDraft(
-        new FormData(event.currentTarget),
-        new Date().toISOString().slice(0, 10),
-      );
+      draft = buildTaskDraft(new FormData(event.currentTarget), naturalDate);
     } catch (error) {
       setActionMessage(error instanceof Error ? error.message : '任务创建失败，请检查输入后重试。');
       return;
     }
 
+    setBusyAction('create-task');
     try {
       const data = await parentApi<{ task: Task }>('/family/tasks', {
         method: 'POST',
@@ -448,26 +637,136 @@ function TasksPage() {
       });
       resource.setData((items) => [data.task, ...items]);
       setOpen(false);
-    } catch {
-      setActionMessage('任务创建失败，请检查输入后重试。');
+    } catch (error) {
+      writeError(error, '任务创建失败，请检查输入后重试。');
+      await refreshAuthority();
+    } finally {
+      setBusyAction('');
     }
   }
 
   async function updateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!editingTask) return;
+    if (!editingTask || busyAction) return;
     setActionMessage('');
+    setBusyAction(`task:${editingTask.id}`);
     try {
       const data = await parentApi<{ task: Task }>(`/family/tasks/${editingTask.id}`, {
         method: 'PATCH',
-        body: JSON.stringify(buildTaskPatch(new FormData(event.currentTarget))),
+        body: JSON.stringify(buildTaskPatch(new FormData(event.currentTarget), naturalDate)),
       });
       resource.setData((items) =>
         items.map((item) => (item.id === data.task.id ? data.task : item)),
       );
       setEditingTask(null);
-    } catch {
-      setActionMessage('任务更新失败，请检查输入后重试。');
+    } catch (error) {
+      writeError(error, '任务更新失败，请检查输入后重试，服务端状态已刷新。');
+      await refreshAuthority();
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function setTaskStatus(task: Task, action: 'activate' | 'deactivate' | 'archive') {
+    if (busyAction) return;
+    if (action === 'archive' && !window.confirm(`确认归档“${task.name}”？归档后只能查看。`)) return;
+    setBusyAction(`${action}:${task.id}`);
+    setActionMessage('');
+    try {
+      const data = await parentApi<{ task: Task }>(`/family/tasks/${task.id}/${action}`, {
+        method: 'POST',
+      });
+      resource.setData((items) =>
+        items.map((item) => (item.id === data.task.id ? data.task : item)),
+      );
+    } catch (error) {
+      writeError(error, '任务状态更新失败，服务端状态已刷新。');
+      await refreshAuthority();
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function saveTaskType(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingType || busyAction) return;
+    const form = new FormData(event.currentTarget);
+    const body = {
+      name: String(form.get('name') ?? '').trim(),
+      icon: String(form.get('icon') ?? '').trim(),
+      default_verify_mode: String(form.get('default_verify_mode') ?? 'MANUAL'),
+      ...(editingType === 'create'
+        ? {
+            sort_order: types.data.length
+              ? Math.max(...types.data.map(({ sort_order }) => sort_order)) + 1
+              : 0,
+          }
+        : {}),
+    };
+    setBusyAction('task-type');
+    setActionMessage('');
+    try {
+      if (editingType === 'create') {
+        const data = await parentApi<{ task_type: TaskType }>('/family/task-types', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        types.setData((items) => [...items, data.task_type]);
+      } else {
+        const data = await parentApi<{ task_type: TaskType }>(
+          `/family/task-types/${editingType.id}`,
+          { method: 'PATCH', body: JSON.stringify(body) },
+        );
+        types.setData((items) =>
+          items.map((item) => (item.id === data.task_type.id ? data.task_type : item)),
+        );
+      }
+      setEditingType(null);
+      await types.refresh();
+    } catch (error) {
+      writeError(error, '任务类型保存失败，服务端状态已刷新。');
+      await refreshAuthority();
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function moveTaskType(index: number, offset: -1 | 1) {
+    const target = types.data[index];
+    const neighbor = types.data[index + offset];
+    if (!target || !neighbor || busyAction) return;
+    setBusyAction(`type-sort:${target.id}`);
+    setActionMessage('');
+    try {
+      await parentApi(`/family/task-types/${target.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sort_order: neighbor.sort_order }),
+      });
+      await parentApi(`/family/task-types/${neighbor.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sort_order: target.sort_order }),
+      });
+      await types.refresh();
+    } catch (error) {
+      writeError(error, '任务类型排序失败，服务端状态已刷新。');
+      await refreshAuthority();
+    } finally {
+      setBusyAction('');
+    }
+  }
+
+  async function deleteTaskType(taskType: TaskType) {
+    if (busyAction || !window.confirm(`确认删除任务类型“${taskType.name}”？`)) return;
+    setBusyAction(`type-delete:${taskType.id}`);
+    setActionMessage('');
+    try {
+      await parentApi(`/family/task-types/${taskType.id}`, { method: 'DELETE' });
+      await types.refresh();
+    } catch (error) {
+      writeError(error, '该任务类型受保护或仍被任务使用，服务端状态已刷新。');
+      await refreshAuthority();
+    } finally {
+      setBusyAction('');
     }
   }
   return (
@@ -517,6 +816,74 @@ function TasksPage() {
         ))}
       </div>
       <Panel>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <SectionTitle>任务类型</SectionTitle>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={Boolean(busyAction)}
+            onClick={() => setEditingType('create')}
+          >
+            <Plus size={16} />
+            新建类型
+          </button>
+        </div>
+        <div className="table-list">
+          {types.data.map((taskType, index) => (
+            <article className="list-row" key={taskType.id}>
+              <span className="text-xl" aria-hidden="true">
+                {taskType.icon}
+              </span>
+              <div className="min-w-0 flex-1">
+                <strong>{taskType.name}</strong>
+                <p className="text-caption font-bold text-brown-light">
+                  {taskType.default_verify_mode === 'AUTO' ? '默认自动验收' : '默认人工审核'}
+                  {taskType.template_code ? ' · 预设类型' : ' · 自定义类型'}
+                </p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={`上移${taskType.name}`}
+                disabled={index === 0 || Boolean(busyAction)}
+                onClick={() => void moveTaskType(index, -1)}
+              >
+                ↑
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={`下移${taskType.name}`}
+                disabled={index === types.data.length - 1 || Boolean(busyAction)}
+                onClick={() => void moveTaskType(index, 1)}
+              >
+                ↓
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={`编辑类型${taskType.name}`}
+                disabled={Boolean(busyAction)}
+                onClick={() => setEditingType(taskType)}
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={`删除类型${taskType.name}`}
+                disabled={Boolean(taskType.template_code) || Boolean(busyAction)}
+                title={taskType.template_code ? '预设任务类型受保护' : '删除自定义任务类型'}
+                onClick={() => void deleteTaskType(taskType)}
+              >
+                <Trash2 size={16} />
+              </button>
+            </article>
+          ))}
+        </div>
+      </Panel>
+      <div className="h-5" />
+      <Panel>
         <SectionTitle>家庭任务</SectionTitle>
         <div className="table-list">
           {tasks.map((task) => (
@@ -554,11 +921,42 @@ function TasksPage() {
                 onClick={() => {
                   setActionMessage('');
                   setEditFrequencyKind(task.frequency.kind);
+                  setEditCollaborationMode(task.collaboration_mode);
                   setEditingTask(task);
                 }}
               >
                 <Pencil size={17} />
               </button>
+              {task.status === 'ACTIVE' && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={Boolean(busyAction)}
+                  onClick={() => void setTaskStatus(task, 'deactivate')}
+                >
+                  停用
+                </button>
+              )}
+              {task.status === 'INACTIVE' && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={Boolean(busyAction)}
+                  onClick={() => void setTaskStatus(task, 'activate')}
+                >
+                  启用
+                </button>
+              )}
+              {task.status !== 'ARCHIVED' && (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={Boolean(busyAction)}
+                  onClick={() => void setTaskStatus(task, 'archive')}
+                >
+                  归档
+                </button>
+              )}
             </article>
           ))}
           {tasks.length === 0 && (
@@ -582,6 +980,15 @@ function TasksPage() {
             <label className="field-label">
               任务说明
               <textarea className="field min-h-20 py-3" name="description" maxLength={1000} />
+            </label>
+            <label className="field-label">
+              提交指南
+              <textarea
+                className="field min-h-20 py-3"
+                name="submission_guide"
+                maxLength={10000}
+                placeholder="说明提交内容、照片角度或完成标准"
+              />
             </label>
             <div className="form-grid">
               <label className="field-label">
@@ -609,7 +1016,12 @@ function TasksPage() {
                   <option value="COLLAB">协作任务</option>
                 </select>
               </label>
-              <TaskAssigneeFields mode={createCollaborationMode} assignees={children.data} />
+              <TaskAssigneeFields
+                key={`create:${createCollaborationMode}`}
+                mode={createCollaborationMode}
+                assignees={children.data}
+                naturalDate={naturalDate}
+              />
               <FrequencyFields kind={createFrequencyKind} onKindChange={setCreateFrequencyKind} />
               <label className="field-label">
                 打卡方式
@@ -646,8 +1058,12 @@ function TasksPage() {
                 {actionMessage}
               </p>
             )}
-            <button className="primary-button w-full" type="submit">
-              创建并启用
+            <button
+              className="primary-button w-full"
+              type="submit"
+              disabled={busyAction === 'create-task'}
+            >
+              {busyAction === 'create-task' ? '正在创建...' : '创建并启用'}
             </button>
           </form>
         </Modal>
@@ -674,6 +1090,15 @@ function TasksPage() {
                 defaultValue={editingTask.description ?? ''}
               />
             </label>
+            <label className="field-label">
+              提交指南
+              <textarea
+                className="field min-h-20 py-3"
+                name="submission_guide"
+                maxLength={10000}
+                defaultValue={editingTask.submission_guide ?? ''}
+              />
+            </label>
             <div className="form-grid">
               <label className="field-label">
                 任务类型
@@ -689,6 +1114,27 @@ function TasksPage() {
                   ))}
                 </select>
               </label>
+              <label className="field-label">
+                任务模式
+                <select
+                  className="field"
+                  name="collaboration_mode"
+                  value={editCollaborationMode}
+                  onChange={(event) =>
+                    setEditCollaborationMode(event.target.value as TaskCollaborationMode)
+                  }
+                >
+                  <option value="SOLO">单人独立</option>
+                  <option value="COLLAB">多人协作</option>
+                </select>
+              </label>
+              <TaskAssigneeFields
+                key={`edit:${editingTask.id}:${editCollaborationMode}`}
+                mode={editCollaborationMode}
+                assignees={children.data}
+                assignments={editingTask.assignments}
+                naturalDate={naturalDate}
+              />
               <FrequencyFields
                 kind={editFrequencyKind}
                 onKindChange={setEditFrequencyKind}
@@ -729,8 +1175,60 @@ function TasksPage() {
                 {actionMessage}
               </p>
             )}
-            <button className="primary-button w-full" type="submit">
-              保存修改
+            <button
+              className="primary-button w-full"
+              type="submit"
+              disabled={busyAction === `task:${editingTask.id}`}
+            >
+              {busyAction === `task:${editingTask.id}` ? '正在保存...' : '保存修改'}
+            </button>
+          </form>
+        </Modal>
+      )}
+      {editingType && (
+        <Modal
+          title={editingType === 'create' ? '新建任务类型' : '编辑任务类型'}
+          onClose={() => setEditingType(null)}
+        >
+          <form className="space-y-4" onSubmit={saveTaskType}>
+            <label className="field-label">
+              类型名称
+              <input
+                className="field"
+                name="name"
+                required
+                maxLength={80}
+                defaultValue={editingType === 'create' ? '' : editingType.name}
+              />
+            </label>
+            <label className="field-label">
+              图标
+              <input
+                className="field"
+                name="icon"
+                required
+                maxLength={80}
+                defaultValue={editingType === 'create' ? 'star' : editingType.icon}
+              />
+            </label>
+            <label className="field-label">
+              默认验收方式
+              <select
+                className="field"
+                name="default_verify_mode"
+                defaultValue={editingType === 'create' ? 'MANUAL' : editingType.default_verify_mode}
+              >
+                <option value="AUTO">自动验收</option>
+                <option value="MANUAL">人工审核</option>
+              </select>
+            </label>
+            {actionMessage && (
+              <p className="notice text-red" role="alert">
+                {actionMessage}
+              </p>
+            )}
+            <button className="primary-button w-full" type="submit" disabled={Boolean(busyAction)}>
+              {busyAction === 'task-type' ? '正在保存...' : '保存任务类型'}
             </button>
           </form>
         </Modal>

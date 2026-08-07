@@ -60,7 +60,7 @@ describe('ParentPortal', () => {
     );
   });
 
-  it('renders one assignee for solo tasks and multi-child choices for collaboration tasks', () => {
+  it('renders multi-child choices and per-child settings for every task mode', () => {
     const children = [
       { id: 'child-1', nickname: '小星', grade: null, gender: 'female' as const },
       { id: 'child-2', nickname: '小月', grade: null, gender: 'male' as const },
@@ -70,8 +70,10 @@ describe('ParentPortal', () => {
       <TaskAssigneeFields mode="COLLAB" assignees={children} />,
     );
 
-    expect(solo).toContain('<select class="field" name="child_id" required="">');
+    expect(solo.match(/type="checkbox"/g)).toHaveLength(2);
     expect(solo).toContain('小星');
+    expect(solo).toContain('可选择多名孩子，每名孩子独立完成任务');
+    expect(solo).toContain('小星的独立配置');
     expect(collaboration).toContain('至少选择两名孩子共同完成任务');
     expect(collaboration.match(/type="checkbox"/g)).toHaveLength(2);
     expect(collaboration.match(/name="child_id"/g)).toHaveLength(2);

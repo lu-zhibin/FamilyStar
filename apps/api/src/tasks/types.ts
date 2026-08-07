@@ -1,6 +1,7 @@
 import type {
   CollaborationMode,
   CollaborationRoundStatus,
+  SubmissionStatus,
   TaskCheckType,
   TaskStatus,
   TaskTypeTemplate,
@@ -105,6 +106,26 @@ export type TaskRecord = Readonly<{
   assignments: readonly TaskAssignmentRecord[];
 }>;
 
+export type ChildCollaborationRound = Readonly<{
+  id: string;
+  status: CollaborationRoundStatus;
+  startDate: string;
+  endDate: string;
+  participants: readonly Readonly<{
+    nickname: string;
+    isCurrentChild: boolean;
+    submissionStatus: SubmissionStatus | null;
+  }>[];
+  mySubmission: Readonly<{
+    id: string;
+    status: SubmissionStatus;
+    submittedAt: Date;
+    reviewComment: string | null;
+  }> | null;
+}>;
+
+export type ChildCollaborationRoundRecord = ChildCollaborationRound & Readonly<{ taskId: string }>;
+
 export type ChildTaskRecord = Readonly<{
   taskId: string;
   taskAssignmentId: string;
@@ -118,6 +139,7 @@ export type ChildTaskRecord = Readonly<{
   verifyMode: VerifyMode;
   startDate: string;
   endDate: string | null;
+  collaborationRound?: ChildCollaborationRound | null;
 }>;
 
 export type TaskCreateInput = Readonly<{
@@ -144,6 +166,12 @@ export type TaskPatch = Partial<
 export type TaskRepository = {
   list(familyId: string): Promise<readonly TaskRecord[]>;
   listForChild(familyId: string, childId: string): Promise<readonly TaskRecord[]>;
+  listCollaborationRoundsForChild(
+    familyId: string,
+    childId: string,
+    taskIds: readonly string[],
+    date: string,
+  ): Promise<readonly ChildCollaborationRoundRecord[]>;
   findById(familyId: string, taskId: string): Promise<TaskRecord | null>;
   create(familyId: string, input: TaskCreateInput): Promise<TaskRecord>;
   update(familyId: string, taskId: string, input: TaskPatch): Promise<TaskRecord | null>;

@@ -250,10 +250,10 @@ describe('task creation payload', () => {
     });
   });
 
-  it('requires one child for solo tasks and at least two for collaboration tasks', () => {
+  it('requires at least one child for solo tasks and two for collaboration tasks', () => {
     const solo = taskForm('');
     solo.delete('child_id');
-    expect(() => buildTaskDraft(solo, '2026-08-01')).toThrow('单人任务需要选择一名孩子。');
+    expect(() => buildTaskDraft(solo, '2026-08-01')).toThrow('单人任务至少需要选择一名孩子。');
 
     const collaboration = taskForm('');
     collaboration.set('collaboration_mode', 'COLLAB');
@@ -274,18 +274,23 @@ describe('task update payload', () => {
     form.set('base_points', '20');
     form.set('frequency_kind', 'weekly_count');
     form.set('frequency_count', '3');
+    form.set('collaboration_mode', 'SOLO');
+    form.set('child_id', 'child-1');
     return form;
   }
 
-  it('builds the editable task fields without replacing assignments', () => {
-    expect(buildTaskPatch(taskForm('  完成后勾选  '))).toEqual({
+  it('builds editable fields and complete assignments', () => {
+    expect(buildTaskPatch(taskForm('  完成后勾选  '), '2026-08-01')).toEqual({
       task_type_id: 'type-2',
       name: '每天整理书桌',
       description: '完成后勾选',
+      submission_guide: null,
       check_type: 'TICK',
       verify_mode: 'AUTO',
+      collaboration_mode: 'SOLO',
       frequency: { kind: 'weekly_count', count: 3 },
       base_points: 20,
+      assignments: [{ child_id: 'child-1', start_date: '2026-08-01' }],
     });
   });
 

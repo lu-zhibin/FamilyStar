@@ -100,6 +100,58 @@ export function canAccessParentPortal(role: string | null): boolean {
 type TaskFormData = Pick<FormData, 'get' | 'getAll'>;
 type ChildFormData = Pick<FormData, 'get'>;
 export type TaskCollaborationMode = 'SOLO' | 'COLLAB';
+export type TaskCheckType = 'TICK' | 'TEXT' | 'PHOTO' | 'VIDEO' | 'MIXED';
+export type TaskVerifyMode = 'AUTO' | 'MANUAL';
+export type TaskStatus = 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+export type TaskFrequency =
+  | Readonly<{ kind: 'daily' }>
+  | Readonly<{ kind: 'weekly_count'; count: number }>
+  | Readonly<{ kind: 'weekdays'; weekdays: readonly number[] }>
+  | Readonly<{ kind: 'date_range'; start_date: string; end_date: string }>;
+export type TaskAssignment = Readonly<{
+  id?: string;
+  child_id: string;
+  custom_points?: number;
+  custom_frequency?: TaskFrequency;
+  custom_check_type?: TaskCheckType;
+  custom_verify_mode?: TaskVerifyMode;
+  start_date: string;
+  end_date?: string;
+}>;
+export type ParentTask = Readonly<{
+  id: string;
+  task_type_id: string;
+  name: string;
+  description: string | null;
+  submission_guide: string | null;
+  base_points: number;
+  status: TaskStatus;
+  check_type: TaskCheckType;
+  verify_mode: TaskVerifyMode;
+  collaboration_mode: TaskCollaborationMode;
+  frequency: TaskFrequency;
+  assignments: readonly TaskAssignment[];
+}>;
+export type ParentTaskType = Readonly<{
+  id: string;
+  template_code: string | null;
+  name: string;
+  icon: string;
+  default_verify_mode: TaskVerifyMode;
+  is_enabled: boolean;
+  sort_order: number;
+}>;
+
+export function familyNaturalDate(now: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
 
 export function buildFamilyProfilePatch(form: ChildFormData, canUpdateName: boolean) {
   const name = String(form.get('name') ?? '').trim();
@@ -139,7 +191,7 @@ export function buildChildCredentialPatch(form: ChildFormData) {
   return { credential_type: credentialType, credential };
 }
 
-export function buildTaskFrequency(form: TaskFormData) {
+export function buildTaskFrequency(form: TaskFormData): TaskFrequency {
   const kind = String(form.get('frequency_kind') ?? 'daily');
   if (kind === 'weekly_count') {
     return { kind, count: Number(form.get('frequency_count')) };
@@ -157,45 +209,106 @@ export function buildTaskFrequency(form: TaskFormData) {
   return { kind: 'daily' };
 }
 
+function optionalNumber(form: TaskFormData, name: string): number | undefined {
+  const value = String(form.get(name) ?? '').trim();
+  return value ? Number(value) : undefined;
+}
+
+function assignmentFrequency(form: TaskFormData, childId: string): TaskFrequency | undefined {
+  const suffix = `:${childId}`;
+  const kind = String(form.get(`custom_frequency_kind${suffix}`) ?? '');
+  if (!kind) return undefined;
+  if (kind === 'weekly_count') {
+    return { kind, count: Number(form.get(`custom_frequency_count${suffix}`)) };
+  }
+  if (kind === 'weekdays') {
+    return {
+      kind,
+      weekdays: form.getAll(`custom_frequency_weekdays${suffix}`).map(Number),
+    };
+  }
+  if (kind === 'date_range') {
+    return {
+      kind,
+      start_date: String(form.get(`custom_frequency_start_date${suffix}`) ?? ''),
+      end_date: String(form.get(`custom_frequency_end_date${suffix}`) ?? ''),
+    };
+  }
+  if (kind === 'daily') return { kind };
+  throw new Error('请选择有效的逐孩频率。');
+}
+
+function buildTaskAssignments(form: TaskFormData, startDate: string, mode: TaskCollaborationMode) {
+  const childIds = [...new Set(form.getAll('child_id').map(String).filter(Boolean))];
+  if (mode === 'SOLO' && childIds.length === 0) {
+    throw new Error('单人任务至少需要选择一名孩子。');
+  }
+  if (mode === 'COLLAB' && childIds.length < 2) {
+    throw new Error('协作任务至少需要选择两名孩子。');
+  }
+  return childIds.map((childId): TaskAssignment => {
+    const suffix = `:${childId}`;
+    const customPoints = optionalNumber(form, `custom_points${suffix}`);
+    const customFrequency = assignmentFrequency(form, childId);
+    const customCheckType = String(form.get(`custom_check_type${suffix}`) ?? '') as
+      TaskCheckType | '';
+    const customVerifyMode = String(form.get(`custom_verify_mode${suffix}`) ?? '') as
+      TaskVerifyMode | '';
+    const assignmentStartDate = String(form.get(`start_date${suffix}`) ?? '').trim() || startDate;
+    const endDate = String(form.get(`end_date${suffix}`) ?? '').trim();
+    return {
+      child_id: childId,
+      start_date: assignmentStartDate,
+      ...(endDate ? { end_date: endDate } : {}),
+      ...(customPoints === undefined ? {} : { custom_points: customPoints }),
+      ...(customFrequency === undefined ? {} : { custom_frequency: customFrequency }),
+      ...(customCheckType ? { custom_check_type: customCheckType } : {}),
+      ...(customVerifyMode ? { custom_verify_mode: customVerifyMode } : {}),
+    };
+  });
+}
+
 export function buildTaskDraft(form: TaskFormData, startDate: string) {
   const description = String(form.get('description') ?? '').trim();
+  const submissionGuide = String(form.get('submission_guide') ?? '').trim();
   const collaborationMode = String(form.get('collaboration_mode') ?? 'SOLO');
   if (collaborationMode !== 'SOLO' && collaborationMode !== 'COLLAB') {
     throw new Error('请选择有效的任务模式。');
-  }
-
-  const childIds = [...new Set(form.getAll('child_id').map(String).filter(Boolean))];
-  if (collaborationMode === 'SOLO' && childIds.length !== 1) {
-    throw new Error('单人任务需要选择一名孩子。');
-  }
-  if (collaborationMode === 'COLLAB' && childIds.length < 2) {
-    throw new Error('协作任务至少需要选择两名孩子。');
   }
 
   return {
     task_type_id: String(form.get('task_type_id') ?? ''),
     name: String(form.get('name') ?? ''),
     ...(description ? { description } : {}),
-    check_type: String(form.get('check_type') ?? ''),
-    verify_mode: String(form.get('verify_mode') ?? ''),
+    ...(submissionGuide ? { submission_guide: submissionGuide } : {}),
+    check_type: String(form.get('check_type') ?? '') as TaskCheckType,
+    verify_mode: String(form.get('verify_mode') ?? '') as TaskVerifyMode,
     collaboration_mode: collaborationMode,
     frequency: buildTaskFrequency(form),
     base_points: Number(form.get('base_points')),
-    assignments: childIds.map((childId) => ({ child_id: childId, start_date: startDate })),
+    assignments: buildTaskAssignments(form, startDate, collaborationMode),
   };
 }
 
-export function buildTaskPatch(form: TaskFormData) {
+export function buildTaskPatch(form: TaskFormData, startDate = '') {
   const description = String(form.get('description') ?? '').trim();
+  const submissionGuide = String(form.get('submission_guide') ?? '').trim();
+  const collaborationMode = String(form.get('collaboration_mode') ?? 'SOLO');
+  if (collaborationMode !== 'SOLO' && collaborationMode !== 'COLLAB') {
+    throw new Error('请选择有效的任务模式。');
+  }
 
   return {
     task_type_id: String(form.get('task_type_id') ?? ''),
     name: String(form.get('name') ?? '').trim(),
     description: description || null,
-    check_type: String(form.get('check_type') ?? ''),
-    verify_mode: String(form.get('verify_mode') ?? ''),
+    submission_guide: submissionGuide || null,
+    check_type: String(form.get('check_type') ?? '') as TaskCheckType,
+    verify_mode: String(form.get('verify_mode') ?? '') as TaskVerifyMode,
+    collaboration_mode: collaborationMode,
     frequency: buildTaskFrequency(form),
     base_points: Number(form.get('base_points')),
+    assignments: buildTaskAssignments(form, startDate, collaborationMode),
   };
 }
 

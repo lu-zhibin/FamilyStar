@@ -300,6 +300,38 @@ function outputChildTask(value: ChildTaskRecord) {
     verify_mode: value.verifyMode,
     start_date: value.startDate,
     end_date: value.endDate,
+    ...(value.collaborationRound === undefined
+      ? {}
+      : {
+          collaboration_round:
+            value.collaborationRound === null
+              ? null
+              : {
+                  id: value.collaborationRound.id,
+                  status: value.collaborationRound.status,
+                  start_date: value.collaborationRound.startDate,
+                  end_date: value.collaborationRound.endDate,
+                  participant_count: value.collaborationRound.participants.length,
+                  approved_count: value.collaborationRound.participants.filter(
+                    ({ submissionStatus }) => submissionStatus === 'APPROVED',
+                  ).length,
+                  participants: value.collaborationRound.participants.map((participant) => ({
+                    nickname: participant.nickname,
+                    is_me: participant.isCurrentChild,
+                    submission_status: participant.submissionStatus,
+                  })),
+                  my_submission:
+                    value.collaborationRound.mySubmission === null
+                      ? null
+                      : {
+                          id: value.collaborationRound.mySubmission.id,
+                          status: value.collaborationRound.mySubmission.status,
+                          submitted_at:
+                            value.collaborationRound.mySubmission.submittedAt.toISOString(),
+                          review_comment: value.collaborationRound.mySubmission.reviewComment,
+                        },
+                },
+        }),
   };
 }
 
