@@ -1,11 +1,12 @@
 'use client';
 
-import { Bell, CheckCircle2, Gift, Home, LogOut, Trophy, UserRound } from 'lucide-react';
+import { CheckCircle2, Gift, Home, LogOut, Trophy, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
 import { authApi, clearStoredIdentity } from '../lib/auth';
-import { childSectionPaths, type ChildSection } from '../lib/child-portal';
+import { childApi, childSectionPaths, type ChildSection } from '../lib/child-portal';
+import { NotificationBell } from './notification-bell';
 
 const navigation = [
   { key: 'home', label: '主页', icon: Home },
@@ -23,7 +24,7 @@ export function ChildShell({
 }: Readonly<{
   children: ReactNode;
   child: { nickname: string } | undefined;
-  section: ChildSection;
+  section: ChildSection | 'notifications';
   onSwitch: () => void;
 }>) {
   const [logoutError, setLogoutError] = useState('');
@@ -62,12 +63,7 @@ export function ChildShell({
           </span>
         </button>
         <div className="flex items-center gap-2">
-          <button className="icon-button relative bg-white" aria-label="通知，即将推出">
-            <Bell aria-hidden="true" size={22} />
-            <span className="absolute -right-1 -top-1 rounded-pill bg-coral px-1.5 text-[10px] font-extrabold text-white">
-              Soon
-            </span>
-          </button>
+          <NotificationBell api={childApi} href="/child/notifications" className="bg-white" />
           <button
             type="button"
             className="icon-button bg-white"

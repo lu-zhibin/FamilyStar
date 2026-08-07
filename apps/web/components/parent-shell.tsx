@@ -3,7 +3,6 @@
 import {
   BarChart3,
   BadgeCheck,
-  Bell,
   BookHeart,
   CheckCheck,
   ClipboardList,
@@ -19,7 +18,8 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { authApi, clearStoredIdentity } from '../lib/auth';
-import { parentSectionPaths, type ParentSection } from '../lib/parent-portal';
+import { parentApi, parentSectionPaths, type ParentSection } from '../lib/parent-portal';
+import { NotificationBell } from './notification-bell';
 
 const navItems = [
   { key: 'dashboard', label: '总览', icon: Home },
@@ -37,7 +37,7 @@ const navItems = [
 export function ParentShell({
   children,
   section,
-}: Readonly<{ children: ReactNode; section: ParentSection }>) {
+}: Readonly<{ children: ReactNode; section: ParentSection | 'notifications' }>) {
   const [logoutError, setLogoutError] = useState('');
   const [loggingOut, setLoggingOut] = useState(false);
   const activeRef = useRef<HTMLAnchorElement>(null);
@@ -77,16 +77,7 @@ export function ParentShell({
             </div>
           </Link>
           <div className="flex items-center gap-2">
-            <button
-              className="icon-button relative"
-              aria-label="通知，即将推出"
-              title="通知即将推出"
-            >
-              <Bell aria-hidden="true" size={20} />
-              <span className="absolute -right-1 -top-1 rounded-pill bg-coral px-1.5 text-[10px] font-extrabold text-white">
-                Soon
-              </span>
-            </button>
+            <NotificationBell api={parentApi} href="/notifications" />
             <button
               type="button"
               className="icon-button"
