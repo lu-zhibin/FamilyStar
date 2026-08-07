@@ -220,6 +220,22 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwri
 - 时区使用 IANA 标识；截止时间使用严格 `HH:mm`；天数、小时和额度使用非负安全整数；Streak 天数固定为 3、7、14、30、60、100。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/family-settings`。
 
+## 家庭模块开发
+
+- 共享目录位于 `packages/shared/src/family-modules.ts`；核心模块、可选模块、默认状态和依赖必须在同一拓扑中维护。
+- API 通过 `Family.settings.modules` 保存可选状态并以 `settingsVersion` 保护更新。PATCH 仅接受可选模块，创建者权限和依赖冲突由领域服务验证。
+- 新增受模块控制的 API 时，在 `apps/api/src/security/access-policy.ts` 登记可选模块键；中间件只使用已认证会话的家庭读取状态。
+- Web 的路由映射位于 `apps/web/lib/family-modules.ts`。读取失败时核心入口保持可用，可选入口进入关闭状态；设置成功后发布同页更新事件。
+- 聚焦验证命令为 `pnpm exec vitest run packages/shared/src/family-modules.test.ts apps/api/src/family-settings apps/api/src/security apps/web/lib/family-modules.test.ts apps/web/components/portal-shells.test.tsx apps/web/components/parent-portal.test.tsx`。
+
+## 孩子主题开发
+
+- 共享主题目录位于 `packages/shared/src/themes.ts`；每个主题定义稳定键、最低等级和 5 个受控 CSS Token。
+- API 领域位于 `apps/api/src/themes/`。读取和写入始终限定会话家庭、孩子主体、`CHILD` 角色与活动状态，保存时再次校验最低等级。
+- 数据库迁移为 `User.selectedTheme` 提供 `starlight` 默认值及键格式 CHECK；新增主题时保持键长度不超过 40。
+- Web 只通过 `trustedThemeTokens()` 应用与共享目录完全匹配的 Token，孩子 Shell 监听选择事件并更新根容器 CSS variables。
+- 聚焦验证命令为 `pnpm exec vitest run packages/shared/src/themes.test.ts apps/api/src/themes apps/web/lib/themes.test.ts apps/web/components/child-portal.test.tsx apps/web/components/portal-shells.test.tsx`。
+
 ## 任务领域开发
 
 - 领域代码位于 `apps/api/src/tasks/`，任务类型、任务、分配、频率和协作调度均通过小型端口隔离 Prisma 与 HTTP。
@@ -298,6 +314,8 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwri
 - 提交审核历史迁移位于 `apps/api/prisma/migrations/20260731110000_add_submission_reviews/`，包含人工/超时来源及来源与审核人一致性约束。
 - 协作奖励快照迁移位于 `apps/api/prisma/migrations/20260731120000_add_collaboration_awards/`，追加 `points_earned`、`streak_multiplier` 及成对正值约束。
 - 奖励兑换与愿望保护迁移位于 `apps/api/prisma/migrations/20260731130000_add_reward_redemption_wish_guards/`，追加请求指纹、愿望终态时间、状态一致性约束、频次索引和退款唯一索引。
+- 家庭模块设置迁移位于 `apps/api/prisma/migrations/20260808100000_add_family_module_settings/`，补齐模块 JSON 并增加非负 `settings_version` 乐观锁。
+- 孩子主题迁移位于 `apps/api/prisma/migrations/20260808110000_add_user_selected_theme/`，增加默认主题和键格式约束。
 - Prisma Client 在 API 生产构建前自动生成。
 - `pnpm verify:data-model` 按目录顺序读取迁移历史，并检查核心模型、家庭边界、业务唯一键、Outbox 约束和关键索引。
 - 修改 datamodel 后先执行 `pnpm db:format`、`pnpm db:validate` 和 `pnpm db:generate`，再生成并审查 SQL 迁移。
@@ -333,7 +351,7 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 - 动态导入和运行时热插拔保留至 Phase 2。
 - 每个业务模块使用独立 workspace package，在 `src/manifest.json` 声明能力、依赖、权限和事件，并仅通过 `src/index.ts` 公开 manifest 与插件。
 - `@familystar/business-modules` 是应用组合入口；新增依赖时同步调整静态列表顺序，并确保每个依赖先于使用方。
-- 模块开关占位保持 `enabled: true` 和 `readOnly: true`，MVP 启动流程始终注册完整静态清单。
+- 进程启动仍注册完整静态插件清单；家庭模块设置负责 API 授权和 Web 可见性，不改变运行时插件装载。
 
 ## 事件与 Outbox 开发
 
@@ -349,6 +367,7 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 
 - `apps/web/tailwind.config.cjs` 将 FamilyStar 色彩、圆角、阴影、字号、字体和响应式边界公开为 Tailwind theme。
 - `apps/web/app/globals.css` 保存同源 CSS 变量、基础页面背景、焦点样式和减少动效偏好。
+- 孩子主题在 `.child-theme-shell` 根容器覆盖背景、表面、主色、辅色和文字 5 个变量；应用前必须通过共享目录值匹配校验。
 - `next/font/google` 自托管 Fredoka 与 Nunito，Tailwind 使用 `font-display` 和 `font-sans` 消费字体变量。
 - Lucide 图标使用 `lucide-react` 具名导入；装饰图标保持 `aria-hidden`，有语义图标提供可访问名称。
 - 页面容器最大宽度为 1200px，手机区间使用 16px 横向留白，其余区间使用 20px。
@@ -356,7 +375,7 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 ## 孩子端开发
 
 - 孩子端入口位于 `apps/web/app/child/`，六个 section 由 `apps/web/lib/child-portal.ts` 的固定白名单映射。
-- `ChildShell` 提供身份提示、账号切换、通知占位和五项固定底部导航；记录页沿用“我的”激活状态。
+- `ChildShell` 提供身份提示、账号切换、通知入口、模块过滤、主题应用和五项底部导航；记录页沿用“我的”激活状态。
 - `ChildPortal` 对等级、奖励、兑换、愿望、切换目标和今日任务使用同源 API。缺少聚合读取接口的区域显示受限空态。
 - 当前孩子由等级接口的 `user_id` 与真实切换目标关联；兑换和愿望响应按该 ID 过滤本人记录。主页与今日打卡页使用浏览器本地自然日期读取 `/tasks/me`，完整打卡提交表单后续接入。
 - 兑换写请求生成作用域幂等键，成功后使用服务端记录更新视图；失败时保留已加载数据并显示错误。

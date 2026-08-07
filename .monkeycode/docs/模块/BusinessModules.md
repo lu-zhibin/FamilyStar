@@ -36,9 +36,9 @@ tasks -> check-in -> points -> levels -> rewards
 
 各模块还声明自身领域所需的创建、更新、提交、审核和兑换状态事件。事件处理器与 Outbox 事务写入在对应领域任务中接入。
 
-## 模块开关占位
+## 家庭模块控制
 
-`MODULE_TOGGLE_PLACEHOLDERS` 为设置页提供与静态清单同序的元数据。每项固定为 `enabled: true`、`readOnly: true` 和 `status: coming-soon`。Phase 1 始终加载五个模块；动态 `import()` 和可变运行时装载进入 Phase 2。
+进程启动继续按静态清单装载五个插件。产品补全任务 10 在 `@familystar/shared` 增加家庭级核心与可选模块目录，状态保存在 `Family.settings.modules`；安全中间件和 Web Shell 消费同一读取模型，在请求授权和页面可见性层控制可选能力。该设置不执行动态 `import()`，关闭后业务数据保持原状。
 
 ## 验证
 
@@ -49,6 +49,6 @@ tasks -> check-in -> points -> levels -> rewards
 - 每个订阅事件在静态列表中存在发布方。
 - 完整初始化、反向清理和部分初始化清理保持 Registry 一致。
 - 权限许可缺失时启动注册失败。
-- 设置开关占位保持只读和启用。
+- 家庭模块属性测试覆盖核心模块恒启用、依赖闭包、开关数据保留和家庭隔离。
 
 任务 2.7 使用真实静态模块完成 Registry 初始化、EventBus scope 创建、声明事件发布和反向清理集成验证。完成时全仓 22 个测试文件、173 个测试通过；生产构建和从 API workspace 加载 `dist` 入口均通过验证。

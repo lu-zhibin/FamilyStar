@@ -2,7 +2,7 @@
 
 ## 概述
 
-FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段及真实运行缺陷修复任务 13、14、15 已完成。家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
+FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段及真实运行缺陷修复任务 13、14、15 已完成，产品补全阶段 10 已交付家庭模块开关和孩子主题。家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
 
 浏览器界面由 Next.js 14 App Router 提供。REST API 使用 Hono 并通过 `@hono/node-server` 运行在 Node.js 上。跨应用类型从 `@familystar/shared` 导入，减少 Web 与 API 之间的契约漂移。
 
@@ -79,7 +79,7 @@ FamilyStar/
 - 应用入口：`src/app.ts`
 - 进程入口：`src/server.ts`
 - 职责：定义 Hono 应用并通过 Node.js HTTP 服务器启动。
-- 当前端点：服务信息、健康检查、家庭认证与设置、孩子本人密码修改、任务、单人/协作打卡、媒体、提交审核、等级、奖励、兑换和愿望。
+- 当前端点：服务信息、健康检查、家庭认证与设置、家庭模块、孩子主题与密码修改、任务、单人/协作打卡、媒体、提交审核、等级、奖励、兑换和愿望。
 - 启动配置：`src/config/environment.ts` 在监听端口前校验环境变量。
 - 请求基础：`src/http/` 提供请求 ID、JSON 日志和统一响应构造器。
 - 数据定义：`prisma/schema.prisma` 提供 PostgreSQL 核心实体、关系、索引和 Prisma Client 契约。
@@ -95,7 +95,8 @@ FamilyStar/
 - 事件基础：`src/events/` 提供 manifest 绑定 EventBus、事务 Outbox 端口、Prisma 仓储、分发器和幂等消费者。
 - 插件组合：进程监听前调用 `initializeBusinessModules()`，按静态依赖拓扑注册五个模块。
 - 家长认证：`src/family-auth/` 提供默认数据、密码策略、领域服务、Prisma 仓储、Redis 会话和 Hono 路由。
-- 家庭设置：`src/family-settings/` 提供规则规范化、家长权限、JSONB 仓储和 Hono 路由。
+- 家庭设置：`src/family-settings/` 提供规则规范化、模块目录与依赖校验、家长权限、JSONB 仓储和 Hono 路由。
+- 孩子主题：`src/themes/` 提供固定主题目录、等级解锁、孩子会话隔离、选择持久化和 Hono 路由。
 - 任务领域：`src/tasks/` 提供家庭任务类型、任务与分配、频率计算、协作调度、Prisma 仓储和 Hono 路由。
 - 提交审核：`src/check-ins/review-*` 提供家庭待审队列、家长审核、单批超时审核、Redis owner-lock、Prisma 事务仓储和 Hono 路由。
 - 等级领域：`src/levels/` 提供累计积分等级派生、只升不降读取、当前权益与下级进度，以及孩子本人和家长家庭范围 HTTP 路由。
@@ -139,6 +140,19 @@ FamilyStar/
 - 服务管理 IANA 时区、严格 `HH:mm` 截止时间、非负安全整数规则和六档固定 Streak 天数。
 - 读取时将历史空对象或缺失字段与当前默认值合并；更新时保存完整规范形态并保留家庭播报等无关 JSON 字段。
 - `Family.settings` 继续使用现有 JSONB 列，任务 3.5 未增加数据库结构迁移。
+
+### 家庭模块设置
+
+- `@familystar/shared` 定义 5 个始终启用的核心模块、6 个默认启用的可选模块及其依赖拓扑；API 和 Web 消费同一只读模型。
+- 模块状态保存在 `Family.settings.modules`，`Family.settingsVersion` 为读取模型和 PATCH 提供乐观并发版本；迁移为历史家庭补齐对象并增加非负版本约束。
+- 家长和孩子均可读取当前家庭模块；只有 `Family.createdById` 对应的家庭创建者可修改可选模块。启用时要求依赖已启用，关闭时要求已启用依赖方先关闭。
+- 关闭模块只改变设置。安全中间件按会话家庭拒绝被关闭模块的受保护 API，双端 Shell 过滤对应导航并为直接访问展示数据保留提示。
+
+### 孩子主题
+
+- `@familystar/shared` 提供 `starlight`、`ocean`、`forest` 和 `sunset` 固定目录，分别从等级 1、3、5、8 解锁，并只公开 5 个受控 CSS 颜色 Token。
+- `User.selectedTheme` 保存孩子选择并默认 `starlight`；主题仓储同时限定会话家庭、孩子主体、`CHILD` 角色、活动状态和最低等级。
+- 孩子 Shell 读取服务端权威目录并在根容器应用已选择主题。Web 只接受与共享目录完全匹配的 Token，选择成功后通过浏览器事件即时更新当前 Shell。
 
 ### 任务与周期调度
 
@@ -231,7 +245,7 @@ FamilyStar/
 - 位置：`packages/shared/`
 - 公开入口：`src/index.ts`
 - 职责：维护 Web、API、Worker 和业务模块都需要的稳定 TypeScript 契约。
-- 当前类型：媒体、服务信息、健康状态、错误码、统一 API 响应、插件 manifest 和版本化领域事件契约。
+- 当前类型：媒体、服务信息、健康状态、错误码、统一 API 响应、家庭模块目录、主题目录、插件 manifest 和版本化领域事件契约。
 - 当前运行时契约：错误码、PluginRegistry 以及事件名解析和不可变事件信封创建器。
 
 ### 插件内核
@@ -250,7 +264,7 @@ FamilyStar/
 - 每个模块仅从 `@familystar/shared` 导入插件公开契约，并通过自身 package 入口导出冻结 manifest 与插件。
 - 聚合包 `@familystar/business-modules` 固定 `tasks → check-in → points → levels → rewards` 注册顺序，依赖位于使用方之前。
 - 发布与订阅事件全部采用版本化命名；静态清单内的每个订阅事件均存在声明发布方。
-- `MODULE_TOGGLE_PLACEHOLDERS` 为五个模块提供 `enabled: true`、`readOnly: true` 和 `coming-soon` 元数据，不参与运行时装载决策。
+- 静态插件清单继续决定进程启动时的代码装载；家庭模块设置在请求授权和 Web 可见性层控制可选业务能力，不执行运行时热卸载。
 
 ### 事件基础设施
 
@@ -360,11 +374,11 @@ flowchart LR
 - Web 当前监听 Next.js 默认端口 `3000`，通过 `API_INTERNAL_URL` 将同源 `/api` 转发至 Hono。
 - 数据模型和迁移历史已就绪，事件基础设施提供可注入 Prisma Client 的适配器，API 组合根已实例化惰性 Prisma 与 Redis 认证适配器。
 - Docker 配置已建立 PostgreSQL 16 与 Redis 运行组合；当前 Agent 环境缺少 Docker CLI，容器启动和真实迁移执行仍需在具备 Docker 的运行环境验证。
-- 家长注册登录、双家长邀请、孩子档案、认证保护、会话撤销、家庭设置、家庭集成、任务、打卡、媒体和家长审核 API 已接入。
+- 家长注册登录、双家长邀请、孩子档案、认证保护、会话撤销、家庭设置、家庭模块、孩子主题、家庭集成、任务、打卡、媒体和家长审核 API 已接入。
 - 家庭邮件与 COS 配置支持读取、创建者维护、删除及验证端口；运行组合未提供外部连接 verifier 时，测试接口返回安全的 `503`。
 - Prisma Schema、迁移 SQL、容器契约和启动依赖顺序已静态验证；并发与失败回滚已通过状态型聚合套件验证。真实 PostgreSQL 行锁、约束和 Redis 服务端竞争由具备对应服务的 CI 或部署节点继续验证。
 - 静态 PluginRegistry、EventBus、Outbox、五个插件 manifest、API 和 Worker 启动组合已就绪；任务、打卡、审核超时、动态 Streak、单人/协作积分、等级和奖励领域行为已完成。
 - 当前错误映射测试覆盖 404 与未处理异常；后续业务错误按新增领域路由扩展。
 - Next.js 14 配置保留受支持的 `outputFileTracingRoot` 和同源 API rewrite；本地预览通过平台内置端口预览能力访问。
-- 孩子端实时读取等级、奖励、兑换、愿望、账号切换目标和今日任务；积分流水、排行、徽章与成长记录聚合继续显示明确受限空态。
+- 双端按家庭模块读取模型过滤导航并保护直接路由；孩子端实时读取并应用本人等级主题。
 - Playwright 使用同源 API 路由模拟覆盖家长端 9 页、孩子端 6 页、角色门禁、核心写入、PIN 锁定、COS multipart、兑换和退款；后端 HTTP 集成套件承担完整业务闭环验证。

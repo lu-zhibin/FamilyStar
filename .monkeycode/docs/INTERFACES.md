@@ -111,6 +111,18 @@
 
 读取历史 `{}` 或缺字段记录时，服务补齐 `Asia/Shanghai`、`23:59`、3 天、48 小时、额度 0 和默认六档倍率。PATCH 保存完整 camelCase JSONB 形态，并保留未由该接口管理的现有字段。
 
+### 家庭模块接口
+
+`GET /api/v1/family/modules` 允许任意有效家长或孩子会话读取当前家庭模块模型。响应包含 `version` 和按共享目录排序的 `modules`；每项包含 `id`、`category`、`enabled`、`configurable` 与 `dependencies`。核心模块始终启用且不可配置，缺失的可选模块状态默认启用。
+
+`PATCH /api/v1/family/modules` 仅允许家长会话，请求严格包含非负 `version` 和至少一个可选模块布尔值。领域服务进一步要求操作者为家庭创建者，并以 `Family.settingsVersion` 执行条件更新。版本变化、缺失依赖或仍有启用依赖方时返回 `409 CONFLICT`，`details.reason` 分别为 `VERSION_CONFLICT`、`MISSING_DEPENDENCY` 或 `DEPENDENCY_IN_USE`；依赖项通过 `details.dependencies` 返回。
+
+### 孩子主题接口
+
+`GET /api/v1/themes` 仅允许孩子会话，返回 `current_level`、`selected_theme` 和完整主题目录。每个主题包含 `key`、`name`、`description`、`minimum_level`、受控 `tokens`、`unlocked` 与 `selected`。
+
+`PATCH /api/v1/themes/selection` 严格接收 `{ "theme_key": "<小写主题键>" }`。服务从孩子会话取得家庭与主体，按服务端 `currentLevel` 验证解锁后更新 `User.selectedTheme`。未知键返回 `400 INVALID_REQUEST`；锁定主题返回 `409 CONFLICT`，详情包含主题键、要求等级和当前等级；家长会话返回 `403 FORBIDDEN`。
+
 ### 任务类型接口
 
 `GET /api/v1/family/task-types`、`POST /api/v1/family/task-types`、`PATCH /api/v1/family/task-types/:taskTypeId` 和 `DELETE /api/v1/family/task-types/:taskTypeId` 提供家庭任务类型管理。预设副本可覆盖，自定义类型可软删除；预设删除和活动任务引用冲突返回 `409 CONFLICT`。
@@ -193,7 +205,7 @@ Next.js App Router 首页提供统一家庭登录入口。页面先读取服务�
 
 ### 家长端与孩子端
 
-家长端使用 `/dashboard`、`/tasks`、`/reviews`、`/rewards`、`/levels`、`/stats`、`/records`、`/family` 和 `/settings`。孩子端使用 `/child`、`/child/check-ins`、`/child/achievements`、`/child/rewards`、`/child/records` 和 `/child/profile`。两个动态路由均限制为固定白名单，未知 section 返回 Next.js 404。
+家长端使用 `/dashboard`、`/tasks`、`/reviews`、`/rewards`、`/levels`、`/stats`、`/records`、`/family` 和 `/settings`。孩子端使用 `/child`、`/child/check-ins`、`/child/achievements`、`/child/rewards`、`/child/records` 和 `/child/profile`。两个动态路由均限制为固定白名单，未知 section 返回 Next.js 404；Shell 依据 `/family/modules` 过滤可选入口，设置页提供创建者模块开关，孩子资料页提供等级主题目录。
 
 孩子端五项底部导航将“我的记录”归入“我的”激活状态。家长和孩子动态路由在 Next.js 服务端调用会话接口校验角色，业务 API 继续以 HttpOnly 会话角色和本人范围作为授权边界；两个门户均提供当前会话退出入口。
 
@@ -350,7 +362,11 @@ Prisma 6.19.2 使用 PostgreSQL datasource，生成 29 个模型。主要聚合�
 
 ## 家庭设置接口
 
-`apps/api/src/family-settings/` 公开内部 `FamilySettingsOperations` 与 `FamilySettingsRepository` 端口。`FamilySettingsService` 负责家长会话、默认合并和规则校验，`PrismaFamilySettingsRepository` 仅操作活动家庭的 `Family.settings` JSONB，HTTP 路由负责 snake_case 映射和 Cookie 续期。
+`apps/api/src/family-settings/` 公开内部 `FamilySettingsOperations`、`FamilySettingsRepository` 与 `FamilyModuleStatusPort` 契约。`FamilySettingsService` 负责设置默认合并、模块目录解析、创建者权限、依赖校验和版本冲突；`PrismaFamilySettingsRepository` 以 `settingsVersion` 条件更新活动家庭的 `Family.settings` JSONB，HTTP 路由负责 snake_case 映射和 Cookie 续期。
+
+## 主题领域接口
+
+`apps/api/src/themes/` 公开 `ThemeOperations`、`ThemeRepository`、`ThemeSubject` 与 `ThemeView`。`ThemeService` 使用孩子会话和共享 `THEME_CATALOG` 派生解锁与选中状态；`PrismaThemeRepository` 按家庭、孩子角色和活动状态读取，并在保存时再次以最低等级条件保护写入。
 
 ## 任务领域接口
 
@@ -476,7 +492,7 @@ Next.js 将浏览器发往 `/api/:path*` 的请求转发至 `${API_INTERNAL_URL}
 
 ## 后续接口边界
 
-当前家庭接口已覆盖家长、邀请、孩子账号、认证保护、家庭设置、任务、打卡、媒体、家长审核、等级、奖励、兑换和愿望。审核超时由内部单批执行器处理并由独立 Worker 周期调用；动态 Streak、统一发分、等级同步和兑换预扣退款已作为内部事务能力接入。
+当前家庭接口已覆盖家长、邀请、孩子账号、认证保护、家庭设置、家庭模块、孩子主题、任务、打卡、媒体、家长审核、等级、奖励、兑换和愿望。审核超时由内部单批执行器处理并由独立 Worker 周期调用；动态 Streak、统一发分、等级同步和兑换预扣退款已作为内部事务能力接入。
 
 ## 契约验证
 
