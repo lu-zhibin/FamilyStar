@@ -110,6 +110,72 @@ describe('PrismaSubmissionReviewRepository', () => {
     );
   });
 
+  it('filters family review history across solo and collaboration targets', async () => {
+    const prisma = {
+      submissionReview: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            ...databaseReview(),
+            checkInAttempt: {
+              checkInId: 'check-in-1',
+              checkIn: {
+                task: { id: 'task-1', name: '晨读' },
+                child: { id: 'child-1', nickname: '小星' },
+              },
+            },
+            collaborationAttempt: null,
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    const result = await new PrismaSubmissionReviewRepository(prisma).listReviewHistory({
+      familyId: 'family-1',
+      childId: 'child-1',
+      taskId: 'task-1',
+      decision: 'REJECTED',
+      startAt: new Date('2026-07-01T00:00:00.000Z'),
+      endAtExclusive: new Date('2026-08-01T00:00:00.000Z'),
+      cursor: {
+        reviewedAt: new Date('2026-07-15T12:00:00.000Z'),
+        reviewId: '00000000-0000-4000-8000-000000000001',
+      },
+      limit: 25,
+    });
+
+    expect(result[0]).toMatchObject({
+      targetId: 'check-in-1',
+      task: { id: 'task-1', name: '晨读' },
+      child: { id: 'child-1', nickname: '小星' },
+    });
+    expect(prisma.submissionReview.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          familyId: 'family-1',
+          decision: 'REJECTED',
+          reviewedAt: {
+            gte: new Date('2026-07-01T00:00:00.000Z'),
+            lt: new Date('2026-08-01T00:00:00.000Z'),
+          },
+          AND: [
+            { OR: expect.any(Array) },
+            {
+              OR: [
+                { reviewedAt: { lt: new Date('2026-07-15T12:00:00.000Z') } },
+                {
+                  reviewedAt: new Date('2026-07-15T12:00:00.000Z'),
+                  id: { lt: '00000000-0000-4000-8000-000000000001' },
+                },
+              ],
+            },
+          ],
+        }),
+        orderBy: [{ reviewedAt: 'desc' }, { id: 'desc' }],
+        take: 26,
+      }),
+    );
+  });
+
   it('updates only a pending check-in and creates its review in one transaction', async () => {
     const transaction = {
       submissionReview: {

@@ -37,11 +37,16 @@ const pendingReview: PendingSubmissionReviewRecord = {
     },
   ],
   submittedAt: new Date('2026-07-31T11:00:00.000Z'),
+  reviewDeadlineAt: new Date('2026-08-02T11:00:00.000Z'),
+  isOverdue: false,
 };
 
 function operations(): SubmissionReviewOperations {
   return {
     listPendingReviews: vi.fn().mockResolvedValue({ reviews: [pendingReview] }),
+    listReviewHistory: vi
+      .fn()
+      .mockResolvedValue({ reviews: [], page: { has_more: false, next_cursor: null } }),
     reviewCheckIn: vi.fn().mockResolvedValue({ review }),
     reviewCollaborationSubmission: vi.fn().mockResolvedValue({
       review: {
@@ -84,6 +89,8 @@ describe('submission review HTTP routes', () => {
             content_text: '完成了两章',
             media: [{ type: 'IMAGE', mime_type: 'image/jpeg' }],
             submitted_at: '2026-07-31T11:00:00.000Z',
+            review_deadline_at: '2026-08-02T11:00:00.000Z',
+            is_overdue: false,
           },
         ],
       },
@@ -104,6 +111,43 @@ describe('submission review HTTP routes', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ data: { reviews: [] } });
+  });
+
+  it('lists filtered family review history with stable page metadata', async () => {
+    const submissionReviewOperations = operations();
+    vi.mocked(submissionReviewOperations.listReviewHistory!).mockResolvedValue({
+      reviews: [
+        {
+          ...review,
+          task: { id: '00000000-0000-4000-8000-000000000010', name: '晨读' },
+          child: { id: '00000000-0000-4000-8000-000000000011', nickname: '小星' },
+        },
+      ],
+      page: { has_more: false, next_cursor: null },
+    });
+    const app = createApp({ publicBaseUrl: 'http://localhost:3000', submissionReviewOperations });
+    const response = await app.request(
+      '/api/v1/family/submission-reviews/history?child_id=00000000-0000-4000-8000-000000000011&task_id=00000000-0000-4000-8000-000000000010&result=REJECTED&start_date=2026-07-01&end_date=2026-07-31&limit=25',
+      { headers: { cookie: 'familystar_session=parent-session' } },
+    );
+
+    expect(response.status).toBe(200);
+    expect(submissionReviewOperations.listReviewHistory).toHaveBeenCalledWith({
+      sessionToken: 'parent-session',
+      childId: '00000000-0000-4000-8000-000000000011',
+      taskId: '00000000-0000-4000-8000-000000000010',
+      decision: 'REJECTED',
+      startDate: '2026-07-01',
+      endDate: '2026-07-31',
+      cursor: null,
+      limit: 25,
+    });
+    expect(await response.json()).toMatchObject({
+      data: {
+        reviews: [{ task: { name: '晨读' }, child: { nickname: '小星' }, status: 'REJECTED' }],
+        page: { has_more: false, next_cursor: null },
+      },
+    });
   });
 
   it('accepts a check-in review and returns snake_case history data', async () => {

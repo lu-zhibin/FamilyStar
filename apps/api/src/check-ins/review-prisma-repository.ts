@@ -6,7 +6,8 @@ import type { PointsAwardPort, PointsTransactionWriter } from '../points/types.j
 import { SubmissionReviewError } from './review-service.js';
 import type {
   PendingReviewCandidate,
-  PendingSubmissionReviewRecord,
+  PendingSubmissionReviewItem,
+  ReviewHistoryRecord,
   SubmissionReviewRecord,
   SubmissionReviewRepository,
   SubmissionReviewTimeoutRepository,
@@ -18,6 +19,33 @@ const reviewInclude = {
 } satisfies Prisma.SubmissionReviewInclude;
 
 type ReviewWithTarget = Prisma.SubmissionReviewGetPayload<{ include: typeof reviewInclude }>;
+
+const historyInclude = {
+  checkInAttempt: {
+    select: {
+      checkInId: true,
+      checkIn: {
+        select: {
+          task: { select: { id: true, name: true } },
+          child: { select: { id: true, nickname: true } },
+        },
+      },
+    },
+  },
+  collaborationAttempt: {
+    select: {
+      submissionId: true,
+      submission: {
+        select: {
+          child: { select: { id: true, nickname: true } },
+          round: { select: { task: { select: { id: true, name: true } } } },
+        },
+      },
+    },
+  },
+} satisfies Prisma.SubmissionReviewInclude;
+
+type ReviewHistoryValue = Prisma.SubmissionReviewGetPayload<{ include: typeof historyInclude }>;
 
 function reviewRecord(value: ReviewWithTarget): SubmissionReviewRecord {
   if (value.targetType === 'CHECK_IN' && value.checkInAttempt) {
@@ -69,6 +97,24 @@ function familySettings(value: Prisma.JsonValue): Record<string, unknown> {
     : {};
 }
 
+function reviewHistoryRecord(value: ReviewHistoryValue): ReviewHistoryRecord {
+  if (value.targetType === 'CHECK_IN' && value.checkInAttempt) {
+    return {
+      ...reviewRecord(value),
+      task: value.checkInAttempt.checkIn.task,
+      child: value.checkInAttempt.checkIn.child,
+    };
+  }
+  if (value.targetType === 'COLLABORATION_SUBMISSION' && value.collaborationAttempt) {
+    return {
+      ...reviewRecord(value),
+      task: value.collaborationAttempt.submission.round.task,
+      child: value.collaborationAttempt.submission.child,
+    };
+  }
+  throw new Error('Submission review history target is inconsistent.');
+}
+
 export class PrismaSubmissionReviewRepository
   implements SubmissionReviewRepository, SubmissionReviewTimeoutRepository
 {
@@ -80,7 +126,7 @@ export class PrismaSubmissionReviewRepository
   async listPendingReviews(
     familyId: string,
     limit: number,
-  ): Promise<readonly PendingSubmissionReviewRecord[]> {
+  ): Promise<readonly PendingSubmissionReviewItem[]> {
     const [checkIns, collaborationSubmissions] = await Promise.all([
       this.prisma.checkIn.findMany({
         where: {
@@ -141,7 +187,7 @@ export class PrismaSubmissionReviewRepository
       }),
     ]);
 
-    const reviews: PendingSubmissionReviewRecord[] = [];
+    const reviews: PendingSubmissionReviewItem[] = [];
     for (const checkIn of checkIns) {
       const attempt = checkIn.attempts[0];
       if (!attempt) continue;
@@ -178,6 +224,62 @@ export class PrismaSubmissionReviewRepository
           left.targetId.localeCompare(right.targetId),
       )
       .slice(0, limit);
+  }
+
+  async findFamilySettings(familyId: string) {
+    const family = await this.prisma.family.findFirst({
+      where: { id: familyId, deletedAt: null },
+      select: { settings: true },
+    });
+    return family ? familySettings(family.settings) : null;
+  }
+
+  async listReviewHistory(input: Parameters<SubmissionReviewRepository['listReviewHistory']>[0]) {
+    const targetFilters =
+      input.childId === undefined && input.taskId === undefined
+        ? {}
+        : {
+            OR: [
+              {
+                checkInAttempt: {
+                  checkIn: {
+                    ...(input.childId === undefined ? {} : { childId: input.childId }),
+                    ...(input.taskId === undefined ? {} : { taskId: input.taskId }),
+                  },
+                },
+              },
+              {
+                collaborationAttempt: {
+                  submission: {
+                    ...(input.childId === undefined ? {} : { childId: input.childId }),
+                    ...(input.taskId === undefined ? {} : { round: { taskId: input.taskId } }),
+                  },
+                },
+              },
+            ],
+          };
+    const cursorFilter = input.cursor
+      ? {
+          OR: [
+            { reviewedAt: { lt: input.cursor.reviewedAt } },
+            { reviewedAt: input.cursor.reviewedAt, id: { lt: input.cursor.reviewId } },
+          ],
+        }
+      : {};
+    const values = await this.prisma.submissionReview.findMany({
+      where: {
+        familyId: input.familyId,
+        ...(input.decision === undefined ? {} : { decision: input.decision }),
+        ...(input.startAt === undefined || input.endAtExclusive === undefined
+          ? {}
+          : { reviewedAt: { gte: input.startAt, lt: input.endAtExclusive } }),
+        AND: [targetFilters, cursorFilter],
+      },
+      include: historyInclude,
+      orderBy: [{ reviewedAt: 'desc' }, { id: 'desc' }],
+      take: input.limit + 1,
+    });
+    return values.map(reviewHistoryRecord);
   }
 
   async findByIdempotencyKey(familyId: string, idempotencyKey: string) {

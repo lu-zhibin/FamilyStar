@@ -21,6 +21,8 @@ describe('route access policy', () => {
     ['GET', '/api/v1/family/children/child-id/points', 'parent'],
     ['GET', '/api/v1/check-ins/me/history', 'child'],
     ['GET', '/api/v1/family/check-ins/history', 'parent'],
+    ['GET', '/api/v1/family/submission-reviews/pending', 'parent'],
+    ['GET', '/api/v1/family/submission-reviews/history', 'parent'],
     ['POST', '/api/v1/media/access-urls', 'authenticated'],
   ] satisfies ReadonlyArray<readonly [string, string, RequiredRole]>)(
     'assigns %s %s to %s',

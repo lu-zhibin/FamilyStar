@@ -136,6 +136,11 @@ export const ROUTE_ACCESS_POLICIES: readonly RouteAccessPolicy[] = [
     role: 'parent',
   },
   {
+    methods: ['GET'],
+    path: /^\/api\/v1\/family\/submission-reviews\/(?:pending|history)$/,
+    role: 'parent',
+  },
+  {
     methods: ['POST'],
     path: /^\/api\/v1\/redemptions\/[^/]+\/(?:approve|fulfill|reject)$/,
     role: 'parent',

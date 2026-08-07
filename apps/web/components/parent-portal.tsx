@@ -36,6 +36,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
@@ -49,6 +50,7 @@ import {
   buildCosIntegrationPayload,
   buildEmailIntegrationPayload,
   buildFamilyProfilePatch,
+  buildReviewHistoryPath,
   buildSubmissionReviewRequest,
   buildTaskDraft,
   buildTaskPatch,
@@ -123,7 +125,26 @@ type PendingReview = {
   content_text: string | null;
   media: Array<{ id: string; type: 'IMAGE' | 'VIDEO' | 'AUDIO'; mime_type: string }>;
   submitted_at: string;
+  review_deadline_at: string | null;
+  is_overdue: boolean;
 };
+type ReviewHistory = {
+  id: string;
+  target_type: ReviewTargetType;
+  target_id: string;
+  attempt_id: string;
+  status: 'APPROVED' | 'REJECTED';
+  source: 'PARENT' | 'TIMEOUT';
+  reason: string | null;
+  reviewer_id: string | null;
+  reviewed_at: string;
+  task: { id: string; name: string };
+  child: { id: string; nickname: string };
+};
+type RetainedConflict = Readonly<{
+  item: PendingReview;
+  review: ReviewHistory | null;
+}>;
 
 const defaultSettings: FamilySettings = {
   time_zone: 'Asia/Shanghai',
@@ -1384,6 +1405,16 @@ export function ReviewMediaGallery({ media }: { media: PendingReview['media'] })
       {open && (
         <Modal
           title="提交凭证"
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowLeft' && media.length > 1) {
+              event.preventDefault();
+              showMedia(activeIndex - 1);
+            }
+            if (event.key === 'ArrowRight' && media.length > 1) {
+              event.preventDefault();
+              showMedia(activeIndex + 1);
+            }
+          }}
           onClose={() => {
             setOpen(false);
             resetView();
@@ -1582,9 +1613,45 @@ export function ReviewActions({
 
 function ReviewsPage() {
   const reviews = useApiData<PendingReview[]>('/family/submission-reviews/pending', 'reviews', []);
+  const children = useApiData<Child[]>('/family/children', 'children', []);
+  const tasks = useApiData<Task[]>('/family/tasks', 'tasks', []);
+  const [historyPath, setHistoryPath] = useState(buildReviewHistoryPath({}));
+  const history = useApiData<ReviewHistory[]>(historyPath, 'reviews', []);
   const [busyTarget, setBusyTarget] = useState('');
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [retainedConflicts, setRetainedConflicts] = useState<Record<string, RetainedConflict>>({});
   const [actionMessage, setActionMessage] = useState('');
+
+  const pendingKeys = new Set(reviews.data.map((item) => `${item.target_type}:${item.target_id}`));
+  const displayReviews = [
+    ...reviews.data,
+    ...Object.values(retainedConflicts)
+      .filter(({ item }) => !pendingKeys.has(`${item.target_type}:${item.target_id}`))
+      .map(({ item }) => item),
+  ];
+
+  function filterHistory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const startDate = String(form.get('start_date') ?? '');
+    const endDate = String(form.get('end_date') ?? '');
+    if (Boolean(startDate) !== Boolean(endDate)) {
+      setActionMessage('审核日期的开始和结束需要同时填写。');
+      return;
+    }
+    const nextPath = buildReviewHistoryPath({
+      ...(form.get('child_id') ? { childId: String(form.get('child_id')) } : {}),
+      ...(form.get('task_id') ? { taskId: String(form.get('task_id')) } : {}),
+      ...(form.get('result')
+        ? { result: String(form.get('result')) as 'APPROVED' | 'REJECTED' }
+        : {}),
+      ...(startDate ? { startDate } : {}),
+      ...(endDate ? { endDate } : {}),
+    });
+    setActionMessage('');
+    if (nextPath === historyPath) void history.refresh();
+    else setHistoryPath(nextPath);
+  }
 
   async function submitReview(item: PendingReview, status: 'APPROVED' | 'REJECTED') {
     const reason = reasons[item.target_id]?.trim();
@@ -1604,8 +1671,36 @@ function ReviewsPage() {
       });
       submitted = true;
       await reviews.refresh();
+      await history.refresh();
+      setRetainedConflicts((current) => {
+        const next = { ...current };
+        delete next[`${item.target_type}:${item.target_id}`];
+        return next;
+      });
       setActionMessage(status === 'APPROVED' ? '审核通过，积分已按规则处理。' : '已打回提交。');
-    } catch {
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        const [queueResult, targetHistoryResult] = await Promise.allSettled([
+          reviews.refresh(),
+          parentApi<{ reviews: ReviewHistory[] }>(request.path),
+        ]);
+        const targetHistory =
+          targetHistoryResult.status === 'fulfilled' ? targetHistoryResult.value.reviews : [];
+        const authoritativeReview = targetHistory.at(-1) ?? null;
+        setRetainedConflicts((current) => ({
+          ...current,
+          [`${item.target_type}:${item.target_id}`]: { item, review: authoritativeReview },
+        }));
+        await history.refresh().catch(() => undefined);
+        setActionMessage(
+          authoritativeReview
+            ? `审核状态已由服务端更新为${authoritativeReview.status === 'APPROVED' ? '通过' : '打回'}，当前记录已保留。`
+            : queueResult.status === 'fulfilled'
+              ? '审核发生冲突，已刷新服务端状态并保留当前记录。'
+              : '审核发生冲突，当前记录已保留，权威状态刷新失败。',
+        );
+        return;
+      }
       setActionMessage(
         submitted ? '审核已提交，队列刷新失败，请刷新页面确认。' : '审核失败，当前记录已保留。',
       );
@@ -1647,8 +1742,10 @@ function ReviewsPage() {
           />
         )}
         <div className="space-y-4">
-          {reviews.data.map((item) => {
+          {displayReviews.map((item) => {
             const busy = busyTarget === item.target_id;
+            const retained = retainedConflicts[`${item.target_type}:${item.target_id}`];
+            const authoritativeStatus = retained?.review?.status ?? null;
             return (
               <article className="soft-card" key={`${item.target_type}:${item.target_id}`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1663,8 +1760,23 @@ function ReviewsPage() {
                       {item.child.nickname} · {new Date(item.submitted_at).toLocaleString('zh-CN')}
                     </p>
                   </div>
-                  <span className="status-chip bg-orange/10 text-orange-dark">等待审核</span>
+                  <span
+                    className={`status-chip ${authoritativeStatus ? 'bg-sand text-brown' : item.is_overdue ? 'bg-red/5 text-red' : 'bg-orange/10 text-orange-dark'}`}
+                  >
+                    {authoritativeStatus === 'APPROVED'
+                      ? '服务端已通过'
+                      : authoritativeStatus === 'REJECTED'
+                        ? '服务端已打回'
+                        : item.is_overdue
+                          ? '已超时'
+                          : '等待审核'}
+                  </span>
                 </div>
+                <p className="mt-2 text-caption font-bold text-brown-light">
+                  {item.review_deadline_at
+                    ? `审核截止：${new Date(item.review_deadline_at).toLocaleString('zh-CN')}`
+                    : '家庭规则已关闭自动超时审核，仅由家长人工处理。'}
+                </p>
                 <p className="mt-4 whitespace-pre-wrap rounded-card bg-white/70 p-4 font-semibold text-brown">
                   {item.content_text ?? '本次提交没有文字说明。'}
                 </p>
@@ -1673,18 +1785,115 @@ function ReviewsPage() {
                     <ReviewMediaGallery media={item.media} />
                   </div>
                 )}
-                <ReviewActions
-                  busy={busy}
-                  reason={reasons[item.target_id] ?? ''}
-                  onApprove={() => submitReview(item, 'APPROVED')}
-                  onReject={() => submitReview(item, 'REJECTED')}
-                  onReasonChange={(reason) =>
-                    setReasons((current) => ({ ...current, [item.target_id]: reason }))
-                  }
-                />
+                {authoritativeStatus ? (
+                  <p className="notice mt-4" role="status">
+                    当前记录保留用于核对，审核历史已同步服务端权威结果。
+                  </p>
+                ) : (
+                  <ReviewActions
+                    busy={busy}
+                    reason={reasons[item.target_id] ?? ''}
+                    onApprove={() => submitReview(item, 'APPROVED')}
+                    onReject={() => submitReview(item, 'REJECTED')}
+                    onReasonChange={(reason) =>
+                      setReasons((current) => ({ ...current, [item.target_id]: reason }))
+                    }
+                  />
+                )}
               </article>
             );
           })}
+        </div>
+      </Panel>
+      <Panel className="mt-5">
+        <SectionTitle>审核历史</SectionTitle>
+        <form className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6" onSubmit={filterHistory}>
+          <label className="field-label">
+            孩子
+            <select className="field" name="child_id" defaultValue="">
+              <option value="">全部孩子</option>
+              {children.data.map((child) => (
+                <option key={child.id} value={child.id}>
+                  {child.nickname}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
+            任务
+            <select className="field" name="task_id" defaultValue="">
+              <option value="">全部任务</option>
+              {tasks.data.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-label">
+            结果
+            <select className="field" name="result" defaultValue="">
+              <option value="">全部结果</option>
+              <option value="APPROVED">通过</option>
+              <option value="REJECTED">打回</option>
+            </select>
+          </label>
+          <label className="field-label">
+            开始日期
+            <input className="field" name="start_date" type="date" />
+          </label>
+          <label className="field-label">
+            结束日期
+            <input className="field" name="end_date" type="date" />
+          </label>
+          <button className="primary-button self-end" type="submit">
+            筛选历史
+          </button>
+        </form>
+        {history.state === 'loading' && (
+          <EmptyState title="正在读取审核历史" detail="正在同步当前家庭的审核结果。" />
+        )}
+        {history.state === 'error' && (
+          <EmptyState
+            title="审核历史读取失败"
+            detail="请检查筛选条件后重试。"
+            icon={<CloudOff />}
+          />
+        )}
+        {history.state === 'empty' && (
+          <EmptyState
+            title="暂无审核历史"
+            detail="完成审核后，结果会显示在这里。"
+            icon={<Clock3 />}
+          />
+        )}
+        <div className="space-y-3">
+          {history.data.map((item) => (
+            <article className="list-row" key={item.id}>
+              <span
+                className={`metric-icon ${item.status === 'APPROVED' ? 'text-leaf-dark' : 'text-red'}`}
+              >
+                {item.status === 'APPROVED' ? <Check size={20} /> : <X size={20} />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <strong>
+                  {item.task.name} · {item.child.nickname}
+                </strong>
+                <p className="text-caption font-bold text-brown-light">
+                  {new Date(item.reviewed_at).toLocaleString('zh-CN')} ·{' '}
+                  {item.source === 'TIMEOUT' ? '超时自动审核' : '家长审核'}
+                </p>
+                {item.reason && (
+                  <p className="mt-1 text-sm text-brown-light">原因：{item.reason}</p>
+                )}
+              </div>
+              <span
+                className={`status-chip ${item.status === 'APPROVED' ? 'bg-leaf-light text-leaf-dark' : 'bg-red/5 text-red'}`}
+              >
+                {item.status === 'APPROVED' ? '通过' : '打回'}
+              </span>
+            </article>
+          ))}
         </div>
       </Panel>
     </>
@@ -3403,18 +3612,67 @@ export function Modal({
   children,
   title,
   onClose,
+  onKeyDown,
 }: {
   children: ReactNode;
   title: string;
   onClose: () => void;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLElement>) => void;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const firstFocusable = dialogRef.current?.querySelector<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    firstFocusable?.focus();
+    return () => previousFocus?.focus();
+  }, []);
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    onKeyDown?.(event);
+    if (event.defaultPrevented) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onCloseRef.current();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? [],
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  }
+
   const content = (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         className="modal max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
+        tabIndex={-1}
+        onKeyDown={handleKeyDown}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">

@@ -14,6 +14,13 @@ export const parentSections = [
 
 export type ParentSection = (typeof parentSections)[number];
 export type ReviewTargetType = 'CHECK_IN' | 'COLLABORATION_SUBMISSION';
+export type ReviewHistoryFilters = Readonly<{
+  childId?: string;
+  taskId?: string;
+  result?: 'APPROVED' | 'REJECTED';
+  startDate?: string;
+  endDate?: string;
+}>;
 export type IntegrationType = 'email' | 'cos';
 export type IntegrationStatus = 'pending' | 'verified' | 'invalid' | null;
 export type ChildCredentialType = 'pin' | 'password';
@@ -329,6 +336,16 @@ export function buildSubmissionReviewRequest(
       ...(normalizedReason ? { reason: normalizedReason } : {}),
     },
   };
+}
+
+export function buildReviewHistoryPath(filters: ReviewHistoryFilters): string {
+  const query = new URLSearchParams({ limit: '50' });
+  if (filters.childId) query.set('child_id', filters.childId);
+  if (filters.taskId) query.set('task_id', filters.taskId);
+  if (filters.result) query.set('result', filters.result);
+  if (filters.startDate) query.set('start_date', filters.startDate);
+  if (filters.endDate) query.set('end_date', filters.endDate);
+  return `/family/submission-reviews/history?${query.toString()}`;
 }
 
 function optionalCredentials(

@@ -4,11 +4,18 @@ import { getCookie, setCookie } from 'hono/cookie';
 import { z } from 'zod';
 
 import { SESSION_TTL_SECONDS } from '../family-auth/constants.js';
+import { InvalidPaginationError, parseCursorPageQuery } from '../http/cursor.js';
+import {
+  InvalidQueryFilterError,
+  parseEnumFilter,
+  parseUuidFilter,
+} from '../http/query-validation.js';
 import { createErrorResponse, createSuccessResponse } from '../http/responses.js';
 import type { AppEnvironment } from '../http/types.js';
 import { SubmissionReviewError } from './review-service.js';
 import type {
   PendingSubmissionReviewRecord,
+  ReviewHistoryRecord,
   SubmissionReviewOperations,
   SubmissionReviewRecord,
 } from './review-types.js';
@@ -19,6 +26,8 @@ const reviewSchema = z
     reason: z.string().max(2_000).optional(),
   })
   .strict();
+
+const REVIEW_DECISIONS = ['APPROVED', 'REJECTED'] as const;
 
 function sessionInput(context: Context<AppEnvironment>): { sessionToken?: string } {
   const sessionToken = getCookie(context, 'familystar_session');
@@ -78,10 +87,22 @@ function pendingOutput(review: PendingSubmissionReviewRecord) {
       mime_type: item.mimeType,
     })),
     submitted_at: review.submittedAt.toISOString(),
+    review_deadline_at: review.reviewDeadlineAt?.toISOString() ?? null,
+    is_overdue: review.isOverdue,
   };
 }
 
+function historyOutput(review: ReviewHistoryRecord) {
+  return { ...output(review), task: review.task, child: review.child };
+}
+
 function mapError(context: Context<AppEnvironment>, error: unknown) {
+  if (error instanceof InvalidPaginationError || error instanceof InvalidQueryFilterError) {
+    return context.json(
+      createErrorResponse(ERROR_CODES.INVALID_REQUEST, error.message, context.get('requestId')),
+      400,
+    );
+  }
   if (!(error instanceof SubmissionReviewError)) throw error;
   const status = {
     UNAUTHORIZED: 401,
@@ -112,6 +133,40 @@ export function registerSubmissionReviewRoutes(
       return context.json(
         createSuccessResponse(
           { reviews: result.reviews.map(pendingOutput) },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
+  api.get('/family/submission-reviews/history', async (context) => {
+    try {
+      const cursor = context.req.query('cursor');
+      const limit = context.req.query('limit');
+      const page = parseCursorPageQuery({
+        ...(cursor === undefined ? {} : { cursor }),
+        ...(limit === undefined ? {} : { limit }),
+      });
+      const childId = parseUuidFilter(context.req.query('child_id'), 'child_id');
+      const taskId = parseUuidFilter(context.req.query('task_id'), 'task_id');
+      const decision = parseEnumFilter(context.req.query('result'), REVIEW_DECISIONS, 'result');
+      const startDate = context.req.query('start_date');
+      const endDate = context.req.query('end_date');
+      const result = await operations.listReviewHistory!({
+        ...sessionInput(context),
+        ...page,
+        ...(childId === undefined ? {} : { childId }),
+        ...(taskId === undefined ? {} : { taskId }),
+        ...(decision === undefined ? {} : { decision }),
+        ...(startDate === undefined ? {} : { startDate }),
+        ...(endDate === undefined ? {} : { endDate }),
+      });
+      renew(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          { reviews: result.reviews.map(historyOutput), page: result.page },
           context.get('requestId'),
         ),
       );

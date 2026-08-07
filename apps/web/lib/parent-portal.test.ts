@@ -6,6 +6,7 @@ import {
   buildChildProfilePatch,
   buildEmailIntegrationPayload,
   buildFamilyProfilePatch,
+  buildReviewHistoryPath,
   buildSubmissionReviewRequest,
   buildTaskDraft,
   buildTaskFrequency,
@@ -198,6 +199,20 @@ describe('submission review requests', () => {
       idempotencyKey: 'review:attempt-2:REJECTED',
       body: { status: 'REJECTED', reason: '请补充照片' },
     });
+  });
+
+  it('builds encoded family review history filters with a bounded page size', () => {
+    expect(
+      buildReviewHistoryPath({
+        childId: 'child-1',
+        taskId: 'task-1',
+        result: 'REJECTED',
+        startDate: '2026-07-01',
+        endDate: '2026-07-31',
+      }),
+    ).toBe(
+      '/family/submission-reviews/history?limit=50&child_id=child-1&task_id=task-1&result=REJECTED&start_date=2026-07-01&end_date=2026-07-31',
+    );
   });
 });
 

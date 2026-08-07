@@ -71,6 +71,7 @@ describe('ParentPortal', () => {
     expect(markup).toContain('max-h-[calc(100dvh-2rem)]');
     expect(markup).toContain('overflow-y-auto');
     expect(markup).toContain('overscroll-contain');
+    expect(markup).toContain('tabindex="-1"');
   });
 
   it('renders multi-child choices and per-child settings for every task mode', () => {
