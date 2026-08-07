@@ -1,9 +1,32 @@
-import type { FamilyModulesReadModel } from '@familystar/shared';
+import {
+  CORE_FAMILY_MODULE_IDS,
+  FAMILY_MODULE_DEFINITIONS,
+  type FamilyModulesReadModel,
+} from '@familystar/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { ChildShell } from './child-shell';
 import { ParentShell } from './parent-shell';
+
+const COMPONENT_MODULE_PROPERTY_RUNS = 64;
+
+function validatesCriteria(criteria: readonly string[]): string {
+  return `[validatesCriteria: ${criteria.join(', ')}]`;
+}
+
+function generatedModules(run: number): FamilyModulesReadModel {
+  const core = new Set<string>(CORE_FAMILY_MODULE_IDS);
+  return {
+    version: run,
+    modules: FAMILY_MODULE_DEFINITIONS.map((definition, index) => ({
+      ...definition,
+      enabled:
+        core.has(definition.id) || ((Math.imul(run + 1, 31) ^ Math.imul(index + 7, 17)) & 1) === 1,
+      configurable: !core.has(definition.id),
+    })),
+  };
+}
 
 const modules: FamilyModulesReadModel = {
   version: 3,
@@ -83,6 +106,64 @@ const modules: FamilyModulesReadModel = {
 };
 
 describe('portal module shells', () => {
+  it(`property: random module combinations render exactly core and enabled navigation entries ${validatesCriteria(['Requirement 12.2', 'Correctness Property 7'])}`, () => {
+    const parentEntries = [
+      ['/dashboard', 'points'],
+      ['/tasks', 'tasks'],
+      ['/reviews', 'check-in'],
+      ['/rewards', 'rewards'],
+      ['/levels', 'levels'],
+      ['/badges', 'badges'],
+      ['/stats', 'analytics'],
+      ['/records', 'growth-records'],
+      ['/family', 'family-settings'],
+      ['/settings', 'family-settings'],
+      ['/notifications', 'notifications'],
+    ] as const;
+    const childEntries = [
+      ['/child', 'points'],
+      ['/child/check-ins', 'check-in'],
+      ['/child/achievements', 'levels'],
+      ['/child/rewards', 'rewards'],
+      ['/child/profile', 'authentication'],
+      ['/child/notifications', 'notifications'],
+    ] as const;
+    const core = new Set<string>(CORE_FAMILY_MODULE_IDS);
+
+    for (let run = 0; run < COMPONENT_MODULE_PROPERTY_RUNS; run += 1) {
+      const generated = generatedModules(run);
+      const enabled = new Set(
+        generated.modules.filter((module) => module.enabled).map((module) => module.id),
+      );
+      const parentMarkup = renderToStaticMarkup(
+        <ParentShell section="dashboard" initialModules={generated}>
+          家庭内容
+        </ParentShell>,
+      );
+      const childMarkup = renderToStaticMarkup(
+        <ChildShell
+          section="home"
+          child={{ nickname: '小星' }}
+          onSwitch={() => undefined}
+          initialModules={generated}
+        >
+          孩子内容
+        </ChildShell>,
+      );
+
+      for (const [path, moduleId] of parentEntries) {
+        expect(parentMarkup.includes(`href="${path}"`)).toBe(
+          core.has(moduleId) || enabled.has(moduleId),
+        );
+      }
+      for (const [path, moduleId] of childEntries) {
+        expect(childMarkup.includes(`href="${path}"`)).toBe(
+          core.has(moduleId) || enabled.has(moduleId),
+        );
+      }
+    }
+  });
+
   it('filters parent optional navigation while retaining every core entry', () => {
     const markup = renderToStaticMarkup(
       <ParentShell section="dashboard" initialModules={modules}>

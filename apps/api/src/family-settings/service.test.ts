@@ -1,3 +1,9 @@
+import {
+  CORE_FAMILY_MODULE_IDS,
+  FAMILY_MODULE_DEFINITIONS,
+  OPTIONAL_FAMILY_MODULE_IDS,
+  type OptionalFamilyModuleId,
+} from '@familystar/shared';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DEFAULT_FAMILY_SETTINGS } from '../family-auth/constants.js';
@@ -10,6 +16,7 @@ import {
   FamilySettingsSessionRequiredError,
   InvalidFamilyProfileError,
   InvalidFamilySettingsError,
+  resolveFamilyModules,
 } from './service.js';
 import type { FamilyProfileRecord, FamilySettingsRepository } from './types.js';
 
@@ -19,6 +26,30 @@ const parentSession: AuthSession = {
   role: 'parent',
   issuedAt: '2026-07-30T00:00:00.000Z',
 };
+
+const MODULE_PROPERTY_RUNS = 128;
+
+function validatesCriteria(criteria: readonly string[]): string {
+  return `[validatesCriteria: ${criteria.join(', ')}]`;
+}
+
+function generatedFlag(run: number, salt: number): boolean {
+  let value = Math.imul(run + 1, 0x45d9f3b) ^ Math.imul(salt + 1, 0x27d4eb2d);
+  value ^= value >>> 16;
+  return (value & 1) === 1;
+}
+
+function legalOptionalModuleStates(run: number): Record<OptionalFamilyModuleId, boolean> {
+  const levels = generatedFlag(run, 0);
+  return {
+    levels,
+    analytics: levels && generatedFlag(run, 1),
+    'growth-records': generatedFlag(run, 2),
+    rewards: levels && generatedFlag(run, 3),
+    badges: levels && generatedFlag(run, 4),
+    notifications: generatedFlag(run, 5),
+  };
+}
 
 const profile: FamilyProfileRecord = {
   id: 'family-1',
@@ -70,6 +101,23 @@ function dependencies(
 }
 
 describe('FamilySettingsService', () => {
+  it(`property: legal generated module states keep core modules enabled and every enabled dependency satisfied ${validatesCriteria(['Requirement 12.1', 'Correctness Property 7'])}`, () => {
+    for (let run = 0; run < MODULE_PROPERTY_RUNS; run += 1) {
+      const readModel = resolveFamilyModules({ modules: legalOptionalModuleStates(run) }, run);
+      const enabled = new Set(
+        readModel.modules.filter((module) => module.enabled).map((module) => module.id),
+      );
+
+      expect(CORE_FAMILY_MODULE_IDS.every((moduleId) => enabled.has(moduleId))).toBe(true);
+      for (const module of readModel.modules.filter((item) => item.enabled)) {
+        expect(module.dependencies.every((dependency) => enabled.has(dependency))).toBe(true);
+      }
+      expect(readModel.modules.map(({ id }) => id)).toEqual(
+        FAMILY_MODULE_DEFINITIONS.map(({ id }) => id),
+      );
+    }
+  });
+
   it('returns complete defaults for a family with empty settings', async () => {
     const service = new FamilySettingsService(dependencies());
 
@@ -272,6 +320,52 @@ describe('FamilySettingsService', () => {
     );
   });
 
+  it(`property: disabling and re-enabling modules changes only settings and preserves business data ${validatesCriteria(['Requirement 12.1', 'Requirement 12.2', 'Correctness Property 7'])}`, async () => {
+    for (let run = 0; run < 64; run += 1) {
+      const retainedBusinessData = {
+        rewards: [{ id: `reward-${run}`, stock: run * 3 }],
+        records: [{ id: `record-${run}`, value: generatedFlag(run, 6) }],
+      };
+      let record = {
+        settings: {
+          modules: legalOptionalModuleStates(run),
+          retainedBusinessData,
+          unrelatedSetting: `setting-${run}`,
+        } as Record<string, unknown>,
+        settingsVersion: 0,
+        createdById: parentSession.subjectId,
+      };
+      const repository: FamilySettingsRepository = {
+        findActiveSettings: vi.fn(async () => record),
+        updateActiveSettings: vi.fn(async (_familyId, expectedVersion, settings) => {
+          if (expectedVersion !== record.settingsVersion) return false;
+          record = { ...record, settings, settingsVersion: record.settingsVersion + 1 };
+          return true;
+        }),
+        findActiveProfile: vi.fn(),
+        updateActiveProfile: vi.fn(),
+      };
+      const sessions = dependencies().sessions;
+      const service = new FamilySettingsService({ repository, sessions });
+      const disabled = Object.fromEntries(
+        OPTIONAL_FAMILY_MODULE_IDS.map((moduleId) => [moduleId, false]),
+      ) as Record<OptionalFamilyModuleId, boolean>;
+      const enabled = Object.fromEntries(
+        OPTIONAL_FAMILY_MODULE_IDS.map((moduleId) => [moduleId, true]),
+      ) as Record<OptionalFamilyModuleId, boolean>;
+
+      await service.updateModules({ sessionToken: 'token', expectedVersion: 0, modules: disabled });
+      await service.updateModules({ sessionToken: 'token', expectedVersion: 1, modules: enabled });
+
+      expect(record.settings.retainedBusinessData).toBe(retainedBusinessData);
+      expect(record.settings).toMatchObject({
+        retainedBusinessData,
+        unrelatedSetting: `setting-${run}`,
+        modules: enabled,
+      });
+    }
+  });
+
   it('returns stable conflicts for missing and in-use dependencies', async () => {
     const disabledDependencies = dependencies({
       modules: { analytics: false, levels: false, rewards: false, badges: false },
@@ -342,5 +436,75 @@ describe('FamilySettingsService', () => {
     ).resolves.toBe(false);
     expect(deps.repository.findActiveSettings).toHaveBeenNthCalledWith(1, 'family-1');
     expect(deps.repository.findActiveSettings).toHaveBeenNthCalledWith(2, 'family-2');
+  });
+
+  it(`property: module reads and updates stay within the authenticated family ${validatesCriteria(['Requirement 12.1', 'Requirement 12.2', 'Correctness Property 1'])}`, async () => {
+    for (let run = 0; run < 64; run += 1) {
+      const familyOne = `family-a-${run}`;
+      const familyTwo = `family-b-${run}`;
+      const records = new Map([
+        [
+          familyOne,
+          {
+            settings: { modules: { notifications: true }, marker: `a-${run}` },
+            settingsVersion: 0,
+            createdById: `parent-a-${run}`,
+          },
+        ],
+        [
+          familyTwo,
+          {
+            settings: { modules: { notifications: true }, marker: `b-${run}` },
+            settingsVersion: 0,
+            createdById: `parent-b-${run}`,
+          },
+        ],
+      ]);
+      const sessions = dependencies().sessions;
+      vi.mocked(sessions.read).mockImplementation(async (token) =>
+        token === 'family-a-token'
+          ? {
+              ...parentSession,
+              subjectId: `parent-a-${run}`,
+              familyId: familyOne,
+            }
+          : null,
+      );
+      const repository: FamilySettingsRepository = {
+        findActiveSettings: vi.fn(async (familyId) => records.get(familyId) ?? null),
+        updateActiveSettings: vi.fn(async (familyId, expectedVersion, settings) => {
+          const current = records.get(familyId);
+          if (!current || current.settingsVersion !== expectedVersion) return false;
+          records.set(familyId, {
+            ...current,
+            settings,
+            settingsVersion: current.settingsVersion + 1,
+          });
+          return true;
+        }),
+        findActiveProfile: vi.fn(),
+        updateActiveProfile: vi.fn(),
+      };
+      const service = new FamilySettingsService({ repository, sessions });
+
+      await service.updateModules({
+        sessionToken: 'family-a-token',
+        expectedVersion: 0,
+        modules: { notifications: false },
+      });
+
+      expect(records.get(familyOne)?.settings).toMatchObject({
+        marker: `a-${run}`,
+        modules: { notifications: false },
+      });
+      expect(records.get(familyTwo)).toEqual({
+        settings: { modules: { notifications: true }, marker: `b-${run}` },
+        settingsVersion: 0,
+        createdById: `parent-b-${run}`,
+      });
+      await expect(
+        service.isEnabled({ session: { familyId: familyTwo }, module: 'notifications' }),
+      ).resolves.toBe(true);
+    }
   });
 });

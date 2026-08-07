@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { childSections } from '../lib/child-portal';
 import type { BadgeWallItem } from '../lib/badges';
-import { findTheme } from '@familystar/shared';
+import { findTheme, THEME_CATALOG } from '@familystar/shared';
 import {
   BadgeWall,
   ChildPortal,
@@ -28,7 +28,54 @@ const badgeTemplate = {
   updated_at: '2026-08-07T00:00:00.000Z',
 };
 
+function validatesCriteria(criteria: readonly string[]): string {
+  return `[validatesCriteria: ${criteria.join(', ')}]`;
+}
+
 describe('ChildPortal', () => {
+  it(`property: theme controls enable only unlocked catalog entries and render controlled CSS tokens ${validatesCriteria(['Requirement 12.3', 'Requirement 12.4', 'Requirement 12.5'])}`, () => {
+    for (let run = 0; run < 128; run += 1) {
+      const definition = THEME_CATALOG[run % THEME_CATALOG.length]!;
+      const currentLevel = (Math.imul(run + 1, 13) % 20) + 1;
+      const selected = definition.key === 'starlight';
+      const tampered = run % 11 === 0;
+      const unsafeValue = `url(https://unsafe.invalid/${run})`;
+      const theme = {
+        key: definition.key,
+        name: definition.name,
+        description: definition.description,
+        minimum_level: definition.minimumLevel,
+        tokens: tampered
+          ? { ...definition.tokens, '--color-primary': unsafeValue }
+          : definition.tokens,
+        unlocked: currentLevel >= definition.minimumLevel,
+        selected,
+      };
+      const markup = renderToStaticMarkup(
+        <ThemeCatalog
+          catalog={{
+            current_level: currentLevel,
+            selected_theme: selected ? definition.key : 'starlight',
+            themes: [theme],
+          }}
+          state="live"
+          busyTheme={null}
+          feedback={null}
+          onSelect={() => undefined}
+          onRefresh={() => undefined}
+        />,
+      );
+      const selectable = theme.unlocked && !selected && !tampered;
+
+      expect(markup.includes('>选择主题</button>')).toBe(selectable);
+      expect(markup).not.toContain(unsafeValue);
+      if (tampered || !theme.unlocked || selected) expect(markup).toContain('disabled=""');
+      if (!tampered) {
+        expect(markup).toContain(`background-color:${definition.tokens['--color-primary']}`);
+      }
+    }
+  });
+
   it('renders unlocked, locked, and selected theme catalog states', () => {
     const starlight = findTheme('starlight')!;
     const forest = findTheme('forest')!;
