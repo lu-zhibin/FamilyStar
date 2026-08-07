@@ -316,6 +316,7 @@ model User {
   pointsBalance       Int             @default(0) @map("points_balance")
   pointsEarnedTotal   Int             @default(0) @map("points_earned_total")
   currentLevel        Int             @default(1) @map("current_level")
+  selectedTheme       String          @default("starlight") @map("selected_theme") @db.VarChar(40)
   version             Int             @default(0)
   failedLoginAttempts Int             @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime?       @map("locked_until") @db.Timestamptz(3)

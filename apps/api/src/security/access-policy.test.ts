@@ -38,6 +38,8 @@ describe('route access policy', () => {
     ['PATCH', '/api/v1/notifications/read-all', 'authenticated'],
     ['GET', '/api/v1/notification-preferences', 'authenticated'],
     ['PATCH', '/api/v1/notification-preferences', 'authenticated'],
+    ['GET', '/api/v1/themes', 'child'],
+    ['PATCH', '/api/v1/themes/selection', 'child'],
   ] satisfies ReadonlyArray<readonly [string, string, RequiredRole]>)(
     'assigns %s %s to %s',
     (method, path, role) => {
@@ -101,6 +103,8 @@ describe('route access policy', () => {
       ['GET', '/api/v1/notifications/notification-id/read'],
       ['POST', '/api/v1/notifications/read-all'],
       ['POST', '/api/v1/notification-preferences'],
+      ['POST', '/api/v1/themes/selection'],
+      ['PATCH', '/api/v1/themes'],
     ]) {
       const policy = resolveRouteAccessPolicy(method!, path!);
       expect(policy?.role).toBe('authenticated');

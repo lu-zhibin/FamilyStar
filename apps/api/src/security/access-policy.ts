@@ -233,7 +233,7 @@ export const ROUTE_ACCESS_POLICIES: readonly RouteAccessPolicy[] = [
   },
   {
     methods: ['PATCH'],
-    path: /^\/api\/v1\/preferences\/theme$/,
+    path: /^\/api\/v1\/themes\/selection$/,
     role: 'child',
   },
   {

@@ -23,6 +23,8 @@ export {
   FAMILY_MODULE_DEFINITIONS,
   OPTIONAL_FAMILY_MODULE_IDS,
 } from './family-modules.js';
+export { DEFAULT_THEME_KEY, findTheme, THEME_CATALOG } from './themes.js';
+export type { ThemeDefinition, ThemeTokenName } from './themes.js';
 export type {
   CoreFamilyModuleId,
   FamilyModuleDefinition,
