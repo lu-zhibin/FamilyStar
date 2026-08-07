@@ -111,6 +111,59 @@ describe('NotificationService', () => {
     }
   });
 
+  it('property: createdAt and id cursor has no duplicate or baseline omission during newer inserts and replays stably', async () => {
+    const records = Array.from({ length: 37 }, (_, index): NotificationRecord => ({
+      ...notification(1),
+      id: `01989a58-c542-7abc-8def-${String(index + 1).padStart(12, '0')}`,
+      title: `Notification ${index + 1}`,
+      createdAt: new Date(Date.UTC(2026, 7, 7, 12, Math.floor(index / 4), 0)),
+    }));
+    const baselineIds = new Set(records.map(({ id }) => id));
+    const { repository, service } = setup();
+    vi.mocked(repository.list).mockImplementation(
+      async ({ familyId, recipientId, cursor, limit }) =>
+        records
+          .filter(
+            (record) =>
+              familyId === session.familyId &&
+              recipientId === session.subjectId &&
+              (!cursor ||
+                record.createdAt < cursor.createdAt ||
+                (record.createdAt.getTime() === cursor.createdAt.getTime() &&
+                  record.id < cursor.id)),
+          )
+          .sort(
+            (left, right) =>
+              right.createdAt.getTime() - left.createdAt.getTime() ||
+              right.id.localeCompare(left.id),
+          )
+          .slice(0, limit + 1),
+    );
+
+    const visited: string[] = [];
+    let cursor = null;
+    do {
+      const page = await service.list({ sessionToken: 'token', cursor, limit: 7 });
+      visited.push(...page.notifications.map(({ id }) => id));
+      if (cursor) {
+        await expect(service.list({ sessionToken: 'token', cursor, limit: 7 })).resolves.toEqual(
+          page,
+        );
+      } else {
+        records.push({
+          ...notification(1),
+          id: '01989a58-c542-7abc-8def-999999999999',
+          title: 'Concurrent newer notification',
+          createdAt: new Date('2026-08-08T00:00:00.000Z'),
+        });
+      }
+      cursor = page.page.next_cursor ? decodeCursor(page.page.next_cursor) : null;
+    } while (cursor);
+
+    expect(visited).toHaveLength(baselineIds.size);
+    expect(new Set(visited)).toEqual(baselineIds);
+  });
+
   it('scopes unread and idempotent read operations to the session recipient and family', async () => {
     const { repository, service } = setup();
     vi.mocked(repository.countUnread).mockResolvedValue(4);
@@ -195,6 +248,33 @@ describe('NotificationService', () => {
         }),
       }),
     );
+  });
+
+  it('property: persists cross-midnight and clock-edge quiet hours without changing boundaries', async () => {
+    for (const [start, end] of [
+      ['22:00', '07:00'],
+      ['23:59', '00:00'],
+      ['00:00', '23:59'],
+    ] as const) {
+      const { repository, service } = setup();
+      await service.updatePreference({
+        sessionToken: 'token',
+        preference: {
+          quietHoursEnabled: true,
+          quietHoursStart: start,
+          quietHoursEnd: end,
+        },
+      });
+      expect(repository.savePreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preference: expect.objectContaining({
+            quietHoursEnabled: true,
+            quietHoursStart: new Date(`1970-01-01T${start}:00.000Z`),
+            quietHoursEnd: new Date(`1970-01-01T${end}:00.000Z`),
+          }),
+        }),
+      );
+    }
   });
 
   it.each([

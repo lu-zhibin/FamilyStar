@@ -1,14 +1,32 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { notificationTypes, type NotificationPreference } from '../lib/notifications';
+import {
+  notificationTypes,
+  type NotificationItem,
+  type NotificationPreference,
+} from '../lib/notifications';
 import { NotificationBellView } from './notification-bell';
 import {
   ChildNotificationsPortal,
   NotificationBoundary,
+  NotificationFeedback,
+  NotificationListPanel,
   NotificationPreferencePanel,
   ParentNotificationsPortal,
 } from './notification-center';
+
+const notification: NotificationItem = {
+  id: 'notification-1',
+  type: 'review',
+  title: '阅读审核已通过',
+  content: '今日阅读已经通过审核',
+  target_type: 'check_in',
+  target_id: 'check-in-1',
+  target_url: '/child/check-ins?focus=check-in-1',
+  read_at: null,
+  created_at: '2026-08-07T08:00:00.000Z',
+};
 
 const preference: NotificationPreference = {
   in_app_enabled: true,
@@ -54,6 +72,51 @@ describe('notification portals', () => {
     expect(markup).toContain('role="alert"');
     expect(markup).toContain('重新加载');
     expect(markup).toContain('type="button"');
+  });
+
+  it.each([
+    ['loading', '正在读取通知', 'role="status"'],
+    ['error', '通知读取失败', 'role="alert"'],
+    ['empty', '暂无通知', 'role="status"'],
+  ] as const)('renders the accessible %s list boundary', (state, copy, role) => {
+    const markup = renderToStaticMarkup(
+      <NotificationListPanel
+        notifications={[]}
+        page={{ has_more: false, next_cursor: null }}
+        state={state}
+        busy={null}
+        loadingMore={false}
+        onRetry={() => undefined}
+        onLoadMore={() => undefined}
+        onMarkRead={() => undefined}
+      />,
+    );
+    expect(markup).toContain(copy);
+    expect(markup).toContain(role);
+  });
+
+  it('keeps loaded rows after pagination failure and locks every row write', () => {
+    const markup = renderToStaticMarkup(
+      <>
+        <NotificationFeedback message="加载更多失败，请重试。" />
+        <NotificationListPanel
+          notifications={[notification]}
+          page={{ has_more: true, next_cursor: 'next-page' }}
+          state="live"
+          busy="notification-1"
+          loadingMore={false}
+          onRetry={() => undefined}
+          onLoadMore={() => undefined}
+          onMarkRead={() => undefined}
+        />
+      </>,
+    );
+    expect(markup).toContain('role="alert"');
+    expect(markup).toContain('加载更多失败，请重试。');
+    expect(markup).toContain('阅读审核已通过');
+    expect(markup).toContain('aria-label="打开通知：阅读审核已通过"');
+    expect(markup).toContain('dateTime="2026-08-07T08:00:00.000Z"');
+    expect(markup.match(/disabled=""/g)).toHaveLength(3);
   });
 
   it('renders every preference and locks all writes while saving', () => {

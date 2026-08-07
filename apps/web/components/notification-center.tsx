@@ -170,14 +170,7 @@ export function NotificationCenter({
         </button>
       </header>
 
-      {feedback && (
-        <p
-          className={`notice ${feedback.includes('失败') ? 'border-red text-red' : 'border-leaf text-leaf-dark'}`}
-          role={feedback.includes('失败') ? 'alert' : 'status'}
-        >
-          {feedback}
-        </p>
-      )}
+      <NotificationFeedback message={feedback} />
 
       <section
         className={
@@ -186,84 +179,16 @@ export function NotificationCenter({
             : ''
         }
       >
-        <div className="panel min-w-0">
-          {state === 'loading' && (
-            <NotificationBoundary title="正在读取通知" detail="消息同步完成后会显示在这里。" />
-          )}
-          {state === 'error' && (
-            <NotificationBoundary
-              title="通知读取失败"
-              detail="网络恢复后可以重新加载。"
-              error
-              onRetry={() => loadNotifications()}
-            />
-          )}
-          {state === 'empty' && (
-            <NotificationBoundary title="暂无通知" detail="新的家庭动态会出现在这里。" />
-          )}
-          {state === 'live' && (
-            <div className="divide-y divide-wood">
-              {notifications.map((notification) => (
-                <article
-                  key={notification.id}
-                  className={`flex min-w-0 items-start gap-3 py-4 first:pt-0 last:pb-0 ${notification.read_at ? 'opacity-70' : ''}`}
-                >
-                  <span
-                    className={`mt-1 size-2.5 shrink-0 rounded-full ${notification.read_at ? 'bg-wood' : 'bg-coral'}`}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <button
-                      type="button"
-                      className="w-full min-w-0 text-left"
-                      disabled={Boolean(busy)}
-                      onClick={() => markRead(notification, true)}
-                      aria-label={`打开通知：${notification.title}`}
-                    >
-                      <span className="flex items-start justify-between gap-2">
-                        <strong className="break-words text-brown">{notification.title}</strong>
-                        <ChevronRight
-                          className="shrink-0 text-brown-light"
-                          aria-hidden="true"
-                          size={18}
-                        />
-                      </span>
-                      <span className="mt-1 block break-words text-caption font-semibold text-brown-light">
-                        {notification.content}
-                      </span>
-                    </button>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-label font-bold text-brown-light">
-                      <span className="tag">{notificationTypeLabels[notification.type]}</span>
-                      <time dateTime={notification.created_at}>
-                        {formatNotificationTime(notification.created_at)}
-                      </time>
-                      {!notification.read_at && (
-                        <button
-                          className="text-button"
-                          type="button"
-                          disabled={Boolean(busy)}
-                          onClick={() => markRead(notification, false)}
-                        >
-                          {busy === notification.id ? '正在更新...' : '标为已读'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-          {state === 'live' && page.has_more && (
-            <button
-              className="secondary-button mt-5 w-full"
-              type="button"
-              disabled={Boolean(busy) || loadingMore}
-              onClick={() => loadNotifications(page.next_cursor)}
-            >
-              {loadingMore ? '正在加载...' : '加载更多'}
-            </button>
-          )}
-        </div>
+        <NotificationListPanel
+          notifications={notifications}
+          page={page}
+          state={state}
+          busy={busy}
+          loadingMore={loadingMore}
+          onRetry={() => loadNotifications()}
+          onLoadMore={() => loadNotifications(page.next_cursor)}
+          onMarkRead={markRead}
+        />
 
         {canEditPreferences && (
           <NotificationPreferencePanel
@@ -276,6 +201,120 @@ export function NotificationCenter({
           />
         )}
       </section>
+    </div>
+  );
+}
+
+export function NotificationFeedback({ message }: Readonly<{ message: string }>) {
+  if (!message) return null;
+  const failed = message.includes('失败');
+  return (
+    <p
+      className={`notice ${failed ? 'border-red text-red' : 'border-leaf text-leaf-dark'}`}
+      role={failed ? 'alert' : 'status'}
+    >
+      {message}
+    </p>
+  );
+}
+
+export function NotificationListPanel({
+  notifications,
+  page,
+  state,
+  busy,
+  loadingMore,
+  onRetry,
+  onLoadMore,
+  onMarkRead,
+}: Readonly<{
+  notifications: readonly NotificationItem[];
+  page: NotificationPage;
+  state: LoadState;
+  busy: string | null;
+  loadingMore: boolean;
+  onRetry: () => void;
+  onLoadMore: () => void;
+  onMarkRead: (notification: NotificationItem, navigate: boolean) => void;
+}>) {
+  return (
+    <div className="panel min-w-0">
+      {state === 'loading' && (
+        <NotificationBoundary title="正在读取通知" detail="消息同步完成后会显示在这里。" />
+      )}
+      {state === 'error' && (
+        <NotificationBoundary
+          title="通知读取失败"
+          detail="网络恢复后可以重新加载。"
+          error
+          onRetry={onRetry}
+        />
+      )}
+      {state === 'empty' && (
+        <NotificationBoundary title="暂无通知" detail="新的家庭动态会出现在这里。" />
+      )}
+      {state === 'live' && (
+        <div className="divide-y divide-wood">
+          {notifications.map((notification) => (
+            <article
+              key={notification.id}
+              className={`flex min-w-0 items-start gap-3 py-4 first:pt-0 last:pb-0 ${notification.read_at ? 'opacity-70' : ''}`}
+            >
+              <span
+                className={`mt-1 size-2.5 shrink-0 rounded-full ${notification.read_at ? 'bg-wood' : 'bg-coral'}`}
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  className="w-full min-w-0 text-left"
+                  disabled={Boolean(busy)}
+                  onClick={() => onMarkRead(notification, true)}
+                  aria-label={`打开通知：${notification.title}`}
+                >
+                  <span className="flex items-start justify-between gap-2">
+                    <strong className="break-words text-brown">{notification.title}</strong>
+                    <ChevronRight
+                      className="shrink-0 text-brown-light"
+                      aria-hidden="true"
+                      size={18}
+                    />
+                  </span>
+                  <span className="mt-1 block break-words text-caption font-semibold text-brown-light">
+                    {notification.content}
+                  </span>
+                </button>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-label font-bold text-brown-light">
+                  <span className="tag">{notificationTypeLabels[notification.type]}</span>
+                  <time dateTime={notification.created_at}>
+                    {formatNotificationTime(notification.created_at)}
+                  </time>
+                  {!notification.read_at && (
+                    <button
+                      className="text-button"
+                      type="button"
+                      disabled={Boolean(busy)}
+                      onClick={() => onMarkRead(notification, false)}
+                    >
+                      {busy === notification.id ? '正在更新...' : '标为已读'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+      {state === 'live' && page.has_more && (
+        <button
+          className="secondary-button mt-5 w-full"
+          type="button"
+          disabled={Boolean(busy) || loadingMore}
+          onClick={onLoadMore}
+        >
+          {loadingMore ? '正在加载...' : '加载更多'}
+        </button>
+      )}
     </div>
   );
 }

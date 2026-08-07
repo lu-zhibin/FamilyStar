@@ -246,6 +246,53 @@ describe('PrismaWorkerJobsRepository', () => {
     });
   });
 
+  it('property: cleanup honors the strict ninety-day edge, batch cap, and repeated execution', async () => {
+    const cutoff = new Date('2026-05-02T14:23:45.000Z');
+    const rows = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `expired-${index}`,
+        createdAt: new Date(cutoff.getTime() - index - 1),
+      })),
+      { id: 'exact-cutoff', createdAt: new Date(cutoff) },
+      { id: 'newer', createdAt: new Date(cutoff.getTime() + 1) },
+    ];
+    const notification = {
+      findMany: vi.fn(async ({ where, take }) =>
+        rows
+          .filter((row) => row.createdAt < where.createdAt.lt)
+          .sort(
+            (left, right) =>
+              left.createdAt.getTime() - right.createdAt.getTime() ||
+              left.id.localeCompare(right.id),
+          )
+          .slice(0, take)
+          .map(({ id }) => ({ id })),
+      ),
+      deleteMany: vi.fn(async ({ where }) => {
+        const ids = new Set(where.id.in);
+        let count = 0;
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          const row = rows[index];
+          if (row && ids.has(row.id) && row.createdAt < where.createdAt.lt) {
+            rows.splice(index, 1);
+            count += 1;
+          }
+        }
+        return { count };
+      }),
+    };
+    const repository = new PrismaWorkerJobsRepository({
+      $transaction: vi.fn(async (work) => work({ notification })),
+    } as never);
+
+    await expect(repository.deleteExpiredNotifications(cutoff, 3)).resolves.toBe(3);
+    await expect(repository.deleteExpiredNotifications(cutoff, 3)).resolves.toBe(2);
+    await expect(repository.deleteExpiredNotifications(cutoff, 3)).resolves.toBe(0);
+
+    expect(rows.map(({ id }) => id)).toEqual(['exact-cutoff', 'newer']);
+    expect(notification.findMany.mock.calls.map(([input]) => input.take)).toEqual([3, 3, 3]);
+  });
+
   it('recalculates balances and earned totals from immutable points logs', async () => {
     const prisma = {
       user: {

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { NotificationType, PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PrismaNotificationRepository } from './prisma-repository.js';
@@ -79,6 +79,70 @@ describe('PrismaNotificationRepository', () => {
       where: { familyId, recipientId, readAt: null },
       data: { readAt },
     });
+  });
+
+  it('property: repeated single and all-read writes preserve the first timestamp and then update zero rows', async () => {
+    const rows = [
+      { id: 'one', familyId, recipientId, readAt: null as Date | null },
+      { id: 'two', familyId, recipientId, readAt: null as Date | null },
+      { id: 'other-family', familyId: 'family-other', recipientId, readAt: null as Date | null },
+    ];
+    const notification = {
+      updateMany: vi.fn(async ({ where, data }) => {
+        let count = 0;
+        for (const row of rows) {
+          if (
+            (where.id === undefined || row.id === where.id) &&
+            row.familyId === where.familyId &&
+            row.recipientId === where.recipientId &&
+            row.readAt === null
+          ) {
+            row.readAt = data.readAt;
+            count += 1;
+          }
+        }
+        return { count };
+      }),
+      findFirst: vi.fn(async ({ where }) =>
+        rows.find(
+          (row) =>
+            row.id === where.id &&
+            row.familyId === where.familyId &&
+            row.recipientId === where.recipientId,
+        ),
+      ),
+    };
+    const repository = new PrismaNotificationRepository({
+      notification,
+      $transaction: vi.fn(async (work) => work({ notification })),
+    } as unknown as PrismaClient);
+    const firstReadAt = new Date('2026-08-07T12:00:00.000Z');
+    const replayReadAt = new Date('2026-08-07T13:00:00.000Z');
+
+    await repository.markRead({
+      familyId,
+      recipientId,
+      notificationId: 'one',
+      readAt: firstReadAt,
+    });
+    await repository.markRead({
+      familyId,
+      recipientId,
+      notificationId: 'one',
+      readAt: replayReadAt,
+    });
+    await expect(
+      repository.markAllRead({ familyId, recipientId, readAt: firstReadAt }),
+    ).resolves.toBe(1);
+    await expect(
+      repository.markAllRead({ familyId, recipientId, readAt: replayReadAt }),
+    ).resolves.toBe(0);
+
+    expect(rows).toEqual([
+      expect.objectContaining({ id: 'one', readAt: firstReadAt }),
+      expect.objectContaining({ id: 'two', readAt: firstReadAt }),
+      expect.objectContaining({ id: 'other-family', readAt: null }),
+    ]);
   });
 
   it('distinguishes an inactive recipient from a missing preference', async () => {
@@ -175,6 +239,96 @@ describe('PrismaNotificationRepository', () => {
       data: [expect.objectContaining({ recipientId: 'enabled', familyId, type: 'BADGE' })],
       skipDuplicates: true,
     });
+  });
+
+  it('property: the master switch and every one of seven type switches suppress event writes', async () => {
+    const types: readonly NotificationType[] = [
+      'REVIEW',
+      'POINTS',
+      'LEVEL',
+      'REDEMPTION',
+      'WISH',
+      'BADGE',
+      'INVITATION',
+    ];
+    for (const type of types) {
+      for (const notificationPreference of [
+        { inAppEnabled: false, typeSettings: {} },
+        { inAppEnabled: true, typeSettings: { [type]: false } },
+      ]) {
+        const createMany = vi.fn();
+        const repository = new PrismaNotificationRepository({
+          user: {
+            findMany: vi.fn().mockResolvedValue([{ id: recipientId, notificationPreference }]),
+          },
+          notification: { createMany },
+        } as unknown as PrismaClient);
+        await expect(
+          repository.createFromEvent({
+            familyId,
+            recipientIds: [recipientId],
+            type,
+            title: 'Notification',
+            content: 'Content',
+            targetType: 'TARGET',
+            targetId: null,
+            targetUrl: '/notifications',
+            sourceEventId: '01989a58-c542-7abc-8def-0123456789ad',
+            sourceEventName: 'event.v1',
+            createdAt: new Date('2026-08-07T12:00:00.000Z'),
+          }),
+        ).resolves.toBe(0);
+        expect(createMany).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it('property: event replay creates one row per active same-family recipient', async () => {
+    const activeRecipients = new Set(['recipient-a', 'recipient-b']);
+    const stored = new Set<string>();
+    const repository = new PrismaNotificationRepository({
+      user: {
+        findMany: vi.fn(async ({ where }: { where: { id: { in: readonly string[] } } }) =>
+          [...new Set(where.id.in)]
+            .filter((id) => activeRecipients.has(id))
+            .map((id) => ({ id, notificationPreference: null })),
+        ),
+      },
+      notification: {
+        createMany: vi.fn(async ({ data }) => {
+          let count = 0;
+          for (const row of data) {
+            const key = `${row.sourceEventId}:${row.recipientId}`;
+            if (stored.has(key)) continue;
+            stored.add(key);
+            count += 1;
+          }
+          return { count };
+        }),
+      },
+    } as unknown as PrismaClient);
+    const write = {
+      familyId,
+      recipientIds: ['recipient-a', 'recipient-b', 'cross-family'],
+      type: 'BADGE' as const,
+      title: 'Badge awarded',
+      content: 'A badge was awarded.',
+      targetType: 'BADGE_AWARD',
+      targetId: null,
+      targetUrl: '/badges',
+      sourceEventId: '01989a58-c542-7abc-8def-0123456789ad',
+      sourceEventName: 'badges.award.created.v1',
+      createdAt: new Date('2026-08-07T12:00:00.000Z'),
+    };
+
+    const results = await Promise.all(
+      Array.from({ length: 16 }, () => repository.createFromEvent(write)),
+    );
+
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(2);
+    expect(stored).toEqual(
+      new Set([`${write.sourceEventId}:recipient-a`, `${write.sourceEventId}:recipient-b`]),
+    );
   });
 
   it('lists active family parents in stable order', async () => {
