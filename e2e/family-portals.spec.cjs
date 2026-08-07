@@ -1037,6 +1037,20 @@ test.describe('FamilyStar core browser flows', () => {
     const writes = [];
     await mockApi(page, (request) => {
       if (request.method() === 'POST') writes.push(request.url());
+      if (
+        request.method() === 'POST' &&
+        request.url().endsWith('/rewards/reward-e2e/redemptions')
+      ) {
+        return envelope({
+          redemption: {
+            id: 'redemption-created-e2e',
+            child_id: 'child-e2e',
+            reward_id: 'reward-e2e',
+            points_spent: 30,
+            status: 'PENDING',
+          },
+        });
+      }
       if (request.method() === 'GET' && request.url().endsWith('/redemptions')) {
         return envelope({
           redemptions: [
@@ -1045,7 +1059,7 @@ test.describe('FamilyStar core browser flows', () => {
               child_id: 'child-e2e',
               reward_id: 'reward-e2e',
               points_spent: 30,
-              status: 'REFUNDED',
+              status: 'REJECTED',
             },
           ],
         });
@@ -1070,6 +1084,6 @@ test.describe('FamilyStar core browser flows', () => {
     await setPortalRole(page, 'parent');
     await page.goto('/rewards');
     await expect(page.getByText(/库存/).first()).toBeVisible();
-    await expect(page.getByText('REFUNDED', { exact: true })).toBeVisible();
+    await expect(page.getByText('已拒绝，退款完成', { exact: true })).toBeVisible();
   });
 });

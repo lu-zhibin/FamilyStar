@@ -77,6 +77,13 @@ import {
 } from '../lib/parent-portal';
 import { loadTimelineMediaUrls } from '../lib/growth-records';
 import { uploadMediaFile } from '../lib/media-upload';
+import {
+  activeWishes,
+  buildWishAdoptionPayload,
+  redemptionStatusLabel,
+  type RewardWorkflowRedemption,
+  type RewardWorkflowWish,
+} from '../lib/reward-workflow';
 import { ParentGrowthRecordsSection } from './growth-records';
 import { ParentAnalyticsSection, ParentDashboardSection } from './parent-read-models';
 import { ParentShell } from './parent-shell';
@@ -88,20 +95,8 @@ type FrequencyKind = 'daily' | 'weekly_count' | 'weekdays' | 'date_range';
 type Child = ParentChild;
 type Task = ParentTask;
 type TaskType = ParentTaskType;
-type Redemption = {
-  id: string;
-  child_id: string;
-  reward_id: string;
-  points_spent: number;
-  status: string;
-};
-type Wish = {
-  id: string;
-  child_id: string;
-  title: string;
-  target_points: number;
-  progress: { points: number; ratio: number };
-};
+type Redemption = RewardWorkflowRedemption;
+type Wish = RewardWorkflowWish;
 type FamilySettings = {
   time_zone: string;
   check_in_deadline: string;
@@ -2192,6 +2187,158 @@ export function RewardEditorFields({
   );
 }
 
+export function RedemptionWorkflowList({
+  redemptions,
+  busyAction,
+  onApprove,
+  onReject,
+  onFulfill,
+}: Readonly<{
+  redemptions: readonly Redemption[];
+  busyAction: string | null;
+  onApprove: (redemption: Redemption) => void;
+  onReject: (redemption: Redemption) => void;
+  onFulfill: (redemption: Redemption) => void;
+}>) {
+  return redemptions.map((item) => {
+    const locked = busyAction !== null;
+    return (
+      <div className="list-row" key={item.id}>
+        <Gift aria-hidden="true" />
+        <span className="flex-1 font-extrabold">兑换 {item.points_spent} 星</span>
+        <span className="tag tag-orange">{redemptionStatusLabel(item.status)}</span>
+        {item.status === 'PENDING' && (
+          <>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={locked}
+              onClick={() => onApprove(item)}
+            >
+              批准
+            </button>
+            <button
+              className="secondary-button text-red"
+              type="button"
+              disabled={locked}
+              onClick={() => onReject(item)}
+            >
+              拒绝并退款
+            </button>
+          </>
+        )}
+        {item.status === 'APPROVED' && (
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={locked}
+            onClick={() => onFulfill(item)}
+          >
+            确认兑现
+          </button>
+        )}
+      </div>
+    );
+  });
+}
+
+export function ActiveWishWall({
+  wishes,
+  busyAction,
+  onAdopt,
+}: Readonly<{
+  wishes: readonly Wish[];
+  busyAction: string | null;
+  onAdopt: (wish: Wish) => void;
+}>) {
+  return activeWishes(wishes).map((wish) => (
+    <div className="list-row" key={wish.id}>
+      <Heart aria-hidden="true" className="text-pink-dark" />
+      <div className="flex-1">
+        <strong>{wish.title}</strong>
+        <Progress
+          value={Math.round(wish.progress.ratio * 100)}
+          label={`${wish.progress.points} / ${wish.target_points} 星`}
+        />
+      </div>
+      <button
+        className="secondary-button"
+        type="button"
+        disabled={busyAction !== null}
+        onClick={() => onAdopt(wish)}
+      >
+        采纳为奖励
+      </button>
+    </div>
+  ));
+}
+
+export function WishAdoptionFields({
+  wish,
+  busy,
+  onSubmit,
+}: Readonly<{
+  wish: Wish;
+  busy: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}>) {
+  return (
+    <form className="space-y-4" aria-busy={busy} onSubmit={onSubmit}>
+      <p className="notice">
+        “{wish.title}”将按 {wish.target_points} 星创建为家庭奖励。
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="field-label">
+          奖励类型
+          <select className="field" name="type" defaultValue="CUSTOM" disabled={busy}>
+            <option value="PRIVILEGE">特权</option>
+            <option value="PHYSICAL">实物</option>
+            <option value="EXPERIENCE">体验</option>
+            <option value="CUSTOM">自定义</option>
+          </select>
+        </label>
+        <label className="field-label">
+          上架状态
+          <select className="field" name="status" defaultValue="ACTIVE" disabled={busy}>
+            <option value="ACTIVE">立即上架</option>
+            <option value="INACTIVE">暂不上架</option>
+          </select>
+        </label>
+        <label className="field-label">
+          总库存（留空不限量）
+          <input className="field" name="stock_total" type="number" min="0" disabled={busy} />
+        </label>
+        <label className="field-label">
+          最低等级
+          <input
+            className="field"
+            name="min_level"
+            type="number"
+            min="1"
+            max="20"
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          每日兑换上限
+          <input className="field" name="per_day" type="number" min="1" disabled={busy} />
+        </label>
+        <label className="field-label">
+          每周兑换上限
+          <input className="field" name="per_week" type="number" min="1" disabled={busy} />
+        </label>
+        <label className="field-label">
+          每月兑换上限
+          <input className="field" name="per_month" type="number" min="1" disabled={busy} />
+        </label>
+      </div>
+      <button className="primary-button w-full justify-center" type="submit" disabled={busy}>
+        {busy ? '正在采纳...' : '确认采纳'}
+      </button>
+    </form>
+  );
+}
+
 function RewardsPage() {
   const rewards = useApiData<ParentReward[]>('/rewards', 'rewards', []);
   const redemptions = useApiData<Redemption[]>('/redemptions', 'redemptions', []);
@@ -2203,6 +2350,8 @@ function RewardsPage() {
   const [imageUrls, setImageUrls] = useState<Readonly<Record<string, string>>>({});
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
+  const [rejectingRedemption, setRejectingRedemption] = useState<Redemption | null>(null);
+  const [adoptingWish, setAdoptingWish] = useState<Wish | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -2346,19 +2495,88 @@ function RewardsPage() {
     }
   }
 
-  async function advanceRedemption(item: Redemption) {
+  async function updateRedemption(item: Redemption, action: 'approve' | 'fulfill') {
+    if (busyAction) return;
     setActionMessage('');
-    const action = item.status === 'PENDING' ? 'approve' : 'fulfill';
+    setBusyAction(`redemption:${item.id}:${action}`);
     try {
-      const data = await parentApi<{ redemption: Redemption }>(
-        `/redemptions/${item.id}/${action}`,
-        { method: 'POST' },
+      await parentApi(`/redemptions/${item.id}/${action}`, { method: 'POST' });
+      await redemptions.refresh();
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        await redemptions.refresh().catch(() => undefined);
+      }
+      setActionMessage(
+        error instanceof ParentApiError && error.status === 409
+          ? '兑换状态已变化，已刷新为服务端最新状态。'
+          : '兑换状态更新失败，请刷新后重试。',
       );
-      redemptions.setData((items) =>
-        items.map((current) => (current.id === item.id ? data.redemption : current)),
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function rejectRedemption(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!rejectingRedemption || busyAction) return;
+    const reason = String(new FormData(event.currentTarget).get('reason') ?? '').trim();
+    if (reason.length < 1 || reason.length > 2000) {
+      setActionMessage('拒绝原因需为 1 至 2000 个字符。');
+      return;
+    }
+    const item = rejectingRedemption;
+    setActionMessage('');
+    setBusyAction(`redemption:${item.id}:reject`);
+    try {
+      await parentApi(`/redemptions/${item.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      });
+      setRejectingRedemption(null);
+      await redemptions.refresh();
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        setRejectingRedemption(null);
+        await redemptions.refresh().catch(() => undefined);
+      }
+      setActionMessage(
+        error instanceof ParentApiError && error.status === 409
+          ? '兑换状态已变化，已刷新为服务端最新状态。'
+          : '拒绝兑换失败，请重试。',
       );
-    } catch {
-      setActionMessage('兑换状态更新失败，请刷新后重试。');
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function adoptWish(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!adoptingWish || busyAction) return;
+    const wish = adoptingWish;
+    setActionMessage('');
+    setBusyAction(`wish:${wish.id}:adopt`);
+    try {
+      await parentApi(`/wishes/${wish.id}/adopt`, {
+        method: 'POST',
+        body: JSON.stringify(buildWishAdoptionPayload(new FormData(event.currentTarget))),
+      });
+      setAdoptingWish(null);
+      const refreshed = await Promise.allSettled([wishes.refresh(), rewards.refresh()]);
+      if (refreshed.some(({ status }) => status === 'rejected')) {
+        setActionMessage('愿望已采纳，列表刷新失败，请重新加载页面确认。');
+      }
+    } catch (error) {
+      if (error instanceof ParentApiError && error.status === 409) {
+        setAdoptingWish(null);
+        await Promise.allSettled([wishes.refresh(), rewards.refresh()]);
+      }
+      setActionMessage(
+        error instanceof ParentApiError && error.status === 409
+          ? '愿望状态已变化，已刷新愿望与奖励列表。'
+          : '采纳愿望失败，请检查奖励配置后重试。',
+      );
+    } finally {
+      setBusyAction(null);
     }
   }
   return (
@@ -2394,18 +2612,13 @@ function RewardsPage() {
               icon={<PackageCheck size={30} />}
             />
           ) : (
-            redemptions.data.map((item) => (
-              <div className="list-row" key={item.id}>
-                <Gift />
-                <span className="flex-1 font-extrabold">兑换 {item.points_spent} 星</span>
-                <span className="tag tag-orange">{item.status}</span>
-                {(item.status === 'PENDING' || item.status === 'APPROVED') && (
-                  <button className="secondary-button" onClick={() => advanceRedemption(item)}>
-                    {item.status === 'PENDING' ? '批准' : '确认兑现'}
-                  </button>
-                )}
-              </div>
-            ))
+            <RedemptionWorkflowList
+              redemptions={redemptions.data}
+              busyAction={busyAction}
+              onApprove={(item) => updateRedemption(item, 'approve')}
+              onReject={setRejectingRedemption}
+              onFulfill={(item) => updateRedemption(item, 'fulfill')}
+            />
           )}
         </Panel>
         <Panel>
@@ -2426,26 +2639,14 @@ function RewardsPage() {
       </div>
       <Panel className="mt-5">
         <SectionTitle>许愿墙</SectionTitle>
-        {wishes.data.length === 0 ? (
+        {activeWishes(wishes.data).length === 0 ? (
           <EmptyState
             title="还没有新的愿望"
             detail="孩子创建愿望后，家长可一键采纳为正式奖励。"
             icon={<Heart size={30} />}
           />
         ) : (
-          wishes.data.map((wish) => (
-            <div className="list-row" key={wish.id}>
-              <Heart className="text-pink-dark" />
-              <div className="flex-1">
-                <strong>{wish.title}</strong>
-                <Progress
-                  value={Math.round(wish.progress.ratio * 100)}
-                  label={`${wish.progress.points} / ${wish.target_points} 星`}
-                />
-              </div>
-              <button className="secondary-button">采纳</button>
-            </div>
-          ))
+          <ActiveWishWall wishes={wishes.data} busyAction={busyAction} onAdopt={setAdoptingWish} />
         )}
       </Panel>
       {(createOpen || editingReward) && (
@@ -2465,6 +2666,46 @@ function RewardsPage() {
             onRemoveImage={() => setImageRemoved(true)}
             onSubmit={saveReward}
           />
+        </Modal>
+      )}
+      {rejectingRedemption && (
+        <Modal
+          title="拒绝兑换并退款"
+          onClose={() => setRejectingRedemption(null)}
+          closeDisabled={busyAction !== null}
+        >
+          <form className="space-y-4" aria-busy={busyAction !== null} onSubmit={rejectRedemption}>
+            <label className="field-label">
+              拒绝原因
+              <textarea
+                className="field min-h-32"
+                name="reason"
+                required
+                minLength={1}
+                maxLength={2000}
+                disabled={busyAction !== null}
+              />
+            </label>
+            <p className="text-caption font-bold text-brown-light">
+              拒绝后将退还 {rejectingRedemption.points_spent} 星并释放预占库存。
+            </p>
+            <button
+              className="primary-button w-full justify-center"
+              type="submit"
+              disabled={busyAction !== null}
+            >
+              {busyAction ? '正在处理...' : '确认拒绝并退款'}
+            </button>
+          </form>
+        </Modal>
+      )}
+      {adoptingWish && (
+        <Modal
+          title="采纳愿望"
+          onClose={() => setAdoptingWish(null)}
+          closeDisabled={busyAction !== null}
+        >
+          <WishAdoptionFields wish={adoptingWish} busy={busyAction !== null} onSubmit={adoptWish} />
         </Modal>
       )}
     </>

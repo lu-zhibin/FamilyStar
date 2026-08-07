@@ -3,15 +3,18 @@ import { describe, expect, it } from 'vitest';
 
 import { parentSections, type ParentReward } from '../lib/parent-portal';
 import {
+  ActiveWishWall,
   FamilyCodeCard,
   FamilyProfileFields,
   Modal,
   ParentPortal,
   RewardCatalog,
   RewardEditorFields,
+  RedemptionWorkflowList,
   ReviewActions,
   ReviewMediaGallery,
   TaskAssigneeFields,
+  WishAdoptionFields,
 } from './parent-portal';
 
 const titles = [
@@ -153,6 +156,109 @@ describe('ParentPortal', () => {
     expect(markup).toContain('移除图片');
     expect(markup).toContain('正在保存...');
     expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('renders localized redemption actions only for mutable states', () => {
+    const redemptions = [
+      {
+        id: 'pending',
+        child_id: 'child-1',
+        reward_id: 'reward-1',
+        points_spent: 20,
+        status: 'PENDING' as const,
+      },
+      {
+        id: 'approved',
+        child_id: 'child-1',
+        reward_id: 'reward-1',
+        points_spent: 20,
+        status: 'APPROVED' as const,
+      },
+      {
+        id: 'rejected',
+        child_id: 'child-1',
+        reward_id: 'reward-1',
+        points_spent: 20,
+        status: 'REJECTED' as const,
+      },
+      {
+        id: 'fulfilled',
+        child_id: 'child-1',
+        reward_id: 'reward-1',
+        points_spent: 20,
+        status: 'FULFILLED' as const,
+      },
+    ];
+    const markup = renderToStaticMarkup(
+      <RedemptionWorkflowList
+        redemptions={redemptions}
+        busyAction={null}
+        onApprove={() => undefined}
+        onReject={() => undefined}
+        onFulfill={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('待审批');
+    expect(markup).toContain('待兑现');
+    expect(markup).toContain('已拒绝，退款完成');
+    expect(markup).toContain('已兑现');
+    expect(markup.match(/>批准</g)).toHaveLength(1);
+    expect(markup.match(/>拒绝并退款</g)).toHaveLength(1);
+    expect(markup.match(/>确认兑现</g)).toHaveLength(1);
+  });
+
+  it('shows every active wish and locks adoption while another write runs', () => {
+    const wish = {
+      id: 'wish-1',
+      child_id: 'child-1',
+      title: '去露营',
+      target_points: 180,
+      status: 'ACTIVE' as const,
+      progress: { points: 90, ratio: 0.5 },
+    };
+    const markup = renderToStaticMarkup(
+      <ActiveWishWall
+        wishes={[
+          wish,
+          { ...wish, id: 'wish-2', title: '看电影' },
+          { ...wish, id: 'old', title: '旧愿望', status: 'ADOPTED' },
+        ]}
+        busyAction="wish:wish-1:adopt"
+        onAdopt={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('去露营');
+    expect(markup).toContain('看电影');
+    expect(markup).not.toContain('旧愿望');
+    expect(markup.match(/disabled=""/g)).toHaveLength(2);
+  });
+
+  it('renders every strict wish adoption configuration field', () => {
+    const markup = renderToStaticMarkup(
+      <WishAdoptionFields
+        wish={{
+          id: 'wish-1',
+          child_id: 'child-1',
+          title: '去露营',
+          target_points: 180,
+          status: 'ACTIVE',
+          progress: { points: 90, ratio: 0.5 },
+        }}
+        busy
+        onSubmit={() => undefined}
+      />,
+    );
+
+    expect(markup).toMatch(/name="type"/);
+    expect(markup).toMatch(/name="stock_total"/);
+    expect(markup).toMatch(/name="min_level"/);
+    expect(markup).toMatch(/name="per_day"/);
+    expect(markup).toMatch(/name="per_week"/);
+    expect(markup).toMatch(/name="per_month"/);
+    expect(markup).toMatch(/name="status"/);
+    expect(markup).toContain('aria-busy="true"');
   });
 
   it('renders multi-child choices and per-child settings for every task mode', () => {

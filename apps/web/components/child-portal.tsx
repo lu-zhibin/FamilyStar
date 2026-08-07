@@ -31,10 +31,12 @@ import {
   type ChildSection,
 } from '../lib/child-portal';
 import {
-  ChildPointsBalance,
-  ChildPointsPanel,
-  ChildRankingsPanel,
-} from './child-points-rankings';
+  activeWishes,
+  redemptionStatusLabel,
+  type RewardWorkflowRedemption,
+  type RewardWorkflowWish,
+} from '../lib/reward-workflow';
+import { ChildPointsBalance, ChildPointsPanel, ChildRankingsPanel } from './child-points-rankings';
 import { ChildShell } from './child-shell';
 import { ChildGrowthRecordsSection } from './growth-records';
 
@@ -68,20 +70,8 @@ type Reward = {
   stock_available: number | null;
   prerequisites: { min_level?: number };
 };
-type Redemption = {
-  id: string;
-  child_id: string;
-  reward_id: string;
-  points_spent: number;
-  status: string;
-};
-type Wish = {
-  id: string;
-  child_id: string;
-  title: string;
-  target_points: number;
-  progress: { points: number; remaining: number; ratio: number };
-};
+type Redemption = RewardWorkflowRedemption;
+type Wish = RewardWorkflowWish;
 type SwitchTarget = {
   id: string;
   nickname: string;
@@ -146,7 +136,20 @@ function useApiData<T>(path: string, key: string, initialValue: T) {
     };
   }, [key, path]);
 
-  return { data, setData, state };
+  async function refresh(): Promise<T> {
+    try {
+      const payload = await childApi<Record<string, unknown>>(path);
+      const value = readApiField<T>(payload, key);
+      setData(value);
+      setState(loadedState(value));
+      return value;
+    } catch (error) {
+      setState('error');
+      throw error;
+    }
+  }
+
+  return { data, setData, state, refresh };
 }
 
 function DataStatus({ state, limited }: Readonly<{ state: LoadState; limited?: string }>) {
@@ -441,23 +444,102 @@ function AchievementsPage({ level, state }: Readonly<{ level: LevelView; state: 
   );
 }
 
+export function ChildWishWall({
+  wishes,
+  slots,
+  busyWishId,
+  onCancel,
+}: Readonly<{
+  wishes: readonly Wish[];
+  slots: number;
+  busyWishId: string | null;
+  onCancel: (wish: Wish) => void;
+}>) {
+  const active = activeWishes(wishes);
+  return (
+    <section className="child-card bg-gradient-to-br from-sky/40 to-white child-animate-in child-delay-1">
+      <SectionHeading
+        title="我的愿望"
+        action={
+          <span className="tag bg-sky/20 text-blue">
+            {active.length} / {slots}
+          </span>
+        }
+      />
+      {active.length === 0 ? (
+        <p className="text-label font-bold text-brown-light">愿望槽位空着，写下一个期待吧。</p>
+      ) : (
+        <div className="space-y-4">
+          {active.map((wish) => (
+            <div className="rounded-card border border-sky/30 bg-white/70 p-4" key={wish.id}>
+              <div className="flex items-center justify-between gap-3">
+                <strong>{wish.title}</strong>
+                <button
+                  type="button"
+                  className="tag border border-red/20 bg-red/5 text-red"
+                  disabled={busyWishId !== null}
+                  onClick={() => onCancel(wish)}
+                >
+                  {busyWishId === wish.id ? '正在取消' : '取消愿望'}
+                </button>
+              </div>
+              <div className="mt-3">
+                <ProgressBar
+                  value={wish.progress.ratio}
+                  label={`${wish.progress.points} / ${wish.target_points} 星`}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function ChildRedemptionList({
+  redemptions,
+  rewards,
+}: Readonly<{ redemptions: readonly Redemption[]; rewards: readonly Reward[] }>) {
+  return redemptions.map((redemption) => (
+    <div key={redemption.id} className="list-row">
+      <span className="grid size-11 place-items-center rounded-card bg-pink/30">
+        <Gift aria-hidden="true" />
+      </span>
+      <div className="flex-1">
+        <strong>
+          {rewards.find((item) => item.id === redemption.reward_id)?.name ?? '家庭奖励'}
+        </strong>
+        <p className="text-label font-bold text-brown-light">已预扣 {redemption.points_spent} 星</p>
+      </div>
+      <span className="tag-green tag">{redemptionStatusLabel(redemption.status)}</span>
+    </div>
+  ));
+}
+
 function RewardsPage({
   level,
   rewards,
   rewardsState,
   redemptions,
   wishes,
+  busyWishId,
   onRedeem,
   onWish,
+  onCancelWish,
 }: Readonly<{
   level: LevelView;
   rewards: Reward[];
   rewardsState: LoadState;
   redemptions: Redemption[];
   wishes: Wish[];
+  busyWishId: string | null;
   onRedeem: (reward: Reward) => void;
   onWish: () => void;
+  onCancelWish: (wish: Wish) => void;
 }>) {
+  const occupiedSlots = activeWishes(wishes).length;
+  const wishSlotsFull = occupiedSlots >= level.benefits.wish_slots;
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-purple child-animate-in">
@@ -473,23 +555,12 @@ function RewardsPage({
           </div>
         </div>
       </section>
-      {wishes[0] && (
-        <section className="child-card bg-gradient-to-br from-sky/40 to-white child-animate-in child-delay-1">
-          <SectionHeading
-            title="我的愿望"
-            action={
-              <span className="tag bg-sky/20 text-blue">1 / {level.benefits.wish_slots}</span>
-            }
-          />
-          <strong>{wishes[0].title}</strong>
-          <div className="mt-3">
-            <ProgressBar
-              value={wishes[0].progress.ratio}
-              label={`${wishes[0].progress.points} / ${wishes[0].target_points} 星`}
-            />
-          </div>
-        </section>
-      )}
+      <ChildWishWall
+        wishes={wishes}
+        slots={level.benefits.wish_slots}
+        busyWishId={busyWishId}
+        onCancel={onCancelWish}
+      />
       <section className="child-animate-in child-delay-2">
         <SectionHeading title="奖励商店" action={<DataStatus state={rewardsState} />} />
         {rewards.length === 0 ? (
@@ -538,8 +609,13 @@ function RewardsPage({
             })}
           </div>
         )}
-        <button type="button" className="child-dashed-button mt-4" onClick={onWish}>
-          <Plus aria-hidden="true" /> 我要许愿
+        <button
+          type="button"
+          className="child-dashed-button mt-4"
+          disabled={wishSlotsFull || busyWishId !== null}
+          onClick={onWish}
+        >
+          <Plus aria-hidden="true" /> {wishSlotsFull ? '愿望槽位已满' : '我要许愿'}
         </button>
       </section>
       <section className="child-card child-animate-in child-delay-3">
@@ -550,24 +626,7 @@ function RewardsPage({
             <strong>还没有兑换记录</strong>
           </div>
         ) : (
-          redemptions.map((redemption) => (
-            <div key={redemption.id} className="list-row">
-              <span className="grid size-11 place-items-center rounded-card bg-pink/30">
-                <Gift aria-hidden="true" />
-              </span>
-              <div className="flex-1">
-                <strong>
-                  {rewards.find((item) => item.id === redemption.reward_id)?.name ?? '家庭奖励'}
-                </strong>
-                <p className="text-label font-bold text-brown-light">
-                  已预扣 {redemption.points_spent} 星
-                </p>
-              </div>
-              <span className="tag-green tag">
-                {redemption.status === 'APPROVED' ? '待兑现' : '待审批'}
-              </span>
-            </div>
-          ))
+          <ChildRedemptionList redemptions={redemptions} rewards={rewards} />
         )}
       </section>
     </div>
@@ -839,6 +898,7 @@ function RedemptionModal({
   const cost = effectiveRewardCost(reward.points_cost, level.benefits.discount);
 
   async function confirm() {
+    if (submitting) return;
     setSubmitting(true);
     try {
       const result = await childApi<{ redemption: Redemption }>(
@@ -850,7 +910,6 @@ function RedemptionModal({
         },
       );
       onCreated(result.redemption);
-      setFeedback({ tone: 'success', message: '兑换申请成功，星星已预扣。' });
     } catch (error) {
       setFeedback({
         tone: 'error',
@@ -862,7 +921,7 @@ function RedemptionModal({
   }
 
   return (
-    <Modal title="确认兑换" onClose={onClose}>
+    <Modal title="确认兑换" onClose={submitting ? () => undefined : onClose}>
       <div className="mt-5 text-center">
         <Gift className="mx-auto text-pink-dark" size={56} />
         <h3 className="mt-3 font-display text-page">{reward.name}</h3>
@@ -894,27 +953,31 @@ function WishModal({
   const [title, setTitle] = useState('');
   const [target, setTarget] = useState(100);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     try {
       const result = await childApi<{ wish: Wish }>('/wishes', {
         method: 'POST',
         body: JSON.stringify({ title, target_points: target }),
       });
       onCreated(result.wish);
-      setFeedback({ tone: 'success', message: '愿望已经放进愿望墙。' });
     } catch (error) {
       setFeedback({
         tone: 'error',
         message: error instanceof ChildApiError ? error.message : '许愿失败。',
       });
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
-    <Modal title="我要许愿" onClose={onClose}>
-      <form className="mt-4" onSubmit={submit}>
+    <Modal title="我要许愿" onClose={submitting ? () => undefined : onClose}>
+      <form className="mt-4" aria-busy={submitting} onSubmit={submit}>
         <label className="field-label">
           愿望名称
           <input
@@ -922,6 +985,7 @@ function WishModal({
             required
             maxLength={120}
             value={title}
+            disabled={submitting}
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
@@ -933,12 +997,14 @@ function WishModal({
             required
             min={1}
             value={target}
+            disabled={submitting}
             onChange={(event) => setTarget(Number(event.target.value))}
           />
         </label>
         <Feedback value={feedback} />
-        <button type="submit" className="child-success-button mt-5">
-          <Target /> 放进愿望墙
+        <button type="submit" className="child-success-button mt-5" disabled={submitting}>
+          {submitting ? <RefreshCw className="animate-spin" /> : <Target />}
+          {submitting ? '正在许愿' : '放进愿望墙'}
         </button>
       </form>
     </Modal>
@@ -958,7 +1024,8 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
     'redemptions',
     [],
   );
-  const { data: rawWishes, setData: setWishes } = useApiData<Wish[]>('/wishes', 'wishes', []);
+  const wishesResource = useApiData<Wish[]>('/wishes', 'wishes', []);
+  const { data: rawWishes, setData: setWishes } = wishesResource;
   const { data: tasks, state: tasksState } = useApiData<ChildTask[]>(
     `/tasks/me?date=${currentCalendarDate()}`,
     'tasks',
@@ -968,6 +1035,8 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
   const [switching, setSwitching] = useState(false);
   const [wishing, setWishing] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [busyWishId, setBusyWishId] = useState<string | null>(null);
+  const [workflowFeedback, setWorkflowFeedback] = useState<FeedbackState>(null);
 
   const currentChild = level ? targets.find((target) => target.id === level.user_id) : undefined;
 
@@ -985,7 +1054,36 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
   }
 
   const redemptions = belongsToCurrentChild(rawRedemptions, level.user_id);
-  const wishes = belongsToCurrentChild(rawWishes, level.user_id);
+  const wishes = activeWishes(belongsToCurrentChild(rawWishes, level.user_id));
+
+  async function cancelWish(wish: Wish) {
+    if (busyWishId) return;
+    setWorkflowFeedback(null);
+    setBusyWishId(wish.id);
+    try {
+      const result = await childApi<{ wish: Wish }>(`/wishes/${wish.id}/cancel`, {
+        method: 'POST',
+      });
+      setWishes((current) =>
+        current.map((item) => (item.id === result.wish.id ? result.wish : item)),
+      );
+    } catch (error) {
+      if (error instanceof ChildApiError && error.status === 409) {
+        await wishesResource.refresh().catch(() => undefined);
+      }
+      setWorkflowFeedback({
+        tone: 'error',
+        message:
+          error instanceof ChildApiError && error.status === 409
+            ? '愿望状态已变化，已刷新为最新状态。'
+            : error instanceof ChildApiError
+              ? error.message
+              : '取消愿望失败，请稍后重试。',
+      });
+    } finally {
+      setBusyWishId(null);
+    }
+  }
 
   const page = {
     home: (
@@ -1006,8 +1104,10 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
         rewardsState={rewardsState}
         redemptions={redemptions}
         wishes={wishes}
+        busyWishId={busyWishId}
         onRedeem={setReward}
         onWish={() => setWishing(true)}
+        onCancelWish={cancelWish}
       />
     ),
     records: <RecordsPage />,
@@ -1023,19 +1123,26 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
   return (
     <ChildShell section={section} child={currentChild} onSwitch={() => setSwitching(true)}>
       {page}
+      <Feedback value={workflowFeedback} />
       {reward && (
         <RedemptionModal
           reward={reward}
           level={level}
           onClose={() => setReward(null)}
-          onCreated={(created) => setRedemptions((current) => [created, ...current])}
+          onCreated={(created) => {
+            setRedemptions((current) => [created, ...current]);
+            setReward(null);
+          }}
         />
       )}
       {switching && <SwitchModal onClose={() => setSwitching(false)} />}
       {wishing && (
         <WishModal
           onClose={() => setWishing(false)}
-          onCreated={(created) => setWishes((current) => [created, ...current])}
+          onCreated={(created) => {
+            setWishes((current) => [created, ...current]);
+            setWishing(false);
+          }}
         />
       )}
       {changingPassword && <PasswordModal onClose={() => setChangingPassword(false)} />}
