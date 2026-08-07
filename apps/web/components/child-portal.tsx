@@ -20,6 +20,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { loadedState, readApiField, type ApiLoadState } from '../lib/api-resource';
+import type { SessionIdentity } from '../lib/auth';
 import { badgeConditionLabel, badgeProgressPercent, type BadgeWallItem } from '../lib/badges';
 import {
   createCheckInIntent,
@@ -38,6 +39,12 @@ import {
   type ChildSection,
 } from '../lib/child-portal';
 import { getOfflineCheckInRepository } from '../lib/offline-check-in-repository';
+import type { OfflineOwnerScope } from '../lib/offline-check-in-repository';
+import {
+  ownerScopeFromSession,
+  readOfflineOwnerScope,
+  storeOfflineOwnerScope,
+} from '../lib/offline-owner-scope';
 import {
   activeWishes,
   redemptionStatusLabel,
@@ -55,6 +62,7 @@ import {
 import { ChildPointsBalance, ChildPointsPanel, ChildRankingsPanel } from './child-points-rankings';
 import { ChildShell } from './child-shell';
 import { ChildGrowthRecordsSection } from './growth-records';
+import { OfflineCheckInStatus } from './offline-check-in-status';
 
 type LoadState = ApiLoadState;
 type FeedbackState = { tone: 'success' | 'warning' | 'error'; message: string } | null;
@@ -407,7 +415,10 @@ export function CheckInSubmissionStatus({ status }: Readonly<{ status: LocalChec
   return null;
 }
 
-export function CheckInSubmissionCard({ task }: Readonly<{ task: ChildTask }>) {
+export function CheckInSubmissionCard({
+  task,
+  owner = null,
+}: Readonly<{ task: ChildTask; owner?: OfflineOwnerScope | null }>) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState<LocalCheckInStatus>('idle');
@@ -452,7 +463,7 @@ export function CheckInSubmissionCard({ task }: Readonly<{ task: ChildTask }>) {
           ...(text.trim() ? { text } : {}),
           ...(files.length > 0 ? { files } : {}),
         },
-        { repository: getOfflineCheckInRepository() },
+        { repository: getOfflineCheckInRepository(), ...(owner ? { owner } : {}) },
       );
       setStatus(result.status);
     } catch (caught) {
@@ -559,7 +570,11 @@ export function CheckInSubmissionCard({ task }: Readonly<{ task: ChildTask }>) {
   );
 }
 
-export function CheckInsPage({ tasks, state }: Readonly<{ tasks: ChildTask[]; state: LoadState }>) {
+export function CheckInsPage({
+  tasks,
+  state,
+  owner = null,
+}: Readonly<{ tasks: ChildTask[]; state: LoadState; owner?: OfflineOwnerScope | null }>) {
   return (
     <div className="space-y-6">
       <section className="child-hero child-hero-orange child-animate-in">
@@ -578,7 +593,7 @@ export function CheckInsPage({ tasks, state }: Readonly<{ tasks: ChildTask[]; st
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {tasks.map((task) => (
-              <CheckInSubmissionCard key={task.task_assignment_id} task={task} />
+              <CheckInSubmissionCard key={task.task_assignment_id} task={task} owner={owner} />
             ))}
           </div>
         )}
@@ -1458,6 +1473,29 @@ function WishModal({
 }
 
 export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
+  const [offlineOwner, setOfflineOwner] = useState<OfflineOwnerScope | null>(null);
+  const [replayAuthorized, setReplayAuthorized] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const stored = readOfflineOwnerScope(window.localStorage);
+    if (!navigator.onLine) setOfflineOwner(stored);
+    childApi<SessionIdentity>('/auth/session')
+      .then((session) => {
+        if (!active) return;
+        const owner = ownerScopeFromSession(session);
+        setOfflineOwner(owner);
+        setReplayAuthorized(owner !== null);
+        if (owner) storeOfflineOwnerScope(window.localStorage, owner);
+      })
+      .catch(() => {
+        if (active) setReplayAuthorized(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const { data: level, state: levelState } = useApiData<LevelView | null>(
     '/levels/me',
     'level',
@@ -1494,6 +1532,11 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
   if (!level) {
     return (
       <ChildShell section={section} child={currentChild} onSwitch={() => setSwitching(true)}>
+        <OfflineCheckInStatus
+          owner={offlineOwner}
+          replayAuthorized={replayAuthorized}
+          visible={false}
+        />
         <div className="child-card empty-state">
           <Star aria-hidden="true" size={34} />
           <strong>{levelState === 'error' ? '成长数据读取失败' : '正在读取成长数据'}</strong>
@@ -1546,7 +1589,7 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
         tasksState={tasksState}
       />
     ),
-    'check-ins': <CheckInsPage tasks={tasks} state={tasksState} />,
+    'check-ins': <CheckInsPage tasks={tasks} state={tasksState} owner={offlineOwner} />,
     achievements: (
       <AchievementsPage
         level={level}
@@ -1580,6 +1623,11 @@ export function ChildPortal({ section }: Readonly<{ section: ChildSection }>) {
 
   return (
     <ChildShell section={section} child={currentChild} onSwitch={() => setSwitching(true)}>
+      <OfflineCheckInStatus
+        owner={offlineOwner}
+        replayAuthorized={replayAuthorized}
+        visible={section === 'check-ins'}
+      />
       {page}
       <Feedback value={workflowFeedback} />
       {reward && (

@@ -1,6 +1,6 @@
 export const OFFLINE_CHECK_IN_DB = {
   name: 'familystar-offline',
-  version: 1,
+  version: 2,
   stores: {
     checkInQueue: 'check-in-queue',
     mediaDrafts: 'media-drafts',
@@ -23,13 +23,26 @@ export const MEDIA_DRAFT_LIMITS = {
 } as const;
 
 export type QueuedSubmissionType = 'TICK' | 'TEXT';
-export type CheckInQueueStatus = 'pending';
-export type MediaDraftStatus = 'awaiting-confirmation';
+export type CheckInQueueStatus = 'pending' | 'syncing' | 'conflict' | 'business-failed';
+export type MediaDraftStatus =
+  'awaiting-confirmation' | 'uploading' | 'conflict' | 'business-failed';
+
+export type OfflineOwnerScope = Readonly<{
+  familyId: string;
+  childId: string;
+}>;
+
+export type OfflineFailure = Readonly<{
+  code: string;
+  message: string;
+  authoritativeState: Record<string, unknown> | null;
+}>;
 
 export type CheckInAttemptMetadata = Readonly<{
   attemptCount: number;
   lastAttemptAt: string | null;
   lastErrorCode: string | null;
+  nextAttemptAt: string | null;
 }>;
 
 export type CheckInQueueRecord = Readonly<{
@@ -43,11 +56,18 @@ export type CheckInQueueRecord = Readonly<{
   submissionType: QueuedSubmissionType;
   text?: string;
   idempotencyKey: string;
+  owner: OfflineOwnerScope;
   status: CheckInQueueStatus;
   attempt: CheckInAttemptMetadata;
+  failure: OfflineFailure | null;
+  leaseOwner: string | null;
+  leaseUntil: string | null;
 }>;
 
-export type NewCheckInQueueRecord = Omit<CheckInQueueRecord, 'status' | 'attempt'>;
+export type NewCheckInQueueRecord = Omit<
+  CheckInQueueRecord,
+  'status' | 'attempt' | 'failure' | 'leaseOwner' | 'leaseUntil'
+>;
 
 export type MediaDraftRecord = Readonly<{
   id: string;
@@ -55,25 +75,56 @@ export type MediaDraftRecord = Readonly<{
   createdAt: string;
   taskId: string;
   taskAssignmentId: string;
+  checkDate: string;
   queueId: string | null;
   submissionType: 'PHOTO' | 'VIDEO' | 'MIXED';
   text?: string;
   checkInIdempotencyKey: string;
   uploadIdempotencyKey: string;
+  owner: OfflineOwnerScope;
   name: string;
   mimeType: string;
   size: number;
   blob: Blob;
   status: MediaDraftStatus;
+  uploadedMediaId: string | null;
+  failure: OfflineFailure | null;
 }>;
 
-export type NewMediaDraftRecord = Omit<MediaDraftRecord, 'status'>;
+export type NewMediaDraftRecord = Omit<MediaDraftRecord, 'status' | 'uploadedMediaId' | 'failure'>;
 
 export interface OfflineCheckInRepository {
   enqueueCheckIn(record: NewCheckInQueueRecord): Promise<CheckInQueueRecord>;
   listCheckIns(): Promise<readonly CheckInQueueRecord[]>;
+  claimNextCheckIn(
+    owner: OfflineOwnerScope,
+    leaseOwner: string,
+    now: Date,
+    leaseMilliseconds: number,
+  ): Promise<CheckInQueueRecord | null>;
+  recordAttempt(
+    id: string,
+    leaseOwner: string,
+    errorCode: string,
+    attemptedAt: Date,
+    nextAttemptAt?: Date,
+  ): Promise<void>;
+  markConflict(id: string, leaseOwner: string, failure: OfflineFailure): Promise<void>;
+  markBusinessFailed(id: string, leaseOwner: string, failure: OfflineFailure): Promise<void>;
+  removeCompleted(id: string, leaseOwner: string): Promise<void>;
+  retryCheckIn(id: string, owner: OfflineOwnerScope): Promise<void>;
+  deleteCheckIn(id: string, owner: OfflineOwnerScope): Promise<void>;
   saveMediaDrafts(records: readonly NewMediaDraftRecord[]): Promise<readonly MediaDraftRecord[]>;
   listMediaDrafts(): Promise<readonly MediaDraftRecord[]>;
+  markMediaUploading(intentId: string, owner: OfflineOwnerScope): Promise<void>;
+  markMediaUploaded(id: string, owner: OfflineOwnerScope, mediaId: string): Promise<void>;
+  markMediaFailed(
+    intentId: string,
+    owner: OfflineOwnerScope,
+    status: 'conflict' | 'business-failed' | 'awaiting-confirmation',
+    failure: OfflineFailure,
+  ): Promise<void>;
+  removeMediaDrafts(intentId: string, owner: OfflineOwnerScope): Promise<void>;
 }
 
 export type OfflineStorageErrorCode =
@@ -137,12 +188,33 @@ function pendingRecord(record: NewCheckInQueueRecord): CheckInQueueRecord {
   return {
     ...record,
     status: 'pending',
-    attempt: { attemptCount: 0, lastAttemptAt: null, lastErrorCode: null },
+    attempt: {
+      attemptCount: 0,
+      lastAttemptAt: null,
+      lastErrorCode: null,
+      nextAttemptAt: null,
+    },
+    failure: null,
+    leaseOwner: null,
+    leaseUntil: null,
   };
 }
 
 function awaitingConfirmation(record: NewMediaDraftRecord): MediaDraftRecord {
-  return { ...record, status: 'awaiting-confirmation' };
+  return {
+    ...record,
+    status: 'awaiting-confirmation',
+    uploadedMediaId: null,
+    failure: null,
+  };
+}
+
+function sameOwner(record: { owner?: OfflineOwnerScope }, owner: OfflineOwnerScope): boolean {
+  return record.owner?.familyId === owner.familyId && record.owner.childId === owner.childId;
+}
+
+function claimedBy(record: CheckInQueueRecord, leaseOwner: string): boolean {
+  return record.status === 'syncing' && record.leaseOwner === leaseOwner;
 }
 
 export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository {
@@ -159,6 +231,81 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
 
   async listCheckIns(): Promise<readonly CheckInQueueRecord[]> {
     return [...this.checkIns.values()].sort(compareCreatedAt);
+  }
+
+  async claimNextCheckIn(
+    owner: OfflineOwnerScope,
+    leaseOwner: string,
+    now: Date,
+    leaseMilliseconds: number,
+  ): Promise<CheckInQueueRecord | null> {
+    const records = [...this.checkIns.values()].filter((record) => sameOwner(record, owner));
+    records.sort(compareCreatedAt);
+    const first = records[0];
+    if (!first || first.status === 'conflict' || first.status === 'business-failed') return null;
+    const nowIso = now.toISOString();
+    if (first.attempt.nextAttemptAt && first.attempt.nextAttemptAt > nowIso) return null;
+    if (first.status === 'syncing' && first.leaseUntil && first.leaseUntil > nowIso) return null;
+    const claimed: CheckInQueueRecord = {
+      ...first,
+      status: 'syncing',
+      leaseOwner,
+      leaseUntil: new Date(now.getTime() + leaseMilliseconds).toISOString(),
+    };
+    this.checkIns.set(first.id, claimed);
+    return claimed;
+  }
+
+  async recordAttempt(
+    id: string,
+    leaseOwner: string,
+    errorCode: string,
+    attemptedAt: Date,
+    nextAttemptAt?: Date,
+  ): Promise<void> {
+    const record = this.checkIns.get(id);
+    if (!record || !claimedBy(record, leaseOwner)) return;
+    this.checkIns.set(id, {
+      ...record,
+      status: 'pending',
+      attempt: {
+        attemptCount: record.attempt.attemptCount + 1,
+        lastAttemptAt: attemptedAt.toISOString(),
+        lastErrorCode: errorCode,
+        nextAttemptAt: nextAttemptAt?.toISOString() ?? null,
+      },
+      leaseOwner: null,
+      leaseUntil: null,
+    });
+  }
+
+  async markConflict(id: string, leaseOwner: string, failure: OfflineFailure): Promise<void> {
+    this.markTerminal(id, leaseOwner, 'conflict', failure);
+  }
+
+  async markBusinessFailed(id: string, leaseOwner: string, failure: OfflineFailure): Promise<void> {
+    this.markTerminal(id, leaseOwner, 'business-failed', failure);
+  }
+
+  async removeCompleted(id: string, leaseOwner: string): Promise<void> {
+    const record = this.checkIns.get(id);
+    if (record && claimedBy(record, leaseOwner)) this.checkIns.delete(id);
+  }
+
+  async retryCheckIn(id: string, owner: OfflineOwnerScope): Promise<void> {
+    const record = this.checkIns.get(id);
+    if (!record || !sameOwner(record, owner) || record.status === 'syncing') return;
+    this.checkIns.set(id, {
+      ...record,
+      status: 'pending',
+      failure: null,
+      attempt: { ...record.attempt, lastErrorCode: null, nextAttemptAt: null },
+    });
+  }
+
+  async deleteCheckIn(id: string, owner: OfflineOwnerScope): Promise<void> {
+    const record = this.checkIns.get(id);
+    if (record && sameOwner(record, owner) && record.status !== 'syncing') this.checkIns.delete(id);
   }
 
   async saveMediaDrafts(
@@ -182,6 +329,72 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
 
   async listMediaDrafts(): Promise<readonly MediaDraftRecord[]> {
     return [...this.mediaDrafts.values()].sort(compareCreatedAt);
+  }
+
+  async markMediaUploading(intentId: string, owner: OfflineOwnerScope): Promise<void> {
+    this.updateMediaIntent(intentId, owner, (record) => ({
+      ...record,
+      status: 'uploading',
+      failure: null,
+    }));
+  }
+
+  async markMediaUploaded(id: string, owner: OfflineOwnerScope, mediaId: string): Promise<void> {
+    const record = this.mediaDrafts.get(id);
+    if (!record || !sameOwner(record, owner)) return;
+    this.mediaDrafts.set(id, { ...record, uploadedMediaId: mediaId });
+  }
+
+  async markMediaFailed(
+    intentId: string,
+    owner: OfflineOwnerScope,
+    status: 'conflict' | 'business-failed' | 'awaiting-confirmation',
+    failure: OfflineFailure,
+  ): Promise<void> {
+    this.updateMediaIntent(intentId, owner, (record) => ({ ...record, status, failure }));
+  }
+
+  async removeMediaDrafts(intentId: string, owner: OfflineOwnerScope): Promise<void> {
+    for (const record of this.mediaDrafts.values()) {
+      if (record.intentId === intentId && sameOwner(record, owner))
+        this.mediaDrafts.delete(record.id);
+    }
+  }
+
+  private markTerminal(
+    id: string,
+    leaseOwner: string,
+    status: 'conflict' | 'business-failed',
+    failure: OfflineFailure,
+  ): void {
+    const record = this.checkIns.get(id);
+    if (!record || !claimedBy(record, leaseOwner)) return;
+    this.checkIns.set(id, {
+      ...record,
+      status,
+      failure,
+      attempt: {
+        ...record.attempt,
+        attemptCount: record.attempt.attemptCount + 1,
+        lastAttemptAt: new Date().toISOString(),
+        lastErrorCode: failure.code,
+        nextAttemptAt: null,
+      },
+      leaseOwner: null,
+      leaseUntil: null,
+    });
+  }
+
+  private updateMediaIntent(
+    intentId: string,
+    owner: OfflineOwnerScope,
+    update: (record: MediaDraftRecord) => MediaDraftRecord,
+  ): void {
+    for (const record of this.mediaDrafts.values()) {
+      if (record.intentId === intentId && sameOwner(record, owner)) {
+        this.mediaDrafts.set(record.id, update(record));
+      }
+    }
   }
 }
 
@@ -287,6 +500,122 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
     }
   }
 
+  async claimNextCheckIn(
+    owner: OfflineOwnerScope,
+    leaseOwner: string,
+    now: Date,
+    leaseMilliseconds: number,
+  ): Promise<CheckInQueueRecord | null> {
+    try {
+      const database = await this.database();
+      const transaction = database.transaction(
+        OFFLINE_CHECK_IN_DB.stores.checkInQueue,
+        'readwrite',
+      );
+      const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.checkInQueue);
+      const records = ((await requestResult(store.getAll())) as CheckInQueueRecord[])
+        .filter((record) => sameOwner(record, owner))
+        .sort(compareCreatedAt);
+      const first = records[0];
+      const nowIso = now.toISOString();
+      if (
+        !first ||
+        first.status === 'conflict' ||
+        first.status === 'business-failed' ||
+        (first.attempt.nextAttemptAt && first.attempt.nextAttemptAt > nowIso) ||
+        (first.status === 'syncing' && first.leaseUntil && first.leaseUntil > nowIso)
+      ) {
+        await transactionComplete(transaction);
+        return null;
+      }
+      const claimed: CheckInQueueRecord = {
+        ...first,
+        status: 'syncing',
+        leaseOwner,
+        leaseUntil: new Date(now.getTime() + leaseMilliseconds).toISOString(),
+      };
+      store.put(claimed);
+      await transactionComplete(transaction);
+      return claimed;
+    } catch (error) {
+      throw storageError(error);
+    }
+  }
+
+  async recordAttempt(
+    id: string,
+    leaseOwner: string,
+    errorCode: string,
+    attemptedAt: Date,
+    nextAttemptAt?: Date,
+  ): Promise<void> {
+    await this.updateClaimed(id, leaseOwner, (record) => ({
+      ...record,
+      status: 'pending',
+      attempt: {
+        attemptCount: record.attempt.attemptCount + 1,
+        lastAttemptAt: attemptedAt.toISOString(),
+        lastErrorCode: errorCode,
+        nextAttemptAt: nextAttemptAt?.toISOString() ?? null,
+      },
+      leaseOwner: null,
+      leaseUntil: null,
+    }));
+  }
+
+  async markConflict(id: string, leaseOwner: string, failure: OfflineFailure): Promise<void> {
+    await this.markTerminal(id, leaseOwner, 'conflict', failure);
+  }
+
+  async markBusinessFailed(id: string, leaseOwner: string, failure: OfflineFailure): Promise<void> {
+    await this.markTerminal(id, leaseOwner, 'business-failed', failure);
+  }
+
+  async removeCompleted(id: string, leaseOwner: string): Promise<void> {
+    try {
+      const database = await this.database();
+      const transaction = database.transaction(
+        OFFLINE_CHECK_IN_DB.stores.checkInQueue,
+        'readwrite',
+      );
+      const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.checkInQueue);
+      const record = (await requestResult(store.get(id))) as CheckInQueueRecord | undefined;
+      if (record && claimedBy(record, leaseOwner)) store.delete(id);
+      await transactionComplete(transaction);
+    } catch (error) {
+      throw storageError(error);
+    }
+  }
+
+  async retryCheckIn(id: string, owner: OfflineOwnerScope): Promise<void> {
+    await this.updateOwned(id, owner, (record) =>
+      record.status === 'syncing'
+        ? record
+        : {
+            ...record,
+            status: 'pending',
+            failure: null,
+            attempt: { ...record.attempt, lastErrorCode: null, nextAttemptAt: null },
+          },
+    );
+  }
+
+  async deleteCheckIn(id: string, owner: OfflineOwnerScope): Promise<void> {
+    try {
+      const database = await this.database();
+      const transaction = database.transaction(
+        OFFLINE_CHECK_IN_DB.stores.checkInQueue,
+        'readwrite',
+      );
+      const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.checkInQueue);
+      const record = (await requestResult(store.get(id))) as CheckInQueueRecord | undefined;
+      if (record && sameOwner(record, owner) && record.status !== 'syncing') store.delete(id);
+      await transactionComplete(transaction);
+    } catch (error) {
+      throw storageError(error);
+    }
+  }
+
   async saveMediaDrafts(
     records: readonly NewMediaDraftRecord[],
   ): Promise<readonly MediaDraftRecord[]> {
@@ -332,6 +661,143 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
       )) as MediaDraftRecord[];
       await transactionComplete(transaction);
       return values.sort(compareCreatedAt);
+    } catch (error) {
+      throw storageError(error);
+    }
+  }
+
+  async markMediaUploading(intentId: string, owner: OfflineOwnerScope): Promise<void> {
+    await this.updateMediaIntent(intentId, owner, (record) => ({
+      ...record,
+      status: 'uploading',
+      failure: null,
+    }));
+  }
+
+  async markMediaUploaded(id: string, owner: OfflineOwnerScope, mediaId: string): Promise<void> {
+    await this.updateMediaRecord(id, owner, (record) => ({ ...record, uploadedMediaId: mediaId }));
+  }
+
+  async markMediaFailed(
+    intentId: string,
+    owner: OfflineOwnerScope,
+    status: 'conflict' | 'business-failed' | 'awaiting-confirmation',
+    failure: OfflineFailure,
+  ): Promise<void> {
+    await this.updateMediaIntent(intentId, owner, (record) => ({ ...record, status, failure }));
+  }
+
+  async removeMediaDrafts(intentId: string, owner: OfflineOwnerScope): Promise<void> {
+    try {
+      const database = await this.database();
+      const transaction = database.transaction(OFFLINE_CHECK_IN_DB.stores.mediaDrafts, 'readwrite');
+      const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.mediaDrafts);
+      const records = (await requestResult(
+        store.index('intentId').getAll(intentId),
+      )) as MediaDraftRecord[];
+      records
+        .filter((record) => sameOwner(record, owner))
+        .forEach((record) => store.delete(record.id));
+      await transactionComplete(transaction);
+    } catch (error) {
+      throw storageError(error);
+    }
+  }
+
+  private async markTerminal(
+    id: string,
+    leaseOwner: string,
+    status: 'conflict' | 'business-failed',
+    failure: OfflineFailure,
+  ): Promise<void> {
+    await this.updateClaimed(id, leaseOwner, (record) => ({
+      ...record,
+      status,
+      failure,
+      attempt: {
+        ...record.attempt,
+        attemptCount: record.attempt.attemptCount + 1,
+        lastAttemptAt: new Date().toISOString(),
+        lastErrorCode: failure.code,
+        nextAttemptAt: null,
+      },
+      leaseOwner: null,
+      leaseUntil: null,
+    }));
+  }
+
+  private async updateClaimed(
+    id: string,
+    leaseOwner: string,
+    update: (record: CheckInQueueRecord) => CheckInQueueRecord,
+  ): Promise<void> {
+    await this.updateQueueRecord(id, (record) =>
+      claimedBy(record, leaseOwner) ? update(record) : record,
+    );
+  }
+
+  private async updateOwned(
+    id: string,
+    owner: OfflineOwnerScope,
+    update: (record: CheckInQueueRecord) => CheckInQueueRecord,
+  ): Promise<void> {
+    await this.updateQueueRecord(id, (record) =>
+      sameOwner(record, owner) ? update(record) : record,
+    );
+  }
+
+  private async updateQueueRecord(
+    id: string,
+    update: (record: CheckInQueueRecord) => CheckInQueueRecord,
+  ): Promise<void> {
+    try {
+      const database = await this.database();
+      const transaction = database.transaction(
+        OFFLINE_CHECK_IN_DB.stores.checkInQueue,
+        'readwrite',
+      );
+      const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.checkInQueue);
+      const record = (await requestResult(store.get(id))) as CheckInQueueRecord | undefined;
+      if (record) store.put(update(record));
+      await transactionComplete(transaction);
+    } catch (error) {
+      throw storageError(error);
+    }
+  }
+
+  private async updateMediaRecord(
+    id: string,
+    owner: OfflineOwnerScope,
+    update: (record: MediaDraftRecord) => MediaDraftRecord,
+  ): Promise<void> {
+    try {
+      const database = await this.database();
+      const transaction = database.transaction(OFFLINE_CHECK_IN_DB.stores.mediaDrafts, 'readwrite');
+      const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.mediaDrafts);
+      const record = (await requestResult(store.get(id))) as MediaDraftRecord | undefined;
+      if (record && sameOwner(record, owner)) store.put(update(record));
+      await transactionComplete(transaction);
+    } catch (error) {
+      throw storageError(error);
+    }
+  }
+
+  private async updateMediaIntent(
+    intentId: string,
+    owner: OfflineOwnerScope,
+    update: (record: MediaDraftRecord) => MediaDraftRecord,
+  ): Promise<void> {
+    try {
+      const database = await this.database();
+      const transaction = database.transaction(OFFLINE_CHECK_IN_DB.stores.mediaDrafts, 'readwrite');
+      const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.mediaDrafts);
+      const records = (await requestResult(
+        store.index('intentId').getAll(intentId),
+      )) as MediaDraftRecord[];
+      records
+        .filter((record) => sameOwner(record, owner))
+        .forEach((record) => store.put(update(record)));
+      await transactionComplete(transaction);
     } catch (error) {
       throw storageError(error);
     }

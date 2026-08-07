@@ -30,6 +30,7 @@ function queueRecord(
     submissionType: type,
     ...(type === 'TEXT' ? { text: `完成任务 ${index}` } : {}),
     idempotencyKey: `check-in-key-${index}`,
+    owner: { familyId: 'family-1', childId: 'child-1' },
     ...overrides,
   };
 }
@@ -45,10 +46,12 @@ function mediaDraft(
     createdAt: new Date(Date.UTC(2026, 7, 7, 1, 0, index)).toISOString(),
     taskId: `task-${index}`,
     taskAssignmentId: `assignment-${index}`,
+    checkDate: '2026-08-07',
     queueId: null,
     submissionType: 'PHOTO',
     checkInIdempotencyKey: `check-in-media-parent-${index}`,
     uploadIdempotencyKey: `check-in-media-${index}`,
+    owner: { familyId: 'family-1', childId: 'child-1' },
     name: `proof-${index}.png`,
     mimeType: 'image/png',
     size: blob.size,
@@ -145,10 +148,36 @@ describe('offline check-in repository', () => {
     expect(await repository.listMediaDrafts()).toEqual([]);
   });
 
+  it(`property: atomically claims only the stable first owned record and honors leases ${validatesCriteria(['Requirement 11.3', 'Design Property 8'])}`, async () => {
+    for (let run = 0; run < 64; run += 1) {
+      const repository = new MemoryOfflineCheckInRepository();
+      await repository.enqueueCheckIn(queueRecord(1));
+      await repository.enqueueCheckIn(queueRecord(0));
+      const now = new Date('2026-08-07T08:00:00.000Z');
+
+      const [first, concurrent] = await Promise.all([
+        repository.claimNextCheckIn(
+          { familyId: 'family-1', childId: 'child-1' },
+          `runner-a-${run}`,
+          now,
+          30_000,
+        ),
+        repository.claimNextCheckIn(
+          { familyId: 'family-1', childId: 'child-1' },
+          `runner-b-${run}`,
+          now,
+          30_000,
+        ),
+      ]);
+
+      expect([first?.id, concurrent?.id].filter(Boolean)).toEqual(['queue-0']);
+    }
+  });
+
   it('exposes a versioned two-store schema and safely degrades without browser IndexedDB', () => {
     expect(OFFLINE_CHECK_IN_DB).toEqual({
       name: 'familystar-offline',
-      version: 1,
+      version: 2,
       stores: { checkInQueue: 'check-in-queue', mediaDrafts: 'media-drafts' },
     });
     expect(getOfflineCheckInRepository()).toBeNull();

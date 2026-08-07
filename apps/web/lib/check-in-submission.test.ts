@@ -30,6 +30,8 @@ function input(overrides: Partial<SubmitCheckInInput> = {}): SubmitCheckInInput 
 }
 
 describe('child check-in submission', () => {
+  const owner = { familyId: 'family-1', childId: 'child-1' };
+
   it('keeps online TICK/TEXT submission on the API path with the first intent key', async () => {
     const apiCall = vi.fn();
     const api: UploadApi = async <T>(path: string, init?: RequestInit) => {
@@ -65,6 +67,7 @@ describe('child check-in submission', () => {
       const stableIntent = intent();
       const result = await submitChildCheckIn(input({ intent: stableIntent }), {
         repository,
+        owner,
         api,
         online,
         createId: () => 'queue-id',
@@ -98,7 +101,7 @@ describe('child check-in submission', () => {
         checkDate: '2026-08-07',
         files: [file],
       },
-      { repository, api, upload, online: false, createId: () => 'draft-id' },
+      { repository, api, upload, online: false, createId: () => 'draft-id', owner },
     );
 
     expect(result).toEqual({ status: 'media-drafted', draftIds: ['draft-id'] });
@@ -117,7 +120,7 @@ describe('child check-in submission', () => {
 
   it('fails explicitly when offline persistence is unavailable', async () => {
     await expect(
-      submitChildCheckIn(input(), { repository: null, online: false }),
+      submitChildCheckIn(input(), { repository: null, online: false, owner }),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED' });
   });
 });

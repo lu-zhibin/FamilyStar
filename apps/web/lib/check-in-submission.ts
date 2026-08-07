@@ -10,6 +10,7 @@ import {
   type NewCheckInQueueRecord,
   type NewMediaDraftRecord,
   type OfflineCheckInRepository,
+  type OfflineOwnerScope,
   type QueuedSubmissionType,
 } from './offline-check-in-repository';
 
@@ -43,6 +44,7 @@ type SubmissionDependencies = Readonly<{
   upload?: typeof uploadMediaFile;
   online?: boolean;
   createId?: () => string;
+  owner?: OfflineOwnerScope;
 }>;
 
 export function createCheckInIntent(
@@ -76,12 +78,14 @@ async function queueCheckIn(
   input: SubmitCheckInInput,
   repository: OfflineCheckInRepository | null,
   createId: () => string,
+  owner: OfflineOwnerScope | undefined,
 ): Promise<SubmitCheckInResult> {
   if (input.submissionType !== 'TICK' && input.submissionType !== 'TEXT') {
     throw new Error('媒体打卡无法进入请求重放队列。');
   }
   const normalizedText = input.text?.trim();
   if (input.submissionType === 'TEXT' && !normalizedText) throw new Error('请填写打卡文字。');
+  if (!owner) throw new Error('无法确认当前孩子身份，请联网登录后再保存离线打卡。');
   const record: NewCheckInQueueRecord = {
     id: createId(),
     intentId: input.intent.id,
@@ -93,6 +97,7 @@ async function queueCheckIn(
     submissionType: input.submissionType,
     ...(normalizedText ? { text: normalizedText } : {}),
     idempotencyKey: input.intent.idempotencyKey,
+    owner,
   };
   const queued = await requireRepository(repository).enqueueCheckIn(record);
   return { status: 'queued', queueId: queued.id };
@@ -102,6 +107,7 @@ async function saveMediaDraft(
   input: SubmitCheckInInput,
   repository: OfflineCheckInRepository | null,
   createId: () => string,
+  owner: OfflineOwnerScope | undefined,
 ): Promise<SubmitCheckInResult> {
   if (
     input.submissionType !== 'PHOTO' &&
@@ -112,6 +118,7 @@ async function saveMediaDraft(
   }
   const files = input.files ?? [];
   if (files.length === 0) throw new Error('请选择要保存的图片或视频。');
+  if (!owner) throw new Error('无法确认当前孩子身份，请联网登录后再保存媒体草稿。');
   const normalizedText = input.text?.trim();
   const records: NewMediaDraftRecord[] = files.map((file, index) => ({
     id: createId(),
@@ -119,12 +126,14 @@ async function saveMediaDraft(
     createdAt: input.intent.createdAt,
     taskId: input.taskId,
     taskAssignmentId: input.taskAssignmentId,
+    checkDate: input.checkDate ?? currentCalendarDate(),
     queueId: null,
     submissionType: input.submissionType as 'PHOTO' | 'VIDEO' | 'MIXED',
     ...(normalizedText ? { text: normalizedText } : {}),
     checkInIdempotencyKey: input.intent.idempotencyKey,
     uploadIdempotencyKey:
       input.intent.uploadIdempotencyKeys[index] ?? createIdempotencyKey('check-in-media', createId),
+    owner,
     name: file.name,
     mimeType: normalizedMediaMimeType(file),
     size: file.size,
@@ -175,8 +184,8 @@ export async function submitChildCheckIn(
   if (mediaSubmission) validateMediaSelection(input);
   if (!online) {
     return mediaSubmission
-      ? saveMediaDraft(input, dependencies.repository, createId)
-      : queueCheckIn(input, dependencies.repository, createId);
+      ? saveMediaDraft(input, dependencies.repository, createId, dependencies.owner)
+      : queueCheckIn(input, dependencies.repository, createId, dependencies.owner);
   }
 
   try {
@@ -201,7 +210,7 @@ export async function submitChildCheckIn(
   } catch (error) {
     if (!isNetworkFailure(error)) throw error;
     return mediaSubmission
-      ? saveMediaDraft(input, dependencies.repository, createId)
-      : queueCheckIn(input, dependencies.repository, createId);
+      ? saveMediaDraft(input, dependencies.repository, createId, dependencies.owner)
+      : queueCheckIn(input, dependencies.repository, createId, dependencies.owner);
   }
 }
