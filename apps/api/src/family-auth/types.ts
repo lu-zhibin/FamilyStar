@@ -89,6 +89,12 @@ export type FamilyInvitationRepository<Transaction> = {
     input: CreateInvitationInput,
   ): Promise<InvitationCreation>;
   refresh(transaction: Transaction, input: RefreshInvitationInput): Promise<InvitationCreation>;
-  revoke(transaction: Transaction, input: RevokeInvitationInput): Promise<{ id: string }>;
-  accept(transaction: Transaction, input: AcceptInvitationInput): Promise<ParentIdentity>;
+  revoke(
+    transaction: Transaction,
+    input: RevokeInvitationInput,
+  ): Promise<{ id: string; email: string }>;
+  accept(
+    transaction: Transaction,
+    input: AcceptInvitationInput,
+  ): Promise<ParentIdentity & { invitationId: string }>;
 };

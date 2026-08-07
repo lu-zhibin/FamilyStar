@@ -137,4 +137,60 @@ describe('PrismaNotificationRepository', () => {
       }),
     );
   });
+
+  it('writes only active recipients with enabled in-app and type preferences', async () => {
+    const userFindMany = vi.fn().mockResolvedValue([
+      { id: 'enabled', notificationPreference: null },
+      {
+        id: 'in-app-disabled',
+        notificationPreference: { inAppEnabled: false, typeSettings: {} },
+      },
+      {
+        id: 'type-disabled',
+        notificationPreference: { inAppEnabled: true, typeSettings: { BADGE: false } },
+      },
+    ]);
+    const createMany = vi.fn().mockResolvedValue({ count: 1 });
+    const repository = new PrismaNotificationRepository({
+      user: { findMany: userFindMany },
+      notification: { createMany },
+    } as unknown as PrismaClient);
+
+    await expect(
+      repository.createFromEvent({
+        familyId,
+        recipientIds: ['enabled', 'in-app-disabled', 'type-disabled', 'cross-family'],
+        type: 'BADGE',
+        title: 'Badge awarded',
+        content: 'A badge was awarded.',
+        targetType: 'BADGE_AWARD',
+        targetId: null,
+        targetUrl: '/badges',
+        sourceEventId: '01989a58-c542-7abc-8def-0123456789ad',
+        sourceEventName: 'badges.award.created.v1',
+        createdAt: new Date('2026-08-07T12:00:00.000Z'),
+      }),
+    ).resolves.toBe(1);
+    expect(createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ recipientId: 'enabled', familyId, type: 'BADGE' })],
+      skipDuplicates: true,
+    });
+  });
+
+  it('lists active family parents in stable order', async () => {
+    const findMany = vi.fn().mockResolvedValue([{ id: 'parent-1' }, { id: 'parent-2' }]);
+    const repository = new PrismaNotificationRepository({
+      user: { findMany },
+    } as unknown as PrismaClient);
+
+    await expect(repository.listActiveParentIds(familyId)).resolves.toEqual([
+      'parent-1',
+      'parent-2',
+    ]);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { familyId, role: 'PARENT', deletedAt: null },
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+  });
 });

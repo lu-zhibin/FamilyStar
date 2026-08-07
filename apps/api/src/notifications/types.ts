@@ -55,6 +55,25 @@ export type StoredNotificationPreference = Readonly<{
   quietHoursEnd: Date | null;
 }>;
 
+export type NotificationWrite = Readonly<{
+  familyId: string;
+  recipientIds: readonly string[];
+  type: NotificationType;
+  title: string;
+  content: string;
+  targetType: string;
+  targetId: string | null;
+  targetUrl: string;
+  sourceEventId: string;
+  sourceEventName: string;
+  createdAt: Date;
+}>;
+
+export type NotificationEventRepository = {
+  listActiveParentIds(familyId: string): Promise<readonly string[]>;
+  createFromEvent(input: NotificationWrite): Promise<number>;
+};
+
 export type NotificationRepository = {
   list(input: {
     familyId: string;

@@ -490,7 +490,7 @@ describe('PrismaRewardRepository wish transactions', () => {
       adoptedRewardId: rewardId,
       adoptedAt: now,
     };
-    const { transaction, repository } = setup();
+    const { transaction, outbox, repository } = setup();
     transaction.wish.findFirst.mockResolvedValueOnce(wish).mockResolvedValueOnce(adopted);
     transaction.reward.create.mockResolvedValue(reward({ name: wish.title, pointsCost: 100 }));
 
@@ -512,6 +512,13 @@ describe('PrismaRewardRepository wish transactions', () => {
       }),
     );
     expect(result.wish.pointsBalance).toBe(40);
+    expect(outbox.append).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        event_name: 'rewards.wish.adopted.v1',
+        payload: expect.objectContaining({ wish_id: wish.id, child_id: childId }),
+      }),
+    );
   });
 
   it('rejects cross-family adoption before creating a reward', async () => {
@@ -590,7 +597,7 @@ describe('PrismaRewardRepository wish transactions', () => {
       child: { pointsBalance: 40 },
     };
     const cancelled = { ...activeWish, status: 'CANCELLED' as const, cancelledAt: now };
-    const { transaction, repository } = setup();
+    const { transaction, outbox, repository } = setup();
     transaction.wish.count.mockResolvedValue(0);
     transaction.wish.create.mockResolvedValue(activeWish);
     transaction.wish.findFirst.mockResolvedValue(activeWish);
@@ -602,5 +609,12 @@ describe('PrismaRewardRepository wish transactions', () => {
     await expect(
       repository.cancelWish({ familyId, childId, wishId: 'wish-1', now }),
     ).resolves.toMatchObject({ pointsBalance: 40, status: 'CANCELLED', cancelledAt: now });
+    expect(outbox.append).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        event_name: 'rewards.wish.cancelled.v1',
+        payload: expect.objectContaining({ wish_id: 'wish-1', child_id: childId }),
+      }),
+    );
   });
 });

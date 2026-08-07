@@ -288,7 +288,7 @@ export class PrismaFamilyAuthRepository
   async revoke(
     transaction: Prisma.TransactionClient,
     input: RevokeInvitationInput,
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; email: string }> {
     const families = await transaction.$queryRaw<FamilyRow[]>(Prisma.sql`
       SELECT "id", "created_by" AS "createdById", "family_code" AS "familyCode"
       FROM "families"
@@ -315,13 +315,13 @@ export class PrismaFamilyAuthRepository
         data: { status: 'EXPIRED', updatedAt: input.now },
       });
     }
-    return { id: invitation.id };
+    return { id: invitation.id, email: invitation.email };
   }
 
   async accept(
     transaction: Prisma.TransactionClient,
     input: AcceptInvitationInput,
-  ): Promise<ParentIdentity> {
+  ): Promise<ParentIdentity & { invitationId: string }> {
     try {
       const invitationRows = await transaction.$queryRaw<InvitationIdRow[]>(Prisma.sql`
         SELECT "id"
@@ -375,7 +375,7 @@ export class PrismaFamilyAuthRepository
           acceptedAt: input.now,
         },
       });
-      return mapParent(parent, family.familyCode);
+      return { ...mapParent(parent, family.familyCode), invitationId: invitation.id };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ParentEmailConflictError();

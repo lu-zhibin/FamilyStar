@@ -32,6 +32,7 @@ export type WorkerJobsRepository = {
     scanned: number;
     discrepancies: readonly PointsDiscrepancy[];
   }>;
+  deleteExpiredNotifications(cutoff: Date, limit: number): Promise<number>;
 };
 
 export class MediaCleanupError extends Error {
@@ -144,6 +145,22 @@ export class PrismaWorkerJobsRepository implements WorkerJobsRepository {
     });
     return { scanned: users.length, discrepancies };
   }
+
+  async deleteExpiredNotifications(cutoff: Date, limit: number): Promise<number> {
+    return this.prisma.$transaction(async (transaction) => {
+      const candidates = await transaction.notification.findMany({
+        where: { createdAt: { lt: cutoff } },
+        select: { id: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        take: limit,
+      });
+      if (candidates.length === 0) return 0;
+      const deleted = await transaction.notification.deleteMany({
+        where: { id: { in: candidates.map(({ id }) => id) }, createdAt: { lt: cutoff } },
+      });
+      return deleted.count;
+    });
+  }
 }
 
 function utcDate(now: Date): string {
@@ -231,6 +248,15 @@ export function createWorkerJobs(input: {
           discrepancy_count: result.discrepancies.length,
           discrepancies: result.discrepancies,
         };
+      },
+    },
+    {
+      name: 'notification-cleanup',
+      runKey: utcDate,
+      execute: async (now) => {
+        const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60_000);
+        const deleted = await input.repository.deleteExpiredNotifications(cutoff, input.batchSize);
+        return { deleted, cutoff: cutoff.toISOString() };
       },
     },
   ];

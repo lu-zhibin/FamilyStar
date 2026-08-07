@@ -177,14 +177,27 @@ describe('PrismaSubmissionReviewRepository', () => {
   });
 
   it('updates only a pending check-in and creates its review in one transaction', async () => {
+    const familyId = '00000000-0000-4000-8000-000000000001';
+    const childId = '00000000-0000-4000-8000-000000000002';
+    const checkInId = '00000000-0000-4000-8000-000000000003';
+    const parentId = '00000000-0000-4000-8000-000000000004';
+    const eventId = '00000000-0000-4000-8000-000000000005';
+    const review = {
+      ...databaseReview(),
+      familyId,
+      reviewerId: parentId,
+      checkInAttempt: { checkInId },
+    };
     const transaction = {
       submissionReview: {
         findUnique: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue(databaseReview()),
+        create: vi.fn().mockResolvedValue(review),
       },
       checkIn: {
         findFirst: vi.fn().mockResolvedValue({
-          id: 'check-in-1',
+          id: checkInId,
+          childId,
+          taskAssignment: { task: { name: 'Morning reading' } },
           attempts: [{ id: 'attempt-1' }],
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -194,11 +207,17 @@ describe('PrismaSubmissionReviewRepository', () => {
       $transaction: vi.fn(async (operation) => operation(transaction)),
     } as unknown as PrismaClient;
     const points = pointsWriter(transaction);
+    const outbox = { append: vi.fn().mockResolvedValue(undefined) };
 
-    const result = await new PrismaSubmissionReviewRepository(prisma, points.writer).reviewCheckIn({
-      familyId: 'family-1',
-      checkInId: 'check-in-1',
-      reviewerId: 'parent-1',
+    const result = await new PrismaSubmissionReviewRepository(
+      prisma,
+      points.writer,
+      outbox,
+      () => eventId,
+    ).reviewCheckIn({
+      familyId,
+      checkInId,
+      reviewerId: parentId,
       idempotencyKey: 'review-key',
       decision: 'REJECTED',
       reason: 'Add a photo',
@@ -207,14 +226,14 @@ describe('PrismaSubmissionReviewRepository', () => {
 
     expect(transaction.checkIn.updateMany).toHaveBeenCalledWith({
       where: {
-        id: 'check-in-1',
-        familyId: 'family-1',
+        id: checkInId,
+        familyId,
         status: 'PENDING',
         deletedAt: null,
       },
       data: {
         status: 'REJECTED',
-        reviewerId: 'parent-1',
+        reviewerId: parentId,
         reviewedAt,
         reviewComment: 'Add a photo',
       },
@@ -231,10 +250,18 @@ describe('PrismaSubmissionReviewRepository', () => {
     );
     expect(result).toMatchObject({
       targetType: 'CHECK_IN',
-      targetId: 'check-in-1',
+      targetId: checkInId,
       attemptId: 'attempt-1',
     });
     expect(points.earnCheckIn).not.toHaveBeenCalled();
+    expect(outbox.append).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        event_id: eventId,
+        event_name: 'check-in.entry.rejected.v1',
+        payload: expect.objectContaining({ child_id: childId, task_name: 'Morning reading' }),
+      }),
+    );
   });
 
   it('returns a conflict when the pending condition no longer matches', async () => {

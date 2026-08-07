@@ -1,8 +1,14 @@
+import { randomUUID } from 'node:crypto';
+
+import { createDomainEvent } from '@familystar/shared';
 import { Prisma } from '@prisma/client';
 import type { PrismaClient } from '@prisma/client';
 
 import { PrismaPointsTransactionWriter } from '../points/prisma-writer.js';
 import type { PointsAwardPort, PointsTransactionWriter } from '../points/types.js';
+import { PrismaOutboxWriter } from '../events/prisma-outbox.js';
+import type { OutboxWriter } from '../events/outbox.js';
+import { CHECK_IN_REJECTED_EVENT } from './events.js';
 import { SubmissionReviewError } from './review-service.js';
 import type {
   PendingReviewCandidate,
@@ -121,6 +127,8 @@ export class PrismaSubmissionReviewRepository
   constructor(
     private readonly prisma: PrismaClient,
     private readonly points: PointsTransactionWriter = new PrismaPointsTransactionWriter(prisma),
+    private readonly outbox: OutboxWriter<Prisma.TransactionClient> = new PrismaOutboxWriter(),
+    private readonly eventIdFactory: () => string = randomUUID,
   ) {}
 
   async listPendingReviews(
@@ -311,7 +319,7 @@ export class PrismaSubmissionReviewRepository
             childId: true,
             checkDate: true,
             taskAssignment: {
-              select: { customPoints: true, task: { select: { basePoints: true } } },
+              select: { customPoints: true, task: { select: { name: true, basePoints: true } } },
             },
             attempts: {
               orderBy: { attemptNumber: 'desc' },
@@ -380,6 +388,17 @@ export class PrismaSubmissionReviewRepository
             actorId: input.reviewerId,
             occurredAt: input.reviewedAt,
           });
+        } else {
+          await this.appendRejectedEvent(transaction, {
+            familyId: input.familyId,
+            actorId: input.reviewerId,
+            sourceType: 'CHECK_IN',
+            sourceId: checkIn.id,
+            childId: checkIn.childId,
+            taskName: checkIn.taskAssignment.task.name,
+            reason: input.reason ?? null,
+            occurredAt: input.reviewedAt,
+          });
         }
         return review;
       });
@@ -414,6 +433,8 @@ export class PrismaSubmissionReviewRepository
           select: {
             id: true,
             roundId: true,
+            childId: true,
+            round: { select: { task: { select: { name: true } } } },
             attempts: {
               orderBy: { attemptNumber: 'desc' },
               take: 1,
@@ -478,6 +499,17 @@ export class PrismaSubmissionReviewRepository
             actorId: input.reviewerId,
             occurredAt: input.reviewedAt,
           });
+        } else {
+          await this.appendRejectedEvent(transaction, {
+            familyId: input.familyId,
+            actorId: input.reviewerId,
+            sourceType: 'COLLABORATION_SUBMISSION',
+            sourceId: submission.id,
+            childId: submission.childId,
+            taskName: submission.round.task.name,
+            reason: input.reason ?? null,
+            occurredAt: input.reviewedAt,
+          });
         }
         return review;
       });
@@ -487,6 +519,39 @@ export class PrismaSubmissionReviewRepository
         targetId: input.submissionId,
       });
     }
+  }
+
+  private appendRejectedEvent(
+    transaction: Prisma.TransactionClient,
+    input: Readonly<{
+      familyId: string;
+      actorId: string;
+      sourceType: 'CHECK_IN' | 'COLLABORATION_SUBMISSION';
+      sourceId: string;
+      childId: string;
+      taskName: string;
+      reason: string | null;
+      occurredAt: Date;
+    }>,
+  ): Promise<void> {
+    return this.outbox.append(
+      transaction,
+      createDomainEvent({
+        event_id: this.eventIdFactory(),
+        event_name: CHECK_IN_REJECTED_EVENT,
+        occurred_at: input.occurredAt.toISOString(),
+        family_id: input.familyId,
+        actor_id: input.actorId,
+        correlation_id: input.sourceId,
+        payload: {
+          source_type: input.sourceType,
+          source_id: input.sourceId,
+          child_id: input.childId,
+          task_name: input.taskName,
+          reason: input.reason,
+        },
+      }),
+    );
   }
 
   async listCheckInReviews(familyId: string, checkInId: string) {

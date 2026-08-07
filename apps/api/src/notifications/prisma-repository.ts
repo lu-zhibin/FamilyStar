@@ -1,6 +1,10 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 
-import type { NotificationRepository, StoredNotificationPreference } from './types.js';
+import type {
+  NotificationEventRepository,
+  NotificationRepository,
+  StoredNotificationPreference,
+} from './types.js';
 
 const notificationSelect = {
   id: true,
@@ -34,7 +38,18 @@ function preference(value: {
   return value;
 }
 
-export class PrismaNotificationRepository implements NotificationRepository {
+function typeEnabled(settings: Prisma.JsonValue, type: string): boolean {
+  return (
+    typeof settings !== 'object' ||
+    settings === null ||
+    Array.isArray(settings) ||
+    (settings as Prisma.JsonObject)[type] !== false
+  );
+}
+
+export class PrismaNotificationRepository
+  implements NotificationRepository, NotificationEventRepository
+{
   constructor(private readonly prisma: PrismaClient) {}
 
   async list(input: Parameters<NotificationRepository['list']>[0]) {
@@ -91,6 +106,55 @@ export class PrismaNotificationRepository implements NotificationRepository {
       data: { readAt: input.readAt },
     });
     return result.count;
+  }
+
+  async listActiveParentIds(familyId: string): Promise<readonly string[]> {
+    return (
+      await this.prisma.user.findMany({
+        where: { familyId, role: 'PARENT', deletedAt: null },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+      })
+    ).map(({ id }) => id);
+  }
+
+  async createFromEvent(input: Parameters<NotificationEventRepository['createFromEvent']>[0]) {
+    if (input.recipientIds.length === 0) return 0;
+    const recipients = await this.prisma.user.findMany({
+      where: {
+        id: { in: [...new Set(input.recipientIds)] },
+        familyId: input.familyId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        notificationPreference: { select: { inAppEnabled: true, typeSettings: true } },
+      },
+      orderBy: { id: 'asc' },
+    });
+    const enabledRecipients = recipients.filter(
+      ({ notificationPreference: preferenceValue }) =>
+        !preferenceValue ||
+        (preferenceValue.inAppEnabled && typeEnabled(preferenceValue.typeSettings, input.type)),
+    );
+    if (enabledRecipients.length === 0) return 0;
+    const created = await this.prisma.notification.createMany({
+      data: enabledRecipients.map(({ id: recipientId }) => ({
+        familyId: input.familyId,
+        recipientId,
+        type: input.type,
+        title: input.title,
+        content: input.content,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        targetUrl: input.targetUrl,
+        sourceEventId: input.sourceEventId,
+        sourceEventName: input.sourceEventName,
+        createdAt: input.createdAt,
+      })),
+      skipDuplicates: true,
+    });
+    return created.count;
   }
 
   async findPreference(familyId: string, userId: string) {

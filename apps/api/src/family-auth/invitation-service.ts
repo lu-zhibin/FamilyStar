@@ -3,7 +3,14 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { OutboxWriter, TransactionRunner } from '../events/outbox.js';
 import { runWithOutbox } from '../events/outbox.js';
 import { INVITATION_TTL_MILLISECONDS } from './constants.js';
-import { createInvitationEmailRequestedEvent } from './invitation-events.js';
+import {
+  createInvitationEmailRequestedEvent,
+  createInvitationLifecycleEvent,
+  INVITATION_ACCEPTED_EVENT,
+  INVITATION_CREATED_EVENT,
+  INVITATION_RESENT_EVENT,
+  INVITATION_REVOKED_EVENT,
+} from './invitation-events.js';
 import type { PasswordHasher } from './password.js';
 import { validateParentPassword } from './password.js';
 import type {
@@ -122,19 +129,29 @@ export class FamilyInvitationService<Transaction> implements InvitationOperation
           expiresAt: new Date(now.getTime() + INVITATION_TTL_MILLISECONDS),
           now,
         });
-        const events = result.emailConfigured
-          ? [
-              createInvitationEmailRequestedEvent({
-                invitationId: result.invitation.id,
-                familyId: result.invitation.familyId,
-                actorId: session.subjectId,
-                email: result.invitation.email,
-                invitationLink,
-                correlationId: input.correlationId,
-                occurredAt: now,
-              }),
-            ]
-          : [];
+        const events = [
+          createInvitationLifecycleEvent({
+            eventName: INVITATION_CREATED_EVENT,
+            invitationId: result.invitation.id,
+            familyId: result.invitation.familyId,
+            actorId: session.subjectId,
+            email: result.invitation.email,
+            occurredAt: now,
+          }),
+          ...(result.emailConfigured
+            ? [
+                createInvitationEmailRequestedEvent({
+                  invitationId: result.invitation.id,
+                  familyId: result.invitation.familyId,
+                  actorId: session.subjectId,
+                  email: result.invitation.email,
+                  invitationLink,
+                  correlationId: input.correlationId,
+                  occurredAt: now,
+                }),
+              ]
+            : []),
+        ];
         return { result, events };
       },
     );
@@ -172,19 +189,29 @@ export class FamilyInvitationService<Transaction> implements InvitationOperation
         });
         return {
           result,
-          events: result.emailConfigured
-            ? [
-                createInvitationEmailRequestedEvent({
-                  invitationId: result.invitation.id,
-                  familyId: result.invitation.familyId,
-                  actorId: session.subjectId,
-                  email: result.invitation.email,
-                  invitationLink,
-                  correlationId: input.correlationId,
-                  occurredAt: now,
-                }),
-              ]
-            : [],
+          events: [
+            createInvitationLifecycleEvent({
+              eventName: INVITATION_RESENT_EVENT,
+              invitationId: result.invitation.id,
+              familyId: result.invitation.familyId,
+              actorId: session.subjectId,
+              email: result.invitation.email,
+              occurredAt: now,
+            }),
+            ...(result.emailConfigured
+              ? [
+                  createInvitationEmailRequestedEvent({
+                    invitationId: result.invitation.id,
+                    familyId: result.invitation.familyId,
+                    actorId: session.subjectId,
+                    email: result.invitation.email,
+                    invitationLink,
+                    correlationId: input.correlationId,
+                    occurredAt: now,
+                  }),
+                ]
+              : []),
+          ],
         };
       },
     );
@@ -196,13 +223,31 @@ export class FamilyInvitationService<Transaction> implements InvitationOperation
     invitationId: string;
   }): Promise<{ invitation: { id: string; status: 'expired' } }> {
     const session = await this.requireParent(input.sessionToken);
-    const invitation = await this.transactionRunner.run((transaction) =>
-      this.repository.revoke(transaction, {
-        actorId: session.subjectId,
-        familyId: session.familyId,
-        invitationId: input.invitationId,
-        now: this.clock(),
-      }),
+    const now = this.clock();
+    const invitation = await runWithOutbox(
+      this.transactionRunner,
+      this.outboxWriter,
+      async (transaction) => {
+        const result = await this.repository.revoke(transaction, {
+          actorId: session.subjectId,
+          familyId: session.familyId,
+          invitationId: input.invitationId,
+          now,
+        });
+        return {
+          result,
+          events: [
+            createInvitationLifecycleEvent({
+              eventName: INVITATION_REVOKED_EVENT,
+              invitationId: result.id,
+              familyId: session.familyId,
+              actorId: session.subjectId,
+              email: result.email,
+              occurredAt: now,
+            }),
+          ],
+        };
+      },
     );
     return { invitation: { id: invitation.id, status: 'expired' } };
   }
@@ -213,13 +258,31 @@ export class FamilyInvitationService<Transaction> implements InvitationOperation
   }> {
     validateParentPassword(input.password);
     const passwordHash = await this.passwords.hash(input.password);
-    const parent = await this.transactionRunner.run((transaction) =>
-      this.repository.accept(transaction, {
-        tokenHash: hashToken(input.token),
-        nickname: input.nickname.trim(),
-        passwordHash,
-        now: this.clock(),
-      }),
+    const now = this.clock();
+    const parent = await runWithOutbox(
+      this.transactionRunner,
+      this.outboxWriter,
+      async (transaction) => {
+        const result = await this.repository.accept(transaction, {
+          tokenHash: hashToken(input.token),
+          nickname: input.nickname.trim(),
+          passwordHash,
+          now,
+        });
+        return {
+          result,
+          events: [
+            createInvitationLifecycleEvent({
+              eventName: INVITATION_ACCEPTED_EVENT,
+              invitationId: result.invitationId,
+              familyId: result.familyId,
+              actorId: result.id,
+              email: result.email,
+              occurredAt: now,
+            }),
+          ],
+        };
+      },
     );
     const sessionToken = await this.sessions.create({
       subjectId: parent.id,

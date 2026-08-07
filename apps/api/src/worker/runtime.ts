@@ -25,6 +25,11 @@ import { PrismaWorkerJobRunRepository } from './prisma-job-run-repository.js';
 import { WorkerScheduler } from './scheduler.js';
 import { BadgeEventConsumer, BADGE_EVENT_NAMES } from '../badges/event-consumer.js';
 import { PrismaBadgeRepository } from '../badges/prisma-repository.js';
+import {
+  NotificationEventConsumer,
+  registerNotificationEventConsumer,
+} from '../notifications/event-consumer.js';
+import { PrismaNotificationRepository } from '../notifications/prisma-repository.js';
 
 export function createWorkerRuntime(input: {
   environment: AppEnvironment;
@@ -46,6 +51,9 @@ export function createWorkerRuntime(input: {
   const eventBus = new EventBus();
   const badgeEventConsumer = new BadgeEventConsumer(new PrismaBadgeRepository(prisma));
   const growthRecordProjector = new GrowthRecordEventConsumer(prisma);
+  const notificationProjector = new NotificationEventConsumer(
+    new PrismaNotificationRepository(prisma),
+  );
   const growthRecordConsumer = new IdempotentEventConsumer(
     new RedisEventReceiptStore(redisCommands, keys),
     async (event) => {
@@ -67,6 +75,14 @@ export function createWorkerRuntime(input: {
       await badgeEventConsumer.handle(event);
     });
   }
+  const notificationConsumer = new IdempotentEventConsumer(
+    new RedisEventReceiptStore(redisCommands, keys),
+    async (event) => {
+      await notificationProjector.handle(event);
+    },
+    { consumer: 'notification-projector-v1', receiptTtlSeconds: 86_400 },
+  );
+  registerNotificationEventConsumer(eventBus, notificationConsumer);
   eventBus
     .createScope({
       name: 'growth-record-projector',

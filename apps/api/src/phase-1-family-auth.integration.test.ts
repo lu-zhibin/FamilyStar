@@ -294,7 +294,7 @@ class MemoryFamilyStore
   async revoke(
     transaction: FamilyAuthState,
     input: RevokeInvitationInput,
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; email: string }> {
     const family = transaction.families.find((candidate) => candidate.id === input.familyId);
     if (!family || family.createdById !== input.actorId) {
       throw new InvitationCreatorRequiredError();
@@ -304,13 +304,13 @@ class MemoryFamilyStore
     );
     if (!invitation || invitation.status === 'accepted') throw new InvitationUnavailableError();
     invitation.status = 'expired';
-    return { id: invitation.id };
+    return { id: invitation.id, email: invitation.email };
   }
 
   async accept(
     transaction: FamilyAuthState,
     input: AcceptInvitationInput,
-  ): Promise<ParentIdentity> {
+  ): Promise<ParentIdentity & { invitationId: string }> {
     const invitation = transaction.invitations.find(
       (candidate) => candidate.tokenHash === input.tokenHash,
     );
@@ -345,7 +345,7 @@ class MemoryFamilyStore
     };
     transaction.parents.push(parent);
     invitation.status = 'accepted';
-    return this.parentIdentity(parent);
+    return { ...this.parentIdentity(parent), invitationId: invitation.id };
   }
 
   async listActiveChildren(familyId: string): Promise<ChildProfile[]> {
@@ -580,11 +580,23 @@ describe('Phase 1 family authentication integration', () => {
 
     expect(created.delivery).toBe('email');
     expect(afterCreate.invitations).toHaveLength(1);
-    expect(afterCreate.outbox).toHaveLength(1);
+    expect(afterCreate.outbox).toHaveLength(2);
+    expect(afterCreate.outbox).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event_name: 'family.invitation.created.v1',
+          family_id: firstParent.parent.familyId,
+          actor_id: firstParent.parent.id,
+        }),
+        expect.objectContaining({
+          event_name: 'family.invitation.email-requested.v1',
+          correlation_id: 'stage-3-integration',
+        }),
+      ]),
+    );
     expect(afterCreate.outbox[0]).toMatchObject({
       family_id: firstParent.parent.familyId,
       actor_id: firstParent.parent.id,
-      correlation_id: 'stage-3-integration',
     });
     expect(afterCreate.invitations[0]?.tokenHash).toBe(
       createHash('sha256').update(invitationToken).digest('hex'),
@@ -599,6 +611,11 @@ describe('Phase 1 family authentication integration', () => {
     expect(accepted.parent.familyId).toBe(firstParent.parent.familyId);
     expect(afterAccept.parents).toHaveLength(2);
     expect(afterAccept.invitations[0]?.status).toBe('accepted');
+    expect(afterAccept.outbox).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event_name: 'family.invitation.accepted.v1' }),
+      ]),
+    );
     await expect(sessions.read(accepted.sessionToken)).resolves.toMatchObject({
       subjectId: accepted.parent.id,
       familyId: firstParent.parent.familyId,
