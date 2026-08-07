@@ -7,6 +7,7 @@ import {
   buildEmailIntegrationPayload,
   buildFamilyProfilePatch,
   buildReviewHistoryPath,
+  buildRewardPayload,
   buildSubmissionReviewRequest,
   buildTaskDraft,
   buildTaskFrequency,
@@ -332,6 +333,69 @@ describe('task frequency payload', () => {
       kind: 'date_range',
       start_date: '2026-08-05',
       end_date: '2026-08-12',
+    });
+  });
+});
+
+describe('reward management payload', () => {
+  function rewardForm(): FormData {
+    const form = new FormData();
+    form.set('name', '  周末露营  ');
+    form.set('description', '  一起去郊外  ');
+    form.set('points_cost', '180');
+    form.set('type', 'EXPERIENCE');
+    form.set('stock_total', '5');
+    form.set('min_level', '3');
+    form.set('per_day', '1');
+    form.set('per_week', '2');
+    form.set('per_month', '4');
+    return form;
+  }
+
+  it('builds a complete reward snapshot with image, stock, level, and limits', () => {
+    expect(buildRewardPayload(rewardForm(), 'media-1', 'ACTIVE')).toEqual({
+      name: '周末露营',
+      description: '一起去郊外',
+      image_media_id: 'media-1',
+      points_cost: 180,
+      type: 'EXPERIENCE',
+      stock_total: 5,
+      prerequisites: {
+        min_level: 3,
+        redeem_limit: { per_day: 1, per_week: 2, per_month: 4 },
+      },
+      status: 'ACTIVE',
+    });
+  });
+
+  it('uses null and empty prerequisites to clear optional reward fields', () => {
+    const form = rewardForm();
+    form.set('description', '  ');
+    form.set('stock_total', '');
+    form.set('min_level', '');
+    form.set('per_day', '');
+    form.set('per_week', '');
+    form.set('per_month', '');
+
+    expect(buildRewardPayload(form, null, 'INACTIVE')).toMatchObject({
+      description: null,
+      image_media_id: null,
+      stock_total: null,
+      prerequisites: {},
+      status: 'INACTIVE',
+    });
+  });
+
+  it('preserves zero finite stock and selected frequency limits', () => {
+    const form = rewardForm();
+    form.set('stock_total', '0');
+    form.set('min_level', '');
+    form.set('per_day', '');
+    form.set('per_month', '');
+
+    expect(buildRewardPayload(form, null, 'ACTIVE')).toMatchObject({
+      stock_total: 0,
+      prerequisites: { redeem_limit: { per_week: 2 } },
     });
   });
 });

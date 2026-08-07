@@ -1,12 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { parentSections } from '../lib/parent-portal';
+import { parentSections, type ParentReward } from '../lib/parent-portal';
 import {
   FamilyCodeCard,
   FamilyProfileFields,
   Modal,
   ParentPortal,
+  RewardCatalog,
+  RewardEditorFields,
   ReviewActions,
   ReviewMediaGallery,
   TaskAssigneeFields,
@@ -32,6 +34,27 @@ const familyProfile = {
   invitations: [],
   permissions: { can_update_name: true, can_manage_invitations: true },
 } as const;
+
+const reward: ParentReward = {
+  id: 'reward-1',
+  family_id: 'family-1',
+  name: '周末露营',
+  description: '一起去郊外',
+  image_media_id: 'media-1',
+  points_cost: 180,
+  type: 'EXPERIENCE',
+  stock_total: 8,
+  stock_reserved: 2,
+  stock_consumed: 3,
+  stock_available: 3,
+  prerequisites: {
+    min_level: 3,
+    redeem_limit: { per_day: 1, per_week: 2, per_month: 4 },
+  },
+  status: 'ACTIVE',
+  created_at: '2026-08-07T00:00:00.000Z',
+  updated_at: '2026-08-07T00:00:00.000Z',
+};
 
 describe('ParentPortal', () => {
   it.each(parentSections)('renders the %s route with shared navigation', (section) => {
@@ -72,6 +95,64 @@ describe('ParentPortal', () => {
     expect(markup).toContain('overflow-y-auto');
     expect(markup).toContain('overscroll-contain');
     expect(markup).toContain('tabindex="-1"');
+  });
+
+  it('locks every modal closing path while a write is in progress', () => {
+    const markup = renderToStaticMarkup(
+      <Modal title="正在保存" onClose={() => undefined} closeDisabled>
+        表单内容
+      </Modal>,
+    );
+
+    expect(markup).toMatch(/aria-label="关闭弹窗"[^>]*disabled=""/);
+  });
+
+  it('renders complete reward management details and actions', () => {
+    const markup = renderToStaticMarkup(
+      <RewardCatalog
+        rewards={[reward, { ...reward, id: 'reward-2', status: 'INACTIVE', stock_total: null }]}
+        imageUrls={{ 'media-1': 'https://example.com/reward.jpg' }}
+        busyAction={null}
+        onEdit={() => undefined}
+        onToggleStatus={() => undefined}
+        onDelete={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('周末露营');
+    expect(markup).toContain('180 星');
+    expect(markup).toContain('Lv.3 解锁');
+    expect(markup).toContain('每日 1 次 · 每周 2 次 · 每月 4 次');
+    expect(markup).toContain('总量 8 · 预占 2 · 已兑 3 · 可用 3');
+    expect(markup).toContain('无限库存');
+    expect(markup).toContain('已上架');
+    expect(markup).toContain('已下架');
+    expect(markup).toContain('aria-label="编辑奖励 周末露营"');
+    expect(markup).toContain('aria-label="删除奖励 周末露营"');
+    expect(markup).toContain('alt="周末露营 奖励图片"');
+  });
+
+  it('prefills reward editing fields and locks controls during submission', () => {
+    const markup = renderToStaticMarkup(
+      <RewardEditorFields
+        reward={reward}
+        imageUrl="https://example.com/reward.jpg"
+        imageRemoved={false}
+        busy
+        onRemoveImage={() => undefined}
+        onSubmit={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain('aria-busy="true"');
+    expect(markup).toMatch(/name="name"[^>]*value="周末露营"/);
+    expect(markup).toMatch(/name="points_cost"[^>]*value="180"/);
+    expect(markup).toMatch(/name="stock_total"[^>]*value="8"/);
+    expect(markup).toMatch(/name="min_level"[^>]*value="3"/);
+    expect(markup).toMatch(/name="per_week"[^>]*value="2"/);
+    expect(markup).toContain('移除图片');
+    expect(markup).toContain('正在保存...');
+    expect(markup.match(/disabled=""/g)?.length).toBeGreaterThanOrEqual(10);
   });
 
   it('renders multi-child choices and per-child settings for every task mode', () => {

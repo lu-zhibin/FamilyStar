@@ -51,6 +51,7 @@ import {
   buildEmailIntegrationPayload,
   buildFamilyProfilePatch,
   buildReviewHistoryPath,
+  buildRewardPayload,
   buildSubmissionReviewRequest,
   buildTaskDraft,
   buildTaskPatch,
@@ -65,6 +66,7 @@ import {
   type IntegrationResource,
   type IntegrationType,
   type ParentChild,
+  type ParentReward,
   type ParentSection,
   type ParentTask,
   type ParentTaskType,
@@ -73,6 +75,7 @@ import {
   type TaskCollaborationMode,
   type TaskFrequency,
 } from '../lib/parent-portal';
+import { loadTimelineMediaUrls } from '../lib/growth-records';
 import { uploadMediaFile } from '../lib/media-upload';
 import { ParentGrowthRecordsSection } from './growth-records';
 import { ParentAnalyticsSection, ParentDashboardSection } from './parent-read-models';
@@ -85,15 +88,6 @@ type FrequencyKind = 'daily' | 'weekly_count' | 'weekdays' | 'date_range';
 type Child = ParentChild;
 type Task = ParentTask;
 type TaskType = ParentTaskType;
-type Reward = {
-  id: string;
-  name: string;
-  description: string | null;
-  points_cost: number;
-  stock_available: number | null;
-  type: string;
-  status: 'ACTIVE' | 'INACTIVE';
-};
 type Redemption = {
   id: string;
   child_id: string;
@@ -1907,34 +1901,443 @@ function ReviewsPage() {
   );
 }
 
+function rewardTypeLabel(type: ParentReward['type']): string {
+  return { PHYSICAL: '实物', PRIVILEGE: '特权', EXPERIENCE: '体验', CUSTOM: '自定义' }[type];
+}
+
+function rewardLimitLabel(reward: ParentReward): string {
+  const limits = reward.prerequisites.redeem_limit;
+  const labels = [
+    limits?.per_day ? `每日 ${limits.per_day} 次` : '',
+    limits?.per_week ? `每周 ${limits.per_week} 次` : '',
+    limits?.per_month ? `每月 ${limits.per_month} 次` : '',
+  ].filter(Boolean);
+  return labels.length > 0 ? labels.join(' · ') : '兑换频次不限';
+}
+
+export function RewardCatalog({
+  rewards,
+  imageUrls,
+  busyAction,
+  onEdit,
+  onToggleStatus,
+  onDelete,
+}: {
+  rewards: readonly ParentReward[];
+  imageUrls: Readonly<Record<string, string>>;
+  busyAction: string | null;
+  onEdit: (reward: ParentReward) => void;
+  onToggleStatus: (reward: ParentReward) => void;
+  onDelete: (reward: ParentReward) => void;
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {rewards.map((reward) => {
+        const imageUrl = reward.image_media_id ? imageUrls[reward.image_media_id] : undefined;
+        const locked = busyAction !== null;
+        return (
+          <article className="soft-card flex min-h-full flex-col" key={reward.id}>
+            {imageUrl ? (
+              <NextImage
+                className="mb-4 h-36 w-full rounded-card object-cover"
+                src={imageUrl}
+                alt={`${reward.name} 奖励图片`}
+                width={480}
+                height={288}
+                unoptimized
+              />
+            ) : (
+              <span className="metric-icon mb-3">
+                <Gift />
+              </span>
+            )}
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-extrabold">{reward.name}</h3>
+              <span
+                className={`tag ${reward.status === 'ACTIVE' ? 'tag-green' : 'bg-sand text-brown-light'}`}
+              >
+                {reward.status === 'ACTIVE' ? '已上架' : '已下架'}
+              </span>
+            </div>
+            <p className="mt-1 min-h-9 text-caption font-bold text-brown-light">
+              {reward.description || '暂未填写奖励说明'}
+            </p>
+            <div className="mt-3 space-y-1 text-caption font-bold text-brown-light">
+              <p>
+                {rewardTypeLabel(reward.type)} ·{' '}
+                {reward.prerequisites.min_level
+                  ? `Lv.${reward.prerequisites.min_level} 解锁`
+                  : '无等级门槛'}
+              </p>
+              <p>{rewardLimitLabel(reward)}</p>
+              <p>
+                {reward.stock_total === null
+                  ? '无限库存'
+                  : `总量 ${reward.stock_total} · 预占 ${reward.stock_reserved} · 已兑 ${reward.stock_consumed} · 可用 ${reward.stock_available ?? 0}`}
+              </p>
+            </div>
+            <div className="mt-auto flex items-end justify-between pt-4">
+              <strong className="font-display text-title text-orange">
+                {reward.points_cost} 星
+              </strong>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <button
+                className="secondary-button justify-center px-2"
+                type="button"
+                disabled={locked}
+                onClick={() => onEdit(reward)}
+                aria-label={`编辑奖励 ${reward.name}`}
+              >
+                <Pencil size={15} />
+                编辑
+              </button>
+              <button
+                className="secondary-button justify-center px-2"
+                type="button"
+                disabled={locked}
+                onClick={() => onToggleStatus(reward)}
+              >
+                {reward.status === 'ACTIVE' ? '下架' : '上架'}
+              </button>
+              <button
+                className="secondary-button justify-center px-2 text-red"
+                type="button"
+                disabled={locked}
+                onClick={() => onDelete(reward)}
+                aria-label={`删除奖励 ${reward.name}`}
+              >
+                <Trash2 size={15} />
+                删除
+              </button>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+export function RewardEditorFields({
+  reward,
+  imageUrl,
+  imageRemoved,
+  busy,
+  onRemoveImage,
+  onSubmit,
+}: {
+  reward: ParentReward | null;
+  imageUrl: string | undefined;
+  imageRemoved: boolean;
+  busy: boolean;
+  onRemoveImage: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const limits = reward?.prerequisites.redeem_limit;
+  return (
+    <form className="space-y-4" onSubmit={onSubmit} aria-busy={busy}>
+      <label className="field-label">
+        奖励名称
+        <input
+          className="field"
+          name="name"
+          required
+          maxLength={120}
+          defaultValue={reward?.name ?? ''}
+          disabled={busy}
+        />
+      </label>
+      <label className="field-label">
+        奖励说明
+        <textarea
+          className="field min-h-20 py-3"
+          name="description"
+          maxLength={10_000}
+          defaultValue={reward?.description ?? ''}
+          disabled={busy}
+        />
+      </label>
+      {reward?.image_media_id && !imageRemoved && (
+        <div className="soft-card flex items-center gap-3">
+          {imageUrl ? (
+            <NextImage
+              className="size-16 rounded-card object-cover"
+              src={imageUrl}
+              alt={`${reward.name} 当前奖励图片`}
+              width={64}
+              height={64}
+              unoptimized
+            />
+          ) : (
+            <ImageIcon aria-hidden size={24} />
+          )}
+          <span className="flex-1 text-sm font-bold">已配置奖励图片</span>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={busy}
+            onClick={onRemoveImage}
+          >
+            移除图片
+          </button>
+        </div>
+      )}
+      <label className="field-label">
+        {reward?.image_media_id && !imageRemoved ? '替换奖励图片' : '奖励图片（可选）'}
+        <input
+          className="field py-2"
+          name="image"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          disabled={busy}
+        />
+      </label>
+      <div className="form-grid">
+        <label className="field-label">
+          所需积分
+          <input
+            className="field"
+            name="points_cost"
+            type="number"
+            min="1"
+            max="2147483647"
+            required
+            defaultValue={reward?.points_cost ?? 1}
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          奖励类型
+          <select
+            className="field"
+            name="type"
+            defaultValue={reward?.type ?? 'PRIVILEGE'}
+            disabled={busy}
+          >
+            <option value="PRIVILEGE">特权</option>
+            <option value="PHYSICAL">实物</option>
+            <option value="EXPERIENCE">体验</option>
+            <option value="CUSTOM">自定义</option>
+          </select>
+        </label>
+        <label className="field-label">
+          总库存（留空不限量）
+          <input
+            className="field"
+            name="stock_total"
+            type="number"
+            min="0"
+            max="2147483647"
+            defaultValue={reward?.stock_total ?? ''}
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          最低等级（留空无限制）
+          <input
+            className="field"
+            name="min_level"
+            type="number"
+            min="1"
+            max="20"
+            defaultValue={reward?.prerequisites.min_level ?? ''}
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          每日兑换上限
+          <input
+            className="field"
+            name="per_day"
+            type="number"
+            min="1"
+            max="2147483647"
+            defaultValue={limits?.per_day ?? ''}
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          每周兑换上限
+          <input
+            className="field"
+            name="per_week"
+            type="number"
+            min="1"
+            max="2147483647"
+            defaultValue={limits?.per_week ?? ''}
+            disabled={busy}
+          />
+        </label>
+        <label className="field-label">
+          每月兑换上限
+          <input
+            className="field"
+            name="per_month"
+            type="number"
+            min="1"
+            max="2147483647"
+            defaultValue={limits?.per_month ?? ''}
+            disabled={busy}
+          />
+        </label>
+      </div>
+      <p className="text-caption font-bold text-brown-light">
+        有待审批或待兑现兑换时，库存模式切换会由服务端保护。
+      </p>
+      <button className="primary-button w-full justify-center" type="submit" disabled={busy}>
+        <Save size={16} />
+        {busy ? '正在保存...' : reward ? '保存奖励' : '保存并上架'}
+      </button>
+    </form>
+  );
+}
+
 function RewardsPage() {
-  const rewards = useApiData<Reward[]>('/rewards', 'rewards', []);
+  const rewards = useApiData<ParentReward[]>('/rewards', 'rewards', []);
   const redemptions = useApiData<Redemption[]>('/redemptions', 'redemptions', []);
   const wishes = useApiData<Wish[]>('/wishes', 'wishes', []);
-  const [open, setOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [editingReward, setEditingReward] = useState<ParentReward | null>(null);
+  const [imageRemoved, setImageRemoved] = useState(false);
+  const [imageUrls, setImageUrls] = useState<Readonly<Record<string, string>>>({});
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
 
-  async function createReward(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    let active = true;
+    const ids = rewards.data.flatMap(({ image_media_id }) =>
+      image_media_id ? [image_media_id] : [],
+    );
+    loadTimelineMediaUrls(parentApi, ids)
+      .then((urls) => active && setImageUrls(urls))
+      .catch(() => active && setImageUrls({}));
+    return () => {
+      active = false;
+    };
+  }, [rewards.data]);
+
+  function closeEditor() {
+    if (busyAction) return;
+    setCreateOpen(false);
+    setEditingReward(null);
+    setImageRemoved(false);
+  }
+
+  function openEditor(reward: ParentReward | null) {
+    setActionMessage('');
+    setImageRemoved(false);
+    setEditingReward(reward);
+    setCreateOpen(reward === null);
+  }
+
+  async function refreshRewardsSafely(): Promise<ParentReward[] | null> {
+    try {
+      return await rewards.refresh();
+    } catch {
+      return null;
+    }
+  }
+
+  async function saveReward(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busyAction) return;
     setActionMessage('');
     const form = new FormData(event.currentTarget);
-    const draft = {
-      name: String(form.get('name')),
-      description: String(form.get('description')),
-      points_cost: Number(form.get('points_cost')),
-      type: String(form.get('type')),
-      stock_total: form.get('stock_total') ? Number(form.get('stock_total')) : null,
-      status: 'ACTIVE' as const,
-    };
+    const action = editingReward ? `edit:${editingReward.id}` : 'create';
+    setBusyAction(action);
+    let writeCompleted = false;
     try {
-      const data = await parentApi<{ reward: Reward }>('/rewards', {
-        method: 'POST',
-        body: JSON.stringify(draft),
+      const image = form.get('image');
+      let imageMediaId = imageRemoved ? null : (editingReward?.image_media_id ?? null);
+      if (image instanceof File && image.size > 0) {
+        imageMediaId = await uploadMediaFile(image, {
+          api: parentApi,
+          idempotencyKey: `reward-image-${editingReward?.id ?? 'new'}-${crypto.randomUUID()}`,
+        });
+      }
+      const payload = buildRewardPayload(form, imageMediaId, editingReward?.status ?? 'ACTIVE');
+      await parentApi<{ reward: ParentReward }>(
+        editingReward ? `/rewards/${editingReward.id}` : '/rewards',
+        {
+          method: editingReward ? 'PATCH' : 'POST',
+          body: JSON.stringify(payload),
+        },
+      );
+      writeCompleted = true;
+      setCreateOpen(false);
+      setEditingReward(null);
+      setImageRemoved(false);
+      await rewards.refresh();
+    } catch (error) {
+      if (writeCompleted) {
+        setActionMessage('奖励已保存，列表刷新失败，请重新加载页面确认最新状态。');
+      } else {
+        const authoritative = await refreshRewardsSafely();
+        if (editingReward && authoritative) {
+          const current = authoritative.find(({ id }) => id === editingReward.id);
+          if (current) setEditingReward(current);
+        }
+        setActionMessage(
+          error instanceof ParentApiError && error.status === 409
+            ? `奖励状态已变化：${error.message}`
+            : '奖励保存失败，请检查图片、库存和输入后重试。',
+        );
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function toggleRewardStatus(reward: ParentReward) {
+    if (busyAction) return;
+    setActionMessage('');
+    setBusyAction(`status:${reward.id}`);
+    let writeCompleted = false;
+    try {
+      await parentApi(`/rewards/${reward.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: reward.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' }),
       });
-      rewards.setData((items) => [data.reward, ...items]);
-      setOpen(false);
-    } catch {
-      setActionMessage('奖励创建失败，请检查输入后重试。');
+      writeCompleted = true;
+      await rewards.refresh();
+    } catch (error) {
+      await refreshRewardsSafely();
+      setActionMessage(
+        writeCompleted
+          ? '奖励状态已更新，列表刷新失败，请重新加载页面确认。'
+          : error instanceof ParentApiError && error.status === 409
+            ? `奖励状态已变化：${error.message}`
+            : '奖励上下架失败，请重试。',
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deleteReward(reward: ParentReward) {
+    if (busyAction) return;
+    const confirmed = window.confirm(
+      `确认删除“${reward.name}”？奖励将下架，历史兑换记录会继续保留。`,
+    );
+    if (!confirmed) return;
+    setActionMessage('');
+    setBusyAction(`delete:${reward.id}`);
+    let writeCompleted = false;
+    try {
+      await parentApi(`/rewards/${reward.id}`, { method: 'DELETE' });
+      writeCompleted = true;
+      await rewards.refresh();
+    } catch (error) {
+      await refreshRewardsSafely();
+      setActionMessage(
+        writeCompleted
+          ? '奖励已删除，列表刷新失败，请重新加载页面确认。'
+          : error instanceof ParentApiError && error.status === 409
+            ? `奖励受当前业务状态保护：${error.message}`
+            : '奖励删除失败，请刷新后重试。',
+      );
+    } finally {
+      setBusyAction(null);
     }
   }
 
@@ -1961,7 +2364,11 @@ function RewardsPage() {
         description="集中处理兑换、奖励库存和孩子的愿望。"
         state={rewards.state}
         action={
-          <button className="primary-button" onClick={() => setOpen(true)}>
+          <button
+            className="primary-button"
+            onClick={() => openEditor(null)}
+            disabled={busyAction !== null}
+          >
             <Plus size={17} />
             新增奖励
           </button>
@@ -2001,27 +2408,14 @@ function RewardsPage() {
           {rewards.data.length === 0 ? (
             <EmptyState title="奖励池还是空的" detail="创建第一个家庭奖励后会显示在这里。" />
           ) : (
-            <div className="grid gap-3 md:grid-cols-3">
-              {rewards.data.map((reward) => (
-                <article className="soft-card" key={reward.id}>
-                  <span className="metric-icon mb-3">
-                    <Gift />
-                  </span>
-                  <h3 className="font-extrabold">{reward.name}</h3>
-                  <p className="mt-1 min-h-9 text-caption font-bold text-brown-light">
-                    {reward.description}
-                  </p>
-                  <div className="mt-4 flex items-end justify-between">
-                    <strong className="font-display text-title text-orange">
-                      {reward.points_cost} 星
-                    </strong>
-                    <span className="tag">
-                      {reward.stock_available === null ? '不限量' : `余 ${reward.stock_available}`}
-                    </span>
-                  </div>
-                </article>
-              ))}
-            </div>
+            <RewardCatalog
+              rewards={rewards.data}
+              imageUrls={imageUrls}
+              busyAction={busyAction}
+              onEdit={(reward) => openEditor(reward)}
+              onToggleStatus={toggleRewardStatus}
+              onDelete={deleteReward}
+            />
           )}
         </Panel>
       </div>
@@ -2049,40 +2443,23 @@ function RewardsPage() {
           ))
         )}
       </Panel>
-      {open && (
-        <Modal title="新增奖励" onClose={() => setOpen(false)}>
-          <form className="space-y-4" onSubmit={createReward}>
-            <label className="field-label">
-              奖励名称
-              <input className="field" name="name" required maxLength={100} />
-            </label>
-            <label className="field-label">
-              奖励说明
-              <textarea className="field min-h-20 py-3" name="description" maxLength={1000} />
-            </label>
-            <div className="form-grid">
-              <label className="field-label">
-                所需积分
-                <input className="field" name="points_cost" type="number" min="1" required />
-              </label>
-              <label className="field-label">
-                奖励类型
-                <select className="field" name="type">
-                  <option value="PRIVILEGE">特权</option>
-                  <option value="PHYSICAL">实物</option>
-                  <option value="EXPERIENCE">体验</option>
-                  <option value="CUSTOM">自定义</option>
-                </select>
-              </label>
-              <label className="field-label">
-                库存（留空不限量）
-                <input className="field" name="stock_total" type="number" min="0" />
-              </label>
-            </div>
-            <button className="primary-button w-full" type="submit">
-              保存并上架
-            </button>
-          </form>
+      {(createOpen || editingReward) && (
+        <Modal
+          title={editingReward ? '编辑奖励' : '新增奖励'}
+          onClose={closeEditor}
+          closeDisabled={busyAction !== null}
+        >
+          <RewardEditorFields
+            key={editingReward?.updated_at ?? 'create'}
+            reward={editingReward}
+            imageUrl={
+              editingReward?.image_media_id ? imageUrls[editingReward.image_media_id] : undefined
+            }
+            imageRemoved={imageRemoved}
+            busy={busyAction !== null}
+            onRemoveImage={() => setImageRemoved(true)}
+            onSubmit={saveReward}
+          />
         </Modal>
       )}
     </>
@@ -3620,11 +3997,13 @@ export function Modal({
   title,
   onClose,
   onKeyDown,
+  closeDisabled = false,
 }: {
   children: ReactNode;
   title: string;
   onClose: () => void;
   onKeyDown?: (event: ReactKeyboardEvent<HTMLElement>) => void;
+  closeDisabled?: boolean;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
@@ -3645,7 +4024,7 @@ export function Modal({
     if (event.defaultPrevented) return;
     if (event.key === 'Escape') {
       event.preventDefault();
-      onCloseRef.current();
+      if (!closeDisabled) onCloseRef.current();
       return;
     }
     if (event.key !== 'Tab') return;
@@ -3671,7 +4050,11 @@ export function Modal({
   }
 
   const content = (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={() => !closeDisabled && onClose()}
+    >
       <section
         ref={dialogRef}
         className="modal max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain"
@@ -3686,7 +4069,13 @@ export function Modal({
           <h2 id="modal-title" className="font-display text-title">
             {title}
           </h2>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="关闭弹窗">
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onClose}
+            aria-label="关闭弹窗"
+            disabled={closeDisabled}
+          >
             <X />
           </button>
         </div>

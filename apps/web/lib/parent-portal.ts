@@ -106,6 +106,7 @@ export function canAccessParentPortal(role: string | null): boolean {
 
 type TaskFormData = Pick<FormData, 'get' | 'getAll'>;
 type ChildFormData = Pick<FormData, 'get'>;
+type RewardFormData = Pick<FormData, 'get'>;
 export type TaskCollaborationMode = 'SOLO' | 'COLLAB';
 export type TaskCheckType = 'TICK' | 'TEXT' | 'PHOTO' | 'VIDEO' | 'MIXED';
 export type TaskVerifyMode = 'AUTO' | 'MANUAL';
@@ -147,6 +148,33 @@ export type ParentTaskType = Readonly<{
   default_verify_mode: TaskVerifyMode;
   is_enabled: boolean;
   sort_order: number;
+}>;
+export type RewardType = 'PHYSICAL' | 'PRIVILEGE' | 'EXPERIENCE' | 'CUSTOM';
+export type RewardStatus = 'ACTIVE' | 'INACTIVE';
+export type RewardPrerequisites = Readonly<{
+  min_level?: number;
+  redeem_limit?: Readonly<{
+    per_day?: number;
+    per_week?: number;
+    per_month?: number;
+  }>;
+}>;
+export type ParentReward = Readonly<{
+  id: string;
+  family_id: string;
+  name: string;
+  description: string | null;
+  image_media_id: string | null;
+  points_cost: number;
+  type: RewardType;
+  stock_total: number | null;
+  stock_reserved: number;
+  stock_consumed: number;
+  stock_available: number | null;
+  prerequisites: RewardPrerequisites;
+  status: RewardStatus;
+  created_at: string;
+  updated_at: string;
 }>;
 
 export function familyNaturalDate(now: Date, timeZone: string): string {
@@ -216,7 +244,7 @@ export function buildTaskFrequency(form: TaskFormData): TaskFrequency {
   return { kind: 'daily' };
 }
 
-function optionalNumber(form: TaskFormData, name: string): number | undefined {
+function optionalNumber(form: Pick<FormData, 'get'>, name: string): number | undefined {
   const value = String(form.get(name) ?? '').trim();
   return value ? Number(value) : undefined;
 }
@@ -316,6 +344,38 @@ export function buildTaskPatch(form: TaskFormData, startDate = '') {
     frequency: buildTaskFrequency(form),
     base_points: Number(form.get('base_points')),
     assignments: buildTaskAssignments(form, startDate, collaborationMode),
+  };
+}
+
+export function buildRewardPayload(
+  form: RewardFormData,
+  imageMediaId: string | null,
+  status: RewardStatus,
+) {
+  const description = String(form.get('description') ?? '').trim();
+  const minLevel = optionalNumber(form, 'min_level');
+  const perDay = optionalNumber(form, 'per_day');
+  const perWeek = optionalNumber(form, 'per_week');
+  const perMonth = optionalNumber(form, 'per_month');
+  const stockTotal = String(form.get('stock_total') ?? '').trim();
+  const redeemLimit = {
+    ...(perDay === undefined ? {} : { per_day: perDay }),
+    ...(perWeek === undefined ? {} : { per_week: perWeek }),
+    ...(perMonth === undefined ? {} : { per_month: perMonth }),
+  };
+
+  return {
+    name: String(form.get('name') ?? '').trim(),
+    description: description || null,
+    image_media_id: imageMediaId,
+    points_cost: Number(form.get('points_cost')),
+    type: String(form.get('type') ?? '') as RewardType,
+    stock_total: stockTotal ? Number(stockTotal) : null,
+    prerequisites: {
+      ...(minLevel === undefined ? {} : { min_level: minLevel }),
+      ...(Object.keys(redeemLimit).length === 0 ? {} : { redeem_limit: redeemLimit }),
+    },
+    status,
   };
 }
 
