@@ -2,7 +2,7 @@
 
 ## 定位
 
-任务 6.1 为单人打卡与协作提交接入家长人工审核，任务 6.2 增加按家庭规则执行的超时自动通过，任务 6.3 将单人 `APPROVED` 状态与积分发放纳入同一事务，任务 6.4 在单人和协作审核通过路径接入动态 Streak，并在协作全员通过时统一发分。任务 14 补齐家庭待审队列和家长端权威刷新闭环。实现位于 `apps/api/src/check-ins/review-*` 与 `apps/web/components/parent-portal.tsx`，覆盖队列读取、审核决策、历史查询、家庭隔离、有界候选批次、幂等重试和并发保护。
+审核领域为单人打卡与协作提交提供家长人工审核、家庭规则驱动的超时自动通过、积分事务和动态 Streak。产品补全任务 6.2 进一步补齐实际审核截止时间、超时状态、家庭审核历史筛选、凭证弹窗键盘交互和冲突后的权威状态刷新。实现位于 `apps/api/src/check-ins/review-*` 与 `apps/web/components/parent-portal.tsx`，覆盖队列读取、审核决策、历史查询、家庭隔离、有界候选批次、幂等重试和并发保护。
 
 ## 审核目标
 
@@ -17,9 +17,11 @@
 
 `listPendingReviews()` 分别读取当前家庭仍为 `PENDING` 的单人打卡和协作提交。聚合状态是待审资格的唯一依据，latest attempt 只提供内容、媒体和提交时间快照。Prisma 查询同时限定家庭、活动任务、活动孩子和未软删除目标；两类结果合并后按提交时间、目标类型和目标 ID 稳定排序，最多返回 100 条。
 
-队列记录提供目标与 attempt ID、任务与孩子摘要、可空文字、媒体 ID/类型以及提交时间。媒体访问继续通过同家庭 `GET /api/v1/media/:id/access-url` 获取短期 URL。
+队列记录提供目标与 attempt ID、任务与孩子摘要、可空文字、媒体 ID/类型以及提交时间。服务根据家庭 `reviewTimeoutHours` 派生 `review_deadline_at` 和 `is_overdue`；配置值为 0 时截止时间返回 `null`，页面说明仅由家长人工处理。媒体访问继续通过同家庭 `GET /api/v1/media/:id/access-url` 获取短期 URL。
 
-家长 Web 页面为每个 attempt 和决定生成 `review:<attemptId>:<APPROVED|REJECTED>` 幂等键。审核 POST 成功后立即重新 GET 权威队列；POST 失败保留记录，POST 成功但队列刷新失败时保留可见记录并提示用户重新确认。
+家长 Web 页面为每个 attempt 和决定生成 `review:<attemptId>:<APPROVED|REJECTED>` 幂等键。审核 POST 成功后立即重新 GET 权威队列和家庭历史。写入返回 `409` 时，页面同时刷新待审队列、目标审核历史和家庭审核历史；服务端已有终态时保留当前卡片和原因输入，显示权威结果并移除重复审核动作。
+
+凭证弹窗打开后聚焦关闭按钮，并将 Tab 与 Shift+Tab 约束在弹窗内。Escape 关闭弹窗，左右方向键切换前后凭证，关闭后焦点恢复到“查看凭证”触发按钮。
 
 ## 权限与家庭边界
 
@@ -61,7 +63,9 @@ Redis 锁缩小并发窗口，Prisma 的条件更新、attempt 唯一键和家�
 
 ## 历史模型
 
-`SubmissionReview` 保存 `targetType`、二选一 attempt 外键、家庭幂等键、决策、`PARENT | TIMEOUT` 来源、原因、可空审核人、审核时间和创建时间。人工审核写入 `PARENT` 与家长 ID，超时审核写入 `TIMEOUT` 与空审核人。历史查询通过 attempt 反向关联到打卡或协作提交，并按 `reviewedAt` 升序返回。
+`SubmissionReview` 保存 `targetType`、二选一 attempt 外键、家庭幂等键、决策、`PARENT | TIMEOUT` 来源、原因、可空审核人、审核时间和创建时间。人工审核写入 `PARENT` 与家长 ID，超时审核写入 `TIMEOUT` 与空审核人。
+
+家庭历史接口通过 attempt 反向关联任务和孩子，支持 `child_id`、`task_id`、`result`、`start_date` 和 `end_date` 筛选。日期边界按家庭时区解析，范围上限为 366 天；结果按 `(reviewedAt, id)` 倒序并使用 opaque cursor 稳定分页。目标筛选与 cursor 条件通过 Prisma `AND` 组合，翻页时继续保持孩子和任务约束。
 
 SQL 迁移提供两项核心保护：
 
@@ -74,6 +78,7 @@ SQL 迁移提供两项核心保护：
 | 方法与路径 | 用途 |
 |---|---|
 | `GET /api/v1/family/submission-reviews/pending` | 读取当前家庭待审队列 |
+| `GET /api/v1/family/submission-reviews/history` | 按孩子、任务、结果和家庭自然日期筛选审核历史 |
 | `POST /api/v1/check-ins/:id/reviews` | 审核单人打卡 |
 | `GET /api/v1/check-ins/:id/reviews` | 读取单人打卡审核历史 |
 | `POST /api/v1/collaboration-submissions/:id/reviews` | 审核协作提交 |
@@ -87,4 +92,4 @@ SQL 迁移提供两项核心保护：
 
 ## 验证
 
-领域测试覆盖家长权限、家庭隔离、空队列、拒绝原因、幂等重试、48 小时边界、0 禁用、家庭级超时、批次上限、目标锁与重复执行。Prisma 仓储测试覆盖两种目标的待审合并、latest attempt 复查、条件更新、`TIMEOUT` 历史、家长并发竞争，以及单人/协作的家长与超时发分衔接；HTTP 测试覆盖队列、人工与超时历史输出。Playwright 覆盖审核成功后的权威重拉、浏览器重新挂载、稳定幂等键和失败记录保留。当前完整 Vitest 套件为 82 个文件、528 项，浏览器回归为 9 项。
+任务 6.2 的 6 个聚焦测试文件共 108 项通过，全量单元回归为 114 个文件、829 项。全工作区 TypeScript、ESLint、Prettier、Prisma 契约和生产构建通过。提交 `b77d51b` 已部署为 `dev-20260807-b77d51b-i35`，Web、API、Worker、PostgreSQL 和 Redis 五个容器健康；外部域名真实 Chromium 验证审核截止、历史筛选、弹窗焦点与方向键、Escape、焦点恢复、真实写入冲突、输入保留和权威状态刷新通过。隔离家庭未配置 COS 集成，弹窗键盘验收使用浏览器层只读媒体元数据，审核状态机、历史和冲突请求均调用真实部署 API。
