@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">FamilyStar</title>
+  <defs>
+    <linearGradient id="background" x1="64" y1="54" x2="448" y2="470" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFC107"/>
+      <stop offset="1" stop-color="#FF9800"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="#FFF8E7"/>
+  <circle cx="256" cy="256" r="192" fill="url(#background)"/>
+  <path d="m256 125 39 79 87 12.6-63 61.5 14.9 86.6L256 323.8l-77.9 40.9 14.9-86.6-63-61.5 87-12.6 39-79Z" fill="#FFF"/>
+  <circle cx="256" cy="256" r="32" fill="#689F38"/>
+</svg>
