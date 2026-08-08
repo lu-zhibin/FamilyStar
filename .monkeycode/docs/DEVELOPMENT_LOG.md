@@ -1,5 +1,19 @@
 # FamilyStar 开发记录
 
+## 2026-08-08：完成 PWA 安装入口与 i60 真实验收
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-PWA-I60-001`
+- 状态：i60 已部署到 `8098`，PWA/主题真实 HTTPS 验收通过；全量质量门禁保留 3 个 mock E2E 失败
+- 提交：`3dc342e`
+
+### 实施与验证
+
+- Web 捕获 `beforeinstallprompt`，提供可访问、可关闭的“安装 FamilyStar”入口，支持安装进行中状态、`userChoice` 和 `appinstalled`。
+- i60 构建成功并完成迁移容器、API、Worker、Web 重建；PostgreSQL、Redis、API、Worker、Web 健康依赖链完成。
+- `REAL_ACCEPTANCE=1 PLAYWRIGHT_BASE_URL=https://home.wenwuge.vip pnpm exec playwright test e2e/themes-pwa.real.spec.cjs`：2 项通过，覆盖主题选择、manifest、缓存激活和离线回退。
+- 完整质量链路的格式、Lint、类型、Prisma、覆盖率、构建、设计系统和 API 基础契约通过；完整浏览器回归 30 项中 15 项通过、3 项失败、12 项跳过。
+- 失败用例集中在家长导航可见性和审核成功提示，阶段 13.1、13.4 与检查点 14 保持待处理。
+
 ## 2026-08-08：完成第三个产品补全批次质量检查点
 
 - 记录 ID：`FS-PRODUCT-COMPLETION-CHECKPOINT-003`
