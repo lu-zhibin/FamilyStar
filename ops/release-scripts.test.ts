@@ -33,6 +33,9 @@ function fixture() {
     join(bin, 'git'),
     `#!/bin/sh
 set -eu
+if [ "\${FAKE_GIT_FAILURE:-0}" = 1 ]; then
+  exit 1
+fi
 case "$*" in
   *'rev-parse HEAD'*) printf '%s\\n' '0123456789abcdef0123456789abcdef01234567' ;;
   *'status --porcelain'*) printf '%s\\n' ' M safe-file.txt' ;;
@@ -213,6 +216,25 @@ describe('release migration shell contract', () => {
         ...process.env,
         FAKE_LOG: value.log,
         HOME: value.root,
+        PATH: `${value.bin}:${process.env.PATH}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('release metadata:');
+  });
+
+  it('accepts an explicit commit for source archives without Git metadata', () => {
+    const value = fixture();
+    const args = releaseArgs(value);
+    args.push('--git-commit', 'abcdef0123456789abcdef0123456789abcdef01');
+
+    const result = spawnSync('sh', args, {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        FAKE_GIT_FAILURE: '1',
+        FAKE_LOG: value.log,
         PATH: `${value.bin}:${process.env.PATH}`,
       },
     });

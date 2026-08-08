@@ -2,7 +2,7 @@
 
 set -eu
 
-USAGE='usage: release-migrate.sh --env-file ABS_PATH --compose-file ABS_PATH --compose-project NAME --backup-dir ABS_PATH --release-id ID --web-health-url URL --api-health-url URL [--timeout SECONDS] [--interval SECONDS]'
+USAGE='usage: release-migrate.sh --env-file ABS_PATH --compose-file ABS_PATH --compose-project NAME --backup-dir ABS_PATH --release-id ID --web-health-url URL --api-health-url URL [--git-commit SHA] [--timeout SECONDS] [--interval SECONDS]'
 SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 PROJECT_ROOT=$(CDPATH= cd "$SCRIPT_DIR/.." && pwd)
 METADATA_HELPER="$SCRIPT_DIR/release-metadata.mjs"
@@ -15,6 +15,7 @@ BACKUP_DIR=
 RELEASE_ID=
 WEB_HEALTH_URL=
 API_HEALTH_URL=
+GIT_COMMIT=
 STAGE=arguments
 BACKUP_VERIFIED=0
 STATE_DIR=
@@ -68,6 +69,11 @@ while [ "$#" -gt 0 ]; do
     --api-health-url)
       require_value "$@"
       API_HEALTH_URL=$2
+      shift 2
+      ;;
+    --git-commit)
+      require_value "$@"
+      GIT_COMMIT=$2
       shift 2
       ;;
     --timeout)
@@ -131,6 +137,13 @@ case "$RELEASE_ID" in
   ''|.*|*[!A-Za-z0-9_.-]*) fail 'E_RELEASE_ID' ;;
 esac
 
+if [ -n "$GIT_COMMIT" ]; then
+  [ "${#GIT_COMMIT}" -eq 40 ] || fail 'E_GIT_COMMIT'
+  case "$GIT_COMMIT" in
+    *[!0-9A-Fa-f]*) fail 'E_GIT_COMMIT' ;;
+  esac
+fi
+
 for HEALTH_URL in "$WEB_HEALTH_URL" "$API_HEALTH_URL"; do
   case "$HEALTH_URL" in
     http://*|https://*) ;;
@@ -192,13 +205,18 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 STAGE=source
-GIT_COMMIT=$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null) || fail 'E_GIT_COMMIT'
-printf '%s\n' "$GIT_COMMIT" > "$STATE_DIR/git-commit"
-if [ -n "$(git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null)" ]; then
-  printf '%s\n' 'true' > "$STATE_DIR/git-dirty"
+if [ -z "$GIT_COMMIT" ]; then
+  GIT_COMMIT=$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null) || fail 'E_GIT_COMMIT'
+  if [ -n "$(git -C "$PROJECT_ROOT" status --porcelain 2>/dev/null)" ]; then
+    GIT_DIRTY=true
+  else
+    GIT_DIRTY=false
+  fi
 else
-  printf '%s\n' 'false' > "$STATE_DIR/git-dirty"
+  GIT_DIRTY=false
 fi
+printf '%s\n' "$GIT_COMMIT" > "$STATE_DIR/git-commit"
+printf '%s\n' "$GIT_DIRTY" > "$STATE_DIR/git-dirty"
 
 STAGE=compose_config
 compose config --format json 2>/dev/null | \
