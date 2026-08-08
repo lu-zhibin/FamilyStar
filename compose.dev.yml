@@ -47,12 +47,10 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-api
+    image: ${FAMILYSTAR_DEV_IMAGE_NAME:-familystar-local}:${IMAGE_TAG:?Set IMAGE_TAG}-api
     build:
       context: .
       target: api
-      cache_from:
-        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-api
     command:
       [
         /app/apps/api/node_modules/.bin/prisma,
@@ -71,12 +69,10 @@ services:
     restart: 'no'
 
   api:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-api
+    image: ${FAMILYSTAR_DEV_IMAGE_NAME:-familystar-local}:${IMAGE_TAG:?Set IMAGE_TAG}-api
     build:
       context: .
       target: api
-      cache_from:
-        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-api
     environment:
       <<: *backend-environment
       NODE_ENV: development
@@ -86,12 +82,10 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-worker
+    image: ${FAMILYSTAR_DEV_IMAGE_NAME:-familystar-local}:${IMAGE_TAG:?Set IMAGE_TAG}-worker
     build:
       context: .
       target: worker
-      cache_from:
-        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-worker
     environment:
       <<: *backend-environment
       NODE_ENV: development
@@ -105,12 +99,10 @@ services:
     restart: unless-stopped
 
   web:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${IMAGE_TAG:-dev-local}-web
+    image: ${FAMILYSTAR_DEV_IMAGE_NAME:-familystar-local}:${IMAGE_TAG:?Set IMAGE_TAG}-web
     build:
       context: .
       target: web
-      cache_from:
-        - ${FAMILYSTAR_IMAGE_REPOSITORY:-familystar}:${CACHE_TAG:-dev-latest}-web
     environment:
       API_INTERNAL_URL: http://api:3001
     depends_on:

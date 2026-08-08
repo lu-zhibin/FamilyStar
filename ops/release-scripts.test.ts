@@ -88,8 +88,11 @@ case "$COMMAND" in
     fi
     printf '%s\\n' '1; 0 0 TABLE public Family familystar'
     ;;
-  *'run --rm migrate'* )
+  *'run --rm -e RUN_MIGRATIONS=1 migrate'* )
     printf '%s\\n' 'MIGRATE' >> "$FAKE_LOG"
+    ;;
+  *'up -d postgres redis' )
+    printf '%s\\n' 'DATA_UP' >> "$FAKE_LOG"
     ;;
   *'up -d postgres redis api worker web'* )
     printf '%s\\n' 'UP' >> "$FAKE_LOG"
@@ -104,7 +107,8 @@ case "$COMMAND" in
     printf 'container-%s\\n' "$SERVICE"
     ;;
   'inspect '* )
-    if [ "\${FAKE_HEALTH_TIMEOUT:-0}" = 1 ]; then
+    if [ "\${FAKE_HEALTH_TIMEOUT:-0}" = 1 ] && \
+      { case "$COMMAND" in *container-web|*container-api|*container-worker) true ;; *) false ;; esac; }; then
       case "$COMMAND" in
         *'State.Status}}|'*) printf '%s\\n' 'running|starting' ;;
         *) printf '%s\\n' 'starting' ;;
@@ -176,7 +180,7 @@ describe('release migration shell contract', () => {
     expect(source).toContain("trap 'on_exit $?' EXIT");
     expect(source).toContain('METADATA_TEMP=$(mktemp');
     expect(source).toContain('mv "$METADATA_TEMP" "$METADATA_PATH"');
-    expect(source).toContain('compose run --rm migrate');
+    expect(source).toContain('compose run --rm -e RUN_MIGRATIONS=1 migrate');
     expect(`${source}\n${verifySource}`).not.toMatch(/^\s*(rm|rmdir|unlink|shred)\s/m);
   });
 
@@ -235,7 +239,7 @@ describe('release migration shell contract', () => {
     const result = runRelease(value, { FAKE_MANIFEST_FAILURE: '1' });
     expect(result.status).toBe(1);
     expect(result.stderr).toBe('E_BACKUP_MANIFEST\n');
-    expect(commandLog(value)).toEqual(['DUMP', 'LIST']);
+    expect(commandLog(value)).toEqual(['DATA_UP', 'DUMP', 'LIST']);
   });
 
   it('keeps failed rollback metadata when container health times out', () => {
@@ -255,7 +259,7 @@ describe('release migration shell contract', () => {
     const value = fixture();
     const result = runRelease(value);
     expect(result.status, result.stderr).toBe(0);
-    expect(commandLog(value)).toEqual(['DUMP', 'LIST', 'MIGRATE', 'UP', 'HTTP', 'HTTP']);
+    expect(commandLog(value)).toEqual(['DATA_UP', 'DUMP', 'LIST', 'MIGRATE', 'UP', 'HTTP', 'HTTP']);
 
     const metadataPath = join(value.backup, 'release-13-2.rollback.json');
     const metadataText = readFileSync(metadataPath, 'utf8');

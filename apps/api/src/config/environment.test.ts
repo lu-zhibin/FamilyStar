@@ -90,6 +90,15 @@ describe('parseEnvironment', () => {
     );
   });
 
+  it('requires HTTPS for the production public base URL', () => {
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: 'production',
+        PUBLIC_BASE_URL: 'http://familystar.example.test',
+      }),
+    ).toThrow('Invalid environment variables: PUBLIC_BASE_URL');
+  });
+
   it('requires a PostgreSQL database URL', () => {
     expect(() => parseEnvironment({ DATABASE_URL: 'mysql://localhost/familystar' })).toThrow(
       'Invalid environment variables: DATABASE_URL',

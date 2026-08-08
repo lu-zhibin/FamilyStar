@@ -242,6 +242,27 @@ snapshot_services() {
 STAGE=rollback_snapshot
 snapshot_services "$STATE_DIR/rollback-services.tsv"
 
+STAGE=data_service_start
+compose up -d postgres redis >/dev/null 2>&1 || fail 'E_DATA_SERVICE_START'
+DEADLINE=$(( $(date +%s) + TIMEOUT ))
+while :; do
+  DATA_SERVICES_HEALTHY=true
+  for SERVICE in postgres redis; do
+    CONTAINER_ID=$(compose ps -q "$SERVICE" 2>/dev/null || true)
+    if [ -z "$CONTAINER_ID" ]; then
+      DATA_SERVICES_HEALTHY=false
+      continue
+    fi
+    HEALTH=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$CONTAINER_ID" 2>/dev/null || true)
+    [ "$HEALTH" = healthy ] || DATA_SERVICES_HEALTHY=false
+  done
+  if [ "$DATA_SERVICES_HEALTHY" = true ]; then
+    break
+  fi
+  [ "$(date +%s)" -lt "$DEADLINE" ] || fail 'E_DATA_HEALTH_TIMEOUT'
+  sleep "$INTERVAL"
+done
+
 STAGE=backup
 BACKUP_TEMP=$(mktemp "$BACKUP_PATH.partial.XXXXXX") || fail 'E_BACKUP_TEMP'
 chmod 600 "$BACKUP_TEMP" || fail 'E_BACKUP_PERMISSION'
@@ -270,7 +291,7 @@ BACKUP_VERIFIED=1
 write_metadata
 
 STAGE=migration
-compose run --rm migrate >/dev/null 2>&1 || fail 'E_MIGRATION_FAILED'
+compose run --rm -e RUN_MIGRATIONS=1 migrate >/dev/null 2>&1 || fail 'E_MIGRATION_FAILED'
 printf '%s\n' 'migration_completed' > "$STATE_DIR/status"
 write_metadata
 
