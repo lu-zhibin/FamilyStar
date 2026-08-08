@@ -209,7 +209,10 @@ function awaitingConfirmation(record: NewMediaDraftRecord): MediaDraftRecord {
   };
 }
 
-function sameOwner(record: { owner?: OfflineOwnerScope }, owner: OfflineOwnerScope): boolean {
+export function isOfflineRecordOwnedBy(
+  record: { owner?: OfflineOwnerScope },
+  owner: OfflineOwnerScope,
+): boolean {
   return record.owner?.familyId === owner.familyId && record.owner.childId === owner.childId;
 }
 
@@ -239,7 +242,9 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
     now: Date,
     leaseMilliseconds: number,
   ): Promise<CheckInQueueRecord | null> {
-    const records = [...this.checkIns.values()].filter((record) => sameOwner(record, owner));
+    const records = [...this.checkIns.values()].filter((record) =>
+      isOfflineRecordOwnedBy(record, owner),
+    );
     records.sort(compareCreatedAt);
     const first = records[0];
     if (!first || first.status === 'conflict' || first.status === 'business-failed') return null;
@@ -294,7 +299,7 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
 
   async retryCheckIn(id: string, owner: OfflineOwnerScope): Promise<void> {
     const record = this.checkIns.get(id);
-    if (!record || !sameOwner(record, owner) || record.status === 'syncing') return;
+    if (!record || !isOfflineRecordOwnedBy(record, owner) || record.status === 'syncing') return;
     this.checkIns.set(id, {
       ...record,
       status: 'pending',
@@ -305,7 +310,8 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
 
   async deleteCheckIn(id: string, owner: OfflineOwnerScope): Promise<void> {
     const record = this.checkIns.get(id);
-    if (record && sameOwner(record, owner) && record.status !== 'syncing') this.checkIns.delete(id);
+    if (record && isOfflineRecordOwnedBy(record, owner) && record.status !== 'syncing')
+      this.checkIns.delete(id);
   }
 
   async saveMediaDrafts(
@@ -341,7 +347,7 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
 
   async markMediaUploaded(id: string, owner: OfflineOwnerScope, mediaId: string): Promise<void> {
     const record = this.mediaDrafts.get(id);
-    if (!record || !sameOwner(record, owner)) return;
+    if (!record || !isOfflineRecordOwnedBy(record, owner)) return;
     this.mediaDrafts.set(id, { ...record, uploadedMediaId: mediaId });
   }
 
@@ -356,7 +362,7 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
 
   async removeMediaDrafts(intentId: string, owner: OfflineOwnerScope): Promise<void> {
     for (const record of this.mediaDrafts.values()) {
-      if (record.intentId === intentId && sameOwner(record, owner))
+      if (record.intentId === intentId && isOfflineRecordOwnedBy(record, owner))
         this.mediaDrafts.delete(record.id);
     }
   }
@@ -391,7 +397,7 @@ export class MemoryOfflineCheckInRepository implements OfflineCheckInRepository 
     update: (record: MediaDraftRecord) => MediaDraftRecord,
   ): void {
     for (const record of this.mediaDrafts.values()) {
-      if (record.intentId === intentId && sameOwner(record, owner)) {
+      if (record.intentId === intentId && isOfflineRecordOwnedBy(record, owner)) {
         this.mediaDrafts.set(record.id, update(record));
       }
     }
@@ -514,7 +520,7 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
       );
       const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.checkInQueue);
       const records = ((await requestResult(store.getAll())) as CheckInQueueRecord[])
-        .filter((record) => sameOwner(record, owner))
+        .filter((record) => isOfflineRecordOwnedBy(record, owner))
         .sort(compareCreatedAt);
       const first = records[0];
       const nowIso = now.toISOString();
@@ -609,7 +615,8 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
       );
       const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.checkInQueue);
       const record = (await requestResult(store.get(id))) as CheckInQueueRecord | undefined;
-      if (record && sameOwner(record, owner) && record.status !== 'syncing') store.delete(id);
+      if (record && isOfflineRecordOwnedBy(record, owner) && record.status !== 'syncing')
+        store.delete(id);
       await transactionComplete(transaction);
     } catch (error) {
       throw storageError(error);
@@ -696,7 +703,7 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
         store.index('intentId').getAll(intentId),
       )) as MediaDraftRecord[];
       records
-        .filter((record) => sameOwner(record, owner))
+        .filter((record) => isOfflineRecordOwnedBy(record, owner))
         .forEach((record) => store.delete(record.id));
       await transactionComplete(transaction);
     } catch (error) {
@@ -742,7 +749,7 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
     update: (record: CheckInQueueRecord) => CheckInQueueRecord,
   ): Promise<void> {
     await this.updateQueueRecord(id, (record) =>
-      sameOwner(record, owner) ? update(record) : record,
+      isOfflineRecordOwnedBy(record, owner) ? update(record) : record,
     );
   }
 
@@ -775,7 +782,7 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
       const transaction = database.transaction(OFFLINE_CHECK_IN_DB.stores.mediaDrafts, 'readwrite');
       const store = transaction.objectStore(OFFLINE_CHECK_IN_DB.stores.mediaDrafts);
       const record = (await requestResult(store.get(id))) as MediaDraftRecord | undefined;
-      if (record && sameOwner(record, owner)) store.put(update(record));
+      if (record && isOfflineRecordOwnedBy(record, owner)) store.put(update(record));
       await transactionComplete(transaction);
     } catch (error) {
       throw storageError(error);
@@ -795,7 +802,7 @@ export class IndexedDbOfflineCheckInRepository implements OfflineCheckInReposito
         store.index('intentId').getAll(intentId),
       )) as MediaDraftRecord[];
       records
-        .filter((record) => sameOwner(record, owner))
+        .filter((record) => isOfflineRecordOwnedBy(record, owner))
         .forEach((record) => store.put(update(record)));
       await transactionComplete(transaction);
     } catch (error) {

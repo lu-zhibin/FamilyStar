@@ -83,7 +83,7 @@ describe('offline check-in runner', () => {
     }
   });
 
-  it('coalesces repeated online events and prevents concurrent runners from double replaying', async () => {
+  it(`coalesces repeated online events and prevents concurrent runners from double replaying ${validatesCriteria(['Requirement 11.3', 'Design Property 8'])}`, async () => {
     const repository = new MemoryOfflineCheckInRepository();
     await repository.enqueueCheckIn(queue(1));
     let release!: () => void;
@@ -125,30 +125,57 @@ describe('offline check-in runner', () => {
     expect(listeners.size).toBe(0);
   });
 
-  it.each([
-    [409, 'conflict', 'CONFLICT'],
-    [400, 'business-failed', 'INVALID_REQUEST'],
-  ] as const)(
-    'stores HTTP %s as %s and stops the ordered queue',
-    async (status, expected, code) => {
+  it(`property: stores arbitrary authoritative 409 details and stops online retries and the ordered queue ${validatesCriteria(['Requirement 11.5', 'Design Property 8'])}`, async () => {
+    for (let run = 0; run < 64; run += 1) {
       const repository = new MemoryOfflineCheckInRepository();
       await repository.enqueueCheckIn(queue(0));
       await repository.enqueueCheckIn(queue(1));
+      const details = {
+        status: run % 2 === 0 ? 'APPROVED' : 'REJECTED',
+        revision: Math.imul(run, 97),
+        nested: { reason: `authority-${run}` },
+      };
       const { api, mock: apiCall } = apiMock(async () => {
-        throw new ChildApiError('权威状态已变化', status, code, { status: 'APPROVED' });
+        throw new ChildApiError('权威状态已变化', 409, 'CONFLICT', details);
       });
 
-      await createOfflineCheckInRunner({ repository, owner, api }).run();
+      const runner = createOfflineCheckInRunner({ repository, owner, api });
+      await runner.run();
+      await runner.run();
       const records = await repository.listCheckIns();
 
       expect(apiCall).toHaveBeenCalledTimes(1);
       expect(records[0]).toMatchObject({
-        status: expected,
-        failure: { code, authoritativeState: { status: 'APPROVED' } },
+        status: 'conflict',
+        failure: { code: 'CONFLICT', authoritativeState: details },
       });
       expect(records[1]?.status).toBe('pending');
-    },
-  );
+    }
+  });
+
+  it(`property: stores every non-auth 4xx response as a terminal business failure ${validatesCriteria(['Requirement 11.5', 'Design Property 8'])}`, async () => {
+    const statuses = [400, 404, 410, 422, 429] as const;
+    for (let run = 0; run < 48; run += 1) {
+      const repository = new MemoryOfflineCheckInRepository();
+      await repository.enqueueCheckIn(queue(run));
+      const status = statuses[Math.imul(run, 7) % statuses.length]!;
+      const details = { field: `value-${run}`, status };
+      const { api, mock: apiCall } = apiMock(async () => {
+        throw new ChildApiError('业务校验失败', status, `BUSINESS_${status}`, details);
+      });
+
+      const runner = createOfflineCheckInRunner({ repository, owner, api });
+      await runner.run();
+      await runner.run();
+      const [record] = await repository.listCheckIns();
+
+      expect(apiCall).toHaveBeenCalledTimes(1);
+      expect(record).toMatchObject({
+        status: 'business-failed',
+        failure: { code: `BUSINESS_${status}`, authoritativeState: details },
+      });
+    }
+  });
 
   it.each([
     [401, 'AUTH_REQUIRED'],
@@ -178,25 +205,49 @@ describe('offline check-in runner', () => {
     },
   );
 
-  it('keeps 5xx pending with backoff and prevents immediate loops', async () => {
-    const repository = new MemoryOfflineCheckInRepository();
-    await repository.enqueueCheckIn(queue(0));
-    const { api, mock: apiCall } = apiMock(async () => {
-      throw new ChildApiError('暂时不可用', 503, 'UNAVAILABLE');
-    });
-    const now = () => new Date('2026-08-07T08:00:00.000Z');
-    const runner = createOfflineCheckInRunner({ repository, owner, api, now });
+  it(`property: replays only records owned by the active family and child ${validatesCriteria(['Requirement 11.3', 'Design Property 8'])}`, async () => {
+    for (let run = 0; run < 64; run += 1) {
+      const repository = new MemoryOfflineCheckInRepository();
+      await repository.enqueueCheckIn(queue(run));
+      await repository.enqueueCheckIn(
+        queue(run + 1000, { familyId: `other-family-${run}`, childId: 'child-1' }),
+      );
+      const { api, mock: apiCall } = apiMock(async () => ({}));
 
-    await runner.run();
-    await runner.run();
-    const [record] = await repository.listCheckIns();
+      await createOfflineCheckInRunner({ repository, owner, api }).run();
 
-    expect(apiCall).toHaveBeenCalledTimes(1);
-    expect(record).toMatchObject({ status: 'pending', attempt: { lastErrorCode: 'UNAVAILABLE' } });
-    expect(record!.attempt.nextAttemptAt).toBe('2026-08-07T08:00:01.000Z');
+      expect(apiCall).toHaveBeenCalledTimes(1);
+      expect((await repository.listCheckIns()).map(({ id }) => id)).toEqual([
+        `queue-${run + 1000}`,
+      ]);
+    }
   });
 
-  it('records a network attempt, stops, and remains manually retryable', async () => {
+  it(`property: keeps arbitrary 5xx responses pending with backoff and prevents immediate loops ${validatesCriteria(['Requirement 11.3', 'Design Property 8'])}`, async () => {
+    for (let run = 0; run < 64; run += 1) {
+      const repository = new MemoryOfflineCheckInRepository();
+      await repository.enqueueCheckIn(queue(run));
+      const status = 500 + (Math.imul(run, 17) % 100);
+      const { api, mock: apiCall } = apiMock(async () => {
+        throw new ChildApiError('暂时不可用', status, `SERVER_${status}`);
+      });
+      const now = () => new Date('2026-08-07T08:00:00.000Z');
+      const runner = createOfflineCheckInRunner({ repository, owner, api, now });
+
+      await runner.run();
+      await runner.run();
+      const [record] = await repository.listCheckIns();
+
+      expect(apiCall).toHaveBeenCalledTimes(1);
+      expect(record).toMatchObject({
+        status: 'pending',
+        attempt: { lastErrorCode: `SERVER_${status}` },
+      });
+      expect(record!.attempt.nextAttemptAt).toBe('2026-08-07T08:00:01.000Z');
+    }
+  });
+
+  it(`records a network attempt with backoff, stops, and remains manually retryable ${validatesCriteria(['Requirement 11.3', 'Design Property 8'])}`, async () => {
     const repository = new MemoryOfflineCheckInRepository();
     await repository.enqueueCheckIn(queue(0));
     await repository.enqueueCheckIn(queue(1));
@@ -204,18 +255,25 @@ describe('offline check-in runner', () => {
       throw new TypeError('Failed to fetch');
     });
 
-    await createOfflineCheckInRunner({ repository, owner, api }).run();
+    const now = () => new Date('2026-08-07T08:00:00.000Z');
+    const runner = createOfflineCheckInRunner({ repository, owner, api, now });
+    await runner.run();
+    await runner.run();
     const records = await repository.listCheckIns();
 
     expect(apiCall).toHaveBeenCalledTimes(1);
     expect(records[0]).toMatchObject({
       status: 'pending',
-      attempt: { attemptCount: 1, lastErrorCode: 'NETWORK_ERROR' },
+      attempt: {
+        attemptCount: 1,
+        lastErrorCode: 'NETWORK_ERROR',
+        nextAttemptAt: '2026-08-07T08:00:01.000Z',
+      },
     });
     expect(records[1]?.attempt.attemptCount).toBe(0);
   });
 
-  it('uploads media only after confirmation and resumes partial uploads with stable keys', async () => {
+  it(`uploads media only after confirmation, resumes with stable keys and media IDs, then cleans up ${validatesCriteria(['Requirement 11.4', 'Design Property 8'])}`, async () => {
     const repository = new MemoryOfflineCheckInRepository();
     await repository.saveMediaDrafts([draft(0), draft(1)]);
     const { api, mock: apiCall } = apiMock(async () => ({}));

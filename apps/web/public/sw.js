@@ -1,11 +1,10 @@
 import {
   APP_SHELL_URLS,
-  FAMILY_STAR_CACHE_PREFIX,
   SHELL_CACHE_NAME,
-  STATIC_CACHE_NAME,
   classifyRequest,
   createPublicCacheRequest,
   isCacheableStaticResponse,
+  obsoleteFamilyStarCacheNames,
 } from './sw-policy.js';
 import {
   cacheFirstStatic,
@@ -39,14 +38,7 @@ self.addEventListener('activate', (event) => {
     (async () => {
       const cacheNames = await caches.keys();
       await Promise.all(
-        cacheNames
-          .filter(
-            (cacheName) =>
-              cacheName.startsWith(FAMILY_STAR_CACHE_PREFIX) &&
-              cacheName !== SHELL_CACHE_NAME &&
-              cacheName !== STATIC_CACHE_NAME,
-          )
-          .map((cacheName) => caches.delete(cacheName)),
+        obsoleteFamilyStarCacheNames(cacheNames).map((cacheName) => caches.delete(cacheName)),
       );
       await self.clients.claim();
     })(),

@@ -15,6 +15,15 @@ export function isFamilyStarCacheName(cacheName) {
   return cacheName.startsWith(FAMILY_STAR_CACHE_PREFIX);
 }
 
+export function obsoleteFamilyStarCacheNames(cacheNames) {
+  return cacheNames.filter(
+    (cacheName) =>
+      isFamilyStarCacheName(cacheName) &&
+      cacheName !== SHELL_CACHE_NAME &&
+      cacheName !== STATIC_CACHE_NAME,
+  );
+}
+
 export function classifyRequest(request, applicationOrigin) {
   if (request.method !== 'GET') return 'bypass';
 
@@ -22,7 +31,11 @@ export function classifyRequest(request, applicationOrigin) {
   if (
     url.origin !== applicationOrigin ||
     url.pathname === '/api' ||
-    url.pathname.startsWith('/api/')
+    url.pathname.startsWith('/api/') ||
+    url.pathname === '/auth' ||
+    url.pathname.startsWith('/auth/') ||
+    url.pathname === '/private' ||
+    url.pathname.startsWith('/private/')
   ) {
     return 'bypass';
   }

@@ -7,6 +7,7 @@ export const STATIC_CACHE_NAME: string;
 export const OFFLINE_URL: string;
 export const APP_SHELL_URLS: readonly string[];
 export function isFamilyStarCacheName(cacheName: string): boolean;
+export function obsoleteFamilyStarCacheNames(cacheNames: readonly string[]): string[];
 export function classifyRequest(request: Request, applicationOrigin: string): CacheStrategy;
 export function createPublicCacheRequest(request: Request): Request;
 export function isCacheableStaticResponse(

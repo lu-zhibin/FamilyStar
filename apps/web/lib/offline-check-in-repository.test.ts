@@ -6,6 +6,7 @@ import {
   OFFLINE_CHECK_IN_DB,
   OfflineStorageError,
   getOfflineCheckInRepository,
+  isOfflineRecordOwnedBy,
   type NewCheckInQueueRecord,
   type NewMediaDraftRecord,
 } from './offline-check-in-repository';
@@ -103,7 +104,10 @@ describe('offline check-in repository', () => {
     for (let run = 0; run < 48; run += 1) {
       const repository = new MemoryOfflineCheckInRepository();
       const queue = await repository.enqueueCheckIn(queueRecord(run));
-      const content = `binary-media-${run}-${'x'.repeat(run % 13)}`;
+      const content = Uint8Array.from(
+        { length: (Math.imul(run, 17) % 127) + 1 },
+        (_, index) => (Math.imul(run + 1, index + 29) + index) % 256,
+      );
       const blob = new Blob([content], { type: 'image/png' });
       await repository.saveMediaDrafts([
         mediaDraft(run, blob, { queueId: queue.id, intentId: `linked-intent-${run}` }),
@@ -117,7 +121,7 @@ describe('offline check-in repository', () => {
         size: blob.size,
         status: 'awaiting-confirmation',
       });
-      expect(await restored?.blob.text()).toBe(content);
+      expect(new Uint8Array(await restored!.blob.arrayBuffer())).toEqual(content);
     }
   });
 
@@ -182,5 +186,19 @@ describe('offline check-in repository', () => {
     });
     expect(getOfflineCheckInRepository()).toBeNull();
     expect(new OfflineStorageError('QUOTA_EXCEEDED').message).toContain('存储空间不足');
+  });
+
+  it(`keeps ownerless v1 records isolated after the v2 ownership migration ${validatesCriteria(['Requirement 11.3', 'Requirement 11.4', 'Design Property 8'])}`, () => {
+    for (let run = 0; run < 64; run += 1) {
+      const currentOwner = { familyId: `family-${run}`, childId: `child-${run}` };
+      expect(isOfflineRecordOwnedBy({}, currentOwner)).toBe(false);
+      expect(
+        isOfflineRecordOwnedBy(
+          { owner: { familyId: `family-${run + 1}`, childId: `child-${run}` } },
+          currentOwner,
+        ),
+      ).toBe(false);
+      expect(isOfflineRecordOwnedBy({ owner: currentOwner }, currentOwner)).toBe(true);
+    }
   });
 });

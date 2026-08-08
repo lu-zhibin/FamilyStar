@@ -34,6 +34,13 @@ function statusLabel(record: CheckInQueueRecord): string {
   return '待同步';
 }
 
+function mediaStatusLabel(record: MediaDraftRecord, busy: boolean): string {
+  if (busy) return '媒体上传中';
+  if (record.status === 'conflict') return '媒体冲突';
+  if (record.status === 'business-failed') return '媒体业务失败';
+  return '待确认媒体';
+}
+
 export function OfflineCheckInStatusView({
   queue,
   drafts,
@@ -95,7 +102,7 @@ export function OfflineCheckInStatusView({
         return (
           <article className="notice" key={intentId}>
             <div className="flex-1">
-              <strong>{busy ? '媒体上传中' : '待确认媒体'}</strong>
+              <strong>{mediaStatusLabel(first, busy)}</strong>
               <p>{group.length} 个本地文件，确认后依次上传。</p>
               {first.failure && <p role="alert">{first.failure.message}</p>}
             </div>

@@ -4,21 +4,30 @@ import { describe, expect, it } from 'vitest';
 
 import manifest from './manifest';
 
+function validatesCriteria(criteria: readonly string[]): string {
+  return `[validatesCriteria: ${criteria.join(', ')}]`;
+}
+
 describe('PWA manifest', () => {
-  it('defines a stable install identity and standalone application scope', () => {
-    expect(manifest()).toMatchObject({
-      id: '/',
-      name: 'FamilyStar 家庭成长助手',
-      short_name: 'FamilyStar',
-      start_url: '/',
-      scope: '/',
-      display: 'standalone',
-      background_color: '#fff8e7',
-      theme_color: '#689f38',
-    });
+  it(`property: defines complete fields and a stable install identity ${validatesCriteria(['Requirement 11.1'])}`, () => {
+    const expected = manifest();
+    for (let run = 0; run < 64; run += 1) {
+      expect(manifest()).toEqual(expected);
+      expect(manifest()).toMatchObject({
+        id: '/',
+        name: 'FamilyStar 家庭成长助手',
+        short_name: 'FamilyStar',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        background_color: '#fff8e7',
+        theme_color: '#689f38',
+        lang: 'zh-CN',
+      });
+    }
   });
 
-  it('references valid local SVG icons with matching dimensions', async () => {
+  it(`references valid local SVG icons with matching dimensions ${validatesCriteria(['Requirement 11.1'])}`, async () => {
     const icons = manifest().icons ?? [];
     expect(icons).toHaveLength(2);
 

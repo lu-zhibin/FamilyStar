@@ -97,6 +97,7 @@ export function createOfflineCheckInRunner(dependencies: RunnerDependencies): Of
             runnerId,
             'NETWORK_ERROR',
             attemptedAt,
+            new Date(attemptedAt.getTime() + backoffMilliseconds(record.attempt.attemptCount)),
           );
         } else if (error instanceof ChildApiError && error.status === 409) {
           await dependencies.repository.markConflict(

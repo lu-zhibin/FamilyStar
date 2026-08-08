@@ -8,6 +8,10 @@ import {
 
 const origin = 'https://family.example';
 
+function validatesCriteria(criteria: readonly string[]): string {
+  return `[validatesCriteria: ${criteria.join(', ')}]`;
+}
+
 function cacheStorage(cached?: Response) {
   const put = vi.fn().mockResolvedValue(undefined);
   return {
@@ -26,7 +30,7 @@ function publicResponse(path: string) {
 }
 
 describe('PWA cache runtime', () => {
-  it('uses the network for navigation and returns the offline page after failure', async () => {
+  it(`uses the network for navigation and returns the offline page after failure ${validatesCriteria(['Requirement 11.2'])}`, async () => {
     const online = publicResponse('/dashboard');
     const request = new Request(`${origin}/dashboard`, { credentials: 'include' });
     const first = cacheStorage();
@@ -48,7 +52,7 @@ describe('PWA cache runtime', () => {
     expect(second.storage.match).toHaveBeenCalledWith('/offline');
   });
 
-  it('serves hashed assets cache-first without a network request', async () => {
+  it(`serves hashed assets cache-first without a network request ${validatesCriteria(['Requirement 11.2'])}`, async () => {
     const cached = publicResponse('/_next/static/app.js');
     const { storage } = cacheStorage(cached);
     const fetcher = vi.fn();
@@ -59,7 +63,7 @@ describe('PWA cache runtime', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it('returns stale public assets while refreshing with a credential-free request', async () => {
+  it(`returns stale public assets while refreshing with a credential-free request ${validatesCriteria(['Requirement 11.2'])}`, async () => {
     const cached = publicResponse('/icons/familystar-192.svg');
     const fresh = publicResponse('/icons/familystar-192.svg');
     const { storage, put } = cacheStorage(cached);
