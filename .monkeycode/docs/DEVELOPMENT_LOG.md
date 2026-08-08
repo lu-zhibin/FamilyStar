@@ -3,7 +3,7 @@
 ## 2026-08-08：完成 PWA 安装入口与 i60 真实验收
 
 - 记录 ID：`FS-PRODUCT-COMPLETION-PWA-I60-001`
-- 状态：i60 已部署到 `8098`，PWA/主题真实 HTTPS 验收通过；当前工作树全量质量门禁正在执行
+- 状态：i60 已部署到 `8098`，PWA/主题真实 HTTPS 验收通过；全量质量链路保留 1 个 mock E2E 失败
 - 提交：`3dc342e`
 
 ### 实施与验证
@@ -11,8 +11,8 @@
 - Web 捕获 `beforeinstallprompt`，提供可访问、可关闭的“安装 FamilyStar”入口，支持安装进行中状态、`userChoice` 和 `appinstalled`。
 - i60 构建成功并完成迁移容器、API、Worker、Web 重建；PostgreSQL、Redis、API、Worker、Web 健康依赖链完成。
 - `REAL_ACCEPTANCE=1 PLAYWRIGHT_BASE_URL=https://home.wenwuge.vip pnpm exec playwright test e2e/themes-pwa.real.spec.cjs`：2 项通过，覆盖主题选择、manifest、缓存激活和离线回退。
-- 正确工作树的完整质量链路已重新启动，包含格式、Lint、类型、Prisma、覆盖率、构建、设计系统、API 基础契约和 Playwright。
-- 先前质量命令在 `/workspace` 执行，结果未计入本项目验收；阶段 13.1、13.4 与检查点 14 等待当前工作树结果。
+- 正确工作树的质量链路通过 148 个测试文件、1068 项测试，覆盖率为 83.73%；格式、Lint、类型、Prisma、生产构建、设计系统、API 基础契约和 `ops:check` 均通过。
+- Playwright 运行 38 项，17 项通过、1 项失败、20 项跳过；唯一失败为 mock 移动端孩子页“我的空间”标题超时，阶段 13.1、13.4 与检查点 14 保持待处理。
 
 ## 2026-08-08：完成第三个产品补全批次质量检查点
 
