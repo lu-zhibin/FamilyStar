@@ -2,6 +2,10 @@ const { defineConfig, devices } = require('@playwright/test');
 
 const remoteBaseURL = process.env.PLAYWRIGHT_BASE_URL;
 const localBaseURL = 'http://127.0.0.1:3000';
+const acceptanceSecureOrigin =
+  process.env.REAL_ACCEPTANCE && remoteBaseURL && new URL(remoteBaseURL).protocol === 'http:'
+    ? new URL(remoteBaseURL).origin
+    : null;
 const localWebServer = [
   {
     command: 'node e2e/auth-server.cjs',
@@ -32,6 +36,16 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        launchOptions: acceptanceSecureOrigin
+          ? { args: [`--unsafely-treat-insecure-origin-as-secure=${acceptanceSecureOrigin}`] }
+          : undefined,
+      },
+    },
+  ],
   webServer: remoteBaseURL ? undefined : localWebServer,
 });

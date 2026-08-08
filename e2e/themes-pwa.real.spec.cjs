@@ -102,6 +102,30 @@ test('serves an installable manifest, activates caches, and falls back on offlin
   });
 
   await page.goto('/');
+  await expect(page.getByRole('region', { name: 'FamilyStar 登录' })).toBeVisible();
+  const installEventPrevented = await page.evaluate(() => {
+    window.__familyStarInstallPromptCalls = 0;
+    const event = new Event('beforeinstallprompt', { cancelable: true });
+    Object.defineProperties(event, {
+      prompt: {
+        value: async () => {
+          window.__familyStarInstallPromptCalls += 1;
+        },
+      },
+      userChoice: {
+        value: Promise.resolve({ outcome: 'accepted', platform: 'web' }),
+      },
+    });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(installEventPrevented).toBe(true);
+  const installPrompt = page.getByRole('complementary', { name: '安装 FamilyStar' });
+  await expect(installPrompt).toBeVisible();
+  await installPrompt.getByRole('button', { name: '安装', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.__familyStarInstallPromptCalls)).toBe(1);
+  await expect(installPrompt).toHaveCount(0);
+
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller)

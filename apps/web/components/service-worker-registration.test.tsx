@@ -1,8 +1,12 @@
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   canRegisterServiceWorker,
+  InstallAppPrompt,
   registerFamilyStarServiceWorker,
+  requestAppInstall,
+  type BeforeInstallPromptEvent,
 } from './service-worker-registration';
 
 describe('service worker registration', () => {
@@ -57,5 +61,34 @@ describe('service worker registration', () => {
     } as unknown as ServiceWorkerContainer;
 
     await expect(registerFamilyStarServiceWorker(serviceWorker, vi.fn())).resolves.toBeNull();
+  });
+
+  it('renders an accessible install entry with busy and dismiss states', () => {
+    const available = renderToStaticMarkup(
+      <InstallAppPrompt installing={false} onDismiss={vi.fn()} onInstall={vi.fn()} />,
+    );
+    const installing = renderToStaticMarkup(
+      <InstallAppPrompt installing onDismiss={vi.fn()} onInstall={vi.fn()} />,
+    );
+
+    expect(available).toContain('aria-label="安装 FamilyStar"');
+    expect(available).toContain('>安装</button>');
+    expect(available).toContain('aria-label="暂不安装"');
+    expect(installing).toContain('>正在打开</button>');
+    expect(installing.match(/disabled=""/g)).toHaveLength(2);
+  });
+
+  it('opens the browser install prompt and returns the user choice', async () => {
+    const prompt = vi.fn().mockResolvedValue(undefined);
+    const event = {
+      prompt,
+      userChoice: Promise.resolve({ outcome: 'accepted', platform: 'web' }),
+    } as unknown as BeforeInstallPromptEvent;
+
+    await expect(requestAppInstall(event)).resolves.toEqual({
+      outcome: 'accepted',
+      platform: 'web',
+    });
+    expect(prompt).toHaveBeenCalledOnce();
   });
 });

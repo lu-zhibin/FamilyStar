@@ -1,6 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Download, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
+export type BeforeInstallPromptEvent = Event & {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+};
 
 export function canRegisterServiceWorker(options: {
   production: boolean;
@@ -47,7 +53,53 @@ export async function registerFamilyStarServiceWorker(
   }
 }
 
+export async function requestAppInstall(event: BeforeInstallPromptEvent) {
+  await event.prompt();
+  return event.userChoice;
+}
+
+export function InstallAppPrompt({
+  installing,
+  onDismiss,
+  onInstall,
+}: {
+  installing: boolean;
+  onDismiss(): void;
+  onInstall(): void;
+}) {
+  return (
+    <aside
+      aria-label="安装 FamilyStar"
+      className="fixed inset-x-4 top-4 z-[60] mx-auto flex max-w-lg items-center gap-3 rounded-card-lg border border-wood bg-white/95 p-4 shadow-warm-lg backdrop-blur-xl"
+    >
+      <div className="grid size-11 shrink-0 place-items-center rounded-card bg-leaf-light text-leaf-dark">
+        <Download aria-hidden="true" size={22} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <strong className="block font-display text-body text-brown">安装 FamilyStar</strong>
+        <p className="text-caption font-bold text-brown-light">
+          添加到设备，随时打开家庭成长空间。
+        </p>
+      </div>
+      <button className="primary-button shrink-0" disabled={installing} onClick={onInstall}>
+        {installing ? '正在打开' : '安装'}
+      </button>
+      <button
+        aria-label="暂不安装"
+        className="icon-button shrink-0"
+        disabled={installing}
+        onClick={onDismiss}
+      >
+        <X aria-hidden="true" size={20} />
+      </button>
+    </aside>
+  );
+}
+
 export function ServiceWorkerRegistration() {
+  const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installing, setInstalling] = useState(false);
+
   useEffect(() => {
     if (
       canRegisterServiceWorker({
@@ -58,7 +110,39 @@ export function ServiceWorkerRegistration() {
     ) {
       void registerFamilyStarServiceWorker(navigator.serviceWorker, () => window.location.reload());
     }
+
+    const handleInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallEvent(event as BeforeInstallPromptEvent);
+    };
+    const handleInstalled = () => setInstallEvent(null);
+
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
   }, []);
 
-  return null;
+  if (!installEvent) return null;
+
+  const install = async () => {
+    setInstalling(true);
+    try {
+      await requestAppInstall(installEvent);
+      setInstallEvent(null);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <InstallAppPrompt
+      installing={installing}
+      onDismiss={() => setInstallEvent(null)}
+      onInstall={() => void install()}
+    />
+  );
 }
