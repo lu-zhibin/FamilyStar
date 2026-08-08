@@ -379,22 +379,32 @@ test.describe('FamilyStar portal routes', () => {
       const links = navigation.getByRole('link');
       await expect(links).toHaveCount(10);
       await expect(links.first()).toBeVisible();
-      await links.last().scrollIntoViewIfNeeded();
-      await expect(links.last()).toBeVisible();
 
       const dimensions = await page.evaluate(() => {
         const navigationContent = globalThis.document.querySelector('.nav-scroll');
+        if (navigationContent) {
+          navigationContent.scrollLeft = navigationContent.scrollWidth;
+        }
+        const lastLink = navigationContent?.querySelector('a:last-of-type');
+        const navigationBounds = navigationContent?.getBoundingClientRect();
+        const lastLinkBounds = lastLink?.getBoundingClientRect();
         return {
           documentClientWidth: globalThis.document.documentElement.clientWidth,
           documentScrollWidth: globalThis.document.documentElement.scrollWidth,
           navigationClientWidth: navigationContent?.clientWidth,
           navigationScrollWidth: navigationContent?.scrollWidth,
+          lastLinkVisible:
+            navigationBounds !== undefined &&
+            lastLinkBounds !== undefined &&
+            lastLinkBounds.left >= navigationBounds.left - 1 &&
+            lastLinkBounds.right <= navigationBounds.right + 1,
         };
       });
       expect(dimensions.documentScrollWidth).toBe(dimensions.documentClientWidth);
       expect(dimensions.navigationScrollWidth).toBeGreaterThanOrEqual(
         dimensions.navigationClientWidth,
       );
+      expect(dimensions.lastLinkVisible).toBe(true);
     }
   });
 
