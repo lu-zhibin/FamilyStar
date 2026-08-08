@@ -32,7 +32,12 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['apps/**/*.test.{ts,tsx}', 'packages/**/*.test.ts', 'modules/**/*.test.ts'],
+    include: [
+      'apps/**/*.test.{ts,tsx}',
+      'packages/**/*.test.ts',
+      'modules/**/*.test.ts',
+      'ops/**/*.test.ts',
+    ],
     coverage: {
       provider: 'v8',
       include: [
