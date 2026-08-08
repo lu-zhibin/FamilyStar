@@ -131,7 +131,7 @@ export function ParentDashboardView({ dashboard, state, onRetry }: ParentDashboa
   return (
     <>
       <div className="mt-5 grid gap-5 lg:grid-cols-[1.55fr_1fr]">
-        <section className="panel">
+        <section className="panel min-w-0">
           <h2 className="mb-4 font-display text-section text-brown">孩子今日进度</h2>
           {dashboard.children.length === 0 ? (
             <div className="empty-state">

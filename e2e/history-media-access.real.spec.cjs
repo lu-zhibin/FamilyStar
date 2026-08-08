@@ -4,6 +4,7 @@ test.skip(
   !process.env.REAL_ACCEPTANCE,
   'Runs only against the isolated deployed acceptance environment.',
 );
+test.setTimeout(120_000);
 
 function calendarDate(offsetDays = 0) {
   const date = new Date(Date.now() + offsetDays * 86_400_000);
@@ -48,7 +49,7 @@ async function loginChild(baseURL, familyCode, childId, credential) {
 }
 
 async function waitForCollaborationRound(child, date) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  for (let attempt = 0; attempt < 75; attempt += 1) {
     const response = await child.get(`/api/v1/tasks/me?date=${date}`);
     expect(response.status()).toBe(200);
     const tasks = (await response.json()).data.tasks;

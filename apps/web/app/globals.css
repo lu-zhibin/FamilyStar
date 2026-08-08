@@ -234,11 +234,11 @@
   }
 
   .chart-bars {
-    @apply flex h-52 items-end justify-around gap-2 border-b border-wood pt-4;
+    @apply flex h-52 items-end justify-start gap-2 overflow-x-auto border-b border-wood pt-4;
   }
 
   .chart-column {
-    @apply flex h-full flex-1 flex-col items-center justify-end gap-2 text-label font-bold text-brown-light;
+    @apply flex h-full min-w-10 flex-1 shrink-0 flex-col items-center justify-end gap-2 text-label font-bold text-brown-light;
   }
 
   .chart-column span {

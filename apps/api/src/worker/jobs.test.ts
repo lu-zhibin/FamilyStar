@@ -87,7 +87,7 @@ describe('createWorkerJobs', () => {
       'notification-cleanup',
     ]);
     expect(jobs.map((job) => job.runKey(NOW))).toEqual([
-      '2026-07-31',
+      String(Math.floor(NOW.getTime() / 60_000)),
       String(Math.floor(NOW.getTime() / 60_000)),
       String(Math.floor(NOW.getTime() / 5_000)),
       String(Math.floor(NOW.getTime() / 3_600_000)),

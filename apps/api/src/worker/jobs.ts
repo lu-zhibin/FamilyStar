@@ -184,7 +184,7 @@ export function createWorkerJobs(input: {
   return [
     {
       name: 'task-cycle',
-      runKey: utcDate,
+      runKey: (now) => bucket(now, 60_000),
       execute: async (now): Promise<WorkerJobResult> => {
         const familyIds = await input.repository.listActiveFamilyIds();
         let rounds = 0;
