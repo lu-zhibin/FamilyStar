@@ -173,7 +173,7 @@ export function ParentDashboardView({ dashboard, state, onRetry }: ParentDashboa
             </div>
           )}
         </section>
-        <section className="panel">
+        <section className="panel min-w-0">
           <h2 className="mb-4 font-display text-section text-brown">今日待办</h2>
           {todoTotal === 0 ? (
             <div className="empty-state min-h-40">
@@ -343,7 +343,7 @@ export function ParentAnalyticsView({ analytics, state, onRetry }: ParentAnalyti
         </article>
       </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <section className="panel">
+        <section className="panel min-w-0">
           <h2 className="mb-4 font-display text-section text-brown">积分趋势</h2>
           <div className="chart-bars min-h-52" aria-label="每日积分趋势">
             {analytics.points_trend.map((item) => (
@@ -360,7 +360,7 @@ export function ParentAnalyticsView({ analytics, state, onRetry }: ParentAnalyti
             ))}
           </div>
         </section>
-        <section className="panel">
+        <section className="panel min-w-0">
           <h2 className="mb-4 font-display text-section text-brown">当前等级分布</h2>
           {analytics.level_distribution.length === 0 ? (
             <div className="empty-state min-h-40">

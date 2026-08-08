@@ -166,5 +166,6 @@ describe('ParentAnalyticsView', () => {
     expect(markup).toContain('晨读');
     expect(markup).toContain('Lv.3');
     expect(markup).toContain('每日积分趋势');
+    expect(markup.match(/panel min-w-0/g)).toHaveLength(2);
   });
 });
