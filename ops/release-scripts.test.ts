@@ -190,7 +190,7 @@ describe('release migration shell contract', () => {
     expect(result.stderr).toMatch(/^usage: release-migrate\.sh /);
   });
 
-  it('rejects root and home backup paths before invoking tools', () => {
+  it('rejects broad root backup paths before invoking tools', () => {
     const value = fixture();
     const args = releaseArgs(value);
     args[args.indexOf('--backup-dir') + 1] = '/root';
@@ -201,6 +201,24 @@ describe('release migration shell contract', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toBe('E_UNSAFE_BACKUP_PATH\n');
     expect(commandLog(value)).toEqual([]);
+  });
+
+  it('allows a dedicated canonical backup directory below the operator home', () => {
+    const value = fixture();
+    const args = releaseArgs(value);
+
+    const result = spawnSync('sh', args, {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        FAKE_LOG: value.log,
+        HOME: value.root,
+        PATH: `${value.bin}:${process.env.PATH}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('release metadata:');
   });
 
   it('rejects non-HTTP health targets and zero polling intervals', () => {

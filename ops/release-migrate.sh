@@ -105,7 +105,7 @@ esac
 
 if [ -n "${HOME:-}" ]; then
   case "$BACKUP_DIR" in
-    "$HOME"|"$HOME"/*) fail 'E_UNSAFE_BACKUP_PATH' ;;
+    "$HOME") fail 'E_UNSAFE_BACKUP_PATH' ;;
   esac
 fi
 
