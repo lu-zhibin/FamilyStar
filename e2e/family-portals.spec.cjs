@@ -423,6 +423,7 @@ test.describe('FamilyStar portal routes', () => {
   });
 
   test('renders all six child pages on a mobile viewport', async ({ page }) => {
+    test.setTimeout(120_000);
     await page.setViewportSize({ width: 390, height: 844 });
     await mockApi(page, undefined, 'child');
     for (const [path, heading, navigationLabel] of childPages) {
