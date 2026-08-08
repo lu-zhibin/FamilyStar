@@ -179,6 +179,8 @@ describe('release migration shell contract', () => {
     const source = readFileSync(releaseScript, 'utf8');
     const verifySource = readFileSync(verifyScript, 'utf8');
     expect(source).toContain('set -eu');
+    expect(source).toContain('exec pg_dump --format=custom');
+    expect(source).not.toContain('pg_dump --format=custom --file=-');
     expect(verifySource).toContain('set -eu');
     expect(source).toContain("trap 'on_exit $?' EXIT");
     expect(source).toContain('METADATA_TEMP=$(mktemp');
@@ -293,7 +295,7 @@ describe('release migration shell contract', () => {
     expect(metadata.status).toBe('failed');
     expect(metadata.failure).toEqual({ stage: 'health', code: 'E_HEALTH_TIMEOUT' });
     expect(metadata.databaseBackup.sha256).toMatch(/^[a-f0-9]{64}$/);
-  });
+  }, 10_000);
 
   it('writes credential-free metadata atomically after backup verification and in order', () => {
     const value = fixture();

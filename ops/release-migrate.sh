@@ -285,7 +285,7 @@ STAGE=backup
 BACKUP_TEMP=$(mktemp "$BACKUP_PATH.partial.XXXXXX") || fail 'E_BACKUP_TEMP'
 chmod 600 "$BACKUP_TEMP" || fail 'E_BACKUP_PERMISSION'
 compose exec -T postgres sh -c \
-  'PGUSER=$POSTGRES_USER PGDATABASE=$POSTGRES_DB exec pg_dump --format=custom --file=-' \
+  'PGUSER=$POSTGRES_USER PGDATABASE=$POSTGRES_DB exec pg_dump --format=custom' \
   > "$BACKUP_TEMP" 2>/dev/null || fail 'E_BACKUP_FAILED'
 [ -s "$BACKUP_TEMP" ] || fail 'E_BACKUP_EMPTY'
 mv "$BACKUP_TEMP" "$BACKUP_PATH" || fail 'E_BACKUP_COMMIT'
