@@ -209,6 +209,16 @@ Next.js App Router 首页提供统一家庭登录入口。页面先读取服务�
 
 孩子端五项底部导航将“我的记录”归入“我的”激活状态。家长和孩子动态路由在 Next.js 服务端调用会话接口校验角色，业务 API 继续以 HttpOnly 会话角色和本人范围作为授权边界；两个门户均提供当前会话退出入口。
 
+### PWA 浏览器接口
+
+`/manifest.webmanifest` 公开稳定应用 ID `/`、standalone 展示、主题色及 192px/512px 本地图标。`/offline` 返回自包含响应式 HTML；`/sw.js` 仅在 production、安全上下文且浏览器支持 Service Worker 时以同源 module worker 注册。
+
+Service Worker 将请求分类为 `navigation`、`cache-first`、`stale-while-revalidate` 或 `bypass`。API、auth、private、跨源、授权、非 GET 请求固定 bypass；公开缓存请求使用 `credentials: "omit"`，仅接受同源、200、非重定向且未声明 private/no-store、Set-Cookie 或 `Vary: *` 的响应。
+
+浏览器 IndexedDB `familystar-offline` v2 提供 `check-in-queue` 与 `media-drafts` 两个 object store。队列索引为 `intentId` 唯一索引及 `createdAt`、`status`；媒体索引为 `intentId`、`createdAt`、`status`、`taskId`、`queueId`。记录 owner 固定为 `{ familyId, childId }`，所有恢复和变更接口按双字段校验。
+
+`OfflineCheckInRepository` 提供 enqueue/list/claim/attempt/conflict/business-failed/completed/retry/delete，以及媒体 save/list/uploading/uploaded/failed/remove 操作。`OfflineCheckInRunner.run()` 合并并发调用并按稳定顺序重放；`confirmMediaDrafts()` 仅在用户确认后上传 Blob。完整状态与限制见 `专有概念/OfflineCheckInSync.md`。
+
 ## 共享类型
 
 ### `ServiceInfo`
@@ -496,7 +506,7 @@ Next.js 将浏览器发往 `/api/:path*` 的请求转发至 `${API_INTERNAL_URL}
 
 ## 契约验证
 
-`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务。`pnpm test` 当前运行 82 个 Vitest 文件和 528 项测试；`pnpm test:integration` 聚焦 Phase 1 核心闭环与并发回滚聚合；`pnpm test:e2e` 运行 9 项 Playwright 浏览器测试，覆盖双端 15 个路由、家长任务编辑、孩子任务可见性及关键交互。
+`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务。阶段 12 新增 manifest、离线页、Service Worker 注册、缓存分类与运行策略、IndexedDB 仓储、owner 隔离、提交编排、顺序重放、409 权威状态、5xx 退避和媒体确认恢复测试；最终 `i56-web` 真实 Chromium 全部通过。`pnpm test:integration` 聚焦 Phase 1 核心闭环与并发回滚聚合，`pnpm test:e2e` 承担双端真实浏览器验证。
 
 ## 开发种子接口
 

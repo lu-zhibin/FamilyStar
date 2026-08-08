@@ -2,7 +2,7 @@
 
 ## 概述
 
-FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段及真实运行缺陷修复任务 13、14、15 已完成，产品补全阶段 10 已交付家庭模块开关和孩子主题。家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
+FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段及真实运行缺陷修复任务 13、14、15 已完成，产品补全阶段 12 已交付 PWA 应用壳与离线打卡恢复。家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
 
 浏览器界面由 Next.js 14 App Router 提供。REST API 使用 Hono 并通过 `@hono/node-server` 运行在 Node.js 上。跨应用类型从 `@familystar/shared` 导入，减少 Web 与 API 之间的契约漂移。
 
@@ -72,6 +72,17 @@ FamilyStar/
 - 职责：提供统一家庭登录入口、浏览器页面、元数据、品牌字体、视觉 Token、家长端九路由和孩子端六路由。
 - 当前依赖：React、Next.js、Tailwind CSS、Lucide React、`@familystar/shared`。
 - 响应式边界：mobile 小于 768px，tablet 为 768px 至 1024px，desktop 大于 1024px。
+- PWA 壳：`app/manifest.ts`、`app/offline/route.ts`、`public/sw.js` 与 `components/service-worker-registration.tsx` 提供安装清单、离线回退和生产安全上下文注册。
+- 离线打卡：`lib/check-in-submission.ts`、`offline-check-in-repository.ts` 与 `offline-check-in-runner.ts` 保存 TICK/TEXT 请求和媒体 Blob，并在身份确认后恢复提交。
+
+### PWA 与离线恢复
+
+- Service Worker 预缓存版本化根壳、离线页、manifest 与图标，只管理 `familystar-pwa-` 前缀缓存；导航采用 network-first 并在网络失败时返回 `/offline`。
+- 同源 `/_next/static/` 使用 cache-first，其余公开静态资源使用 stale-while-revalidate。缓存请求省略 Cookie，仅保留 `Accept`；API、认证、私有、跨源、授权、非 GET 请求及带 `private`、`no-store`、`Set-Cookie` 的响应绕过缓存。
+- 浏览器数据库 `familystar-offline` 当前版本为 2，包含 `check-in-queue` 与 `media-drafts`。普通记录保存原打卡幂等键；媒体记录保存 Blob、上传幂等键、打卡幂等键及已上传媒体 ID。
+- 每条记录绑定 `{ familyId, childId }` owner。页面仅展示当前 owner 数据，仓储的 claim、重试、删除和媒体更新再次校验 owner；v2 之前无 owner 的记录保持隔离。
+- 普通队列按 `createdAt + id` 串行 claim，使用 30 秒租约防止并发重放。网络和 5xx 回到 pending 并指数退避，401/403 暂停当前 runner，409 进入 conflict，其余 4xx 进入 business-failed；终态记录等待用户重试或删除。
+- 媒体草稿保持 awaiting-confirmation，用户明确确认后依次上传。已完成媒体 ID 与稳定幂等键支持中断恢复，全部媒体就绪后提交打卡并清除本地草稿。
 
 ### API 应用
 
@@ -281,6 +292,9 @@ FamilyStar/
 ```mermaid
 flowchart LR
     Browser["浏览器"] --> Web["Next.js Web"]
+    Browser --> ServiceWorker["Service Worker"]
+    ServiceWorker --> CacheStorage["公开应用壳缓存"]
+    Browser --> IndexedDB["IndexedDB 离线队列"]
     Web -->|"同源 /api rewrite"| API["Hono API"]
     Web --> Shared["共享类型包"]
     Node["Node HTTP Server"] --> API["Hono API"]
@@ -332,7 +346,7 @@ API 进程在监听端口前同步完成模块清单注册，非法 manifest、�
 
 根级 `pnpm build` 使用递归 workspace 构建。共享类型先生成 JavaScript 与声明文件，五个模块包随后生成独立 `dist/`，聚合包完成后 API 和 Web 消费其导出。应用构建产物分别位于 `apps/api/dist/` 和 `apps/web/.next/`，Web 同时生成 standalone 运行目录。
 
-根级多阶段 `Dockerfile` 使用锁文件安装依赖并复用 BuildKit pnpm 缓存，构建后分别输出 `web`、`api` 和 `worker` 非 root 目标。开发 Compose 可本地构建三类镜像；生产 Compose 要求显式镜像仓库和不可变 `IMAGE_TAG`。
+根级多阶段 `Dockerfile` 使用锁文件安装依赖并复用 BuildKit pnpm 缓存，构建后分别输出 `web`、`api` 和 `worker` 非 root 目标。Web target 同时复制 standalone、`.next/static` 和 `apps/web/public`，确保 Service Worker、缓存策略模块和 PWA 图标进入运行镜像。开发 Compose 可本地构建三类镜像；生产 Compose 要求显式镜像仓库和不可变 `IMAGE_TAG`。
 
 根级 `tsconfig.base.json` 启用 strict、索引访问检查、精确可选属性、override 检查和 switch fallthrough 检查。`pnpm lint` 对源码执行零警告 ESLint 门禁，`pnpm format:check` 验证 Prettier 格式。
 
@@ -373,7 +387,7 @@ flowchart LR
 - API 当前直接监听 `3001`，公开路由使用 `/api/v1` 前缀。
 - Web 当前监听 Next.js 默认端口 `3000`，通过 `API_INTERNAL_URL` 将同源 `/api` 转发至 Hono。
 - 数据模型和迁移历史已就绪，事件基础设施提供可注入 Prisma Client 的适配器，API 组合根已实例化惰性 Prisma 与 Redis 认证适配器。
-- Docker 配置已建立 PostgreSQL 16 与 Redis 运行组合；当前 Agent 环境缺少 Docker CLI，容器启动和真实迁移执行仍需在具备 Docker 的运行环境验证。
+- Docker 配置已建立 PostgreSQL 16 与 Redis 运行组合；Web target 的 PWA public 资产装配已由容器契约和 `i56-web` 真实 Chromium 验证。
 - 家长注册登录、双家长邀请、孩子档案、认证保护、会话撤销、家庭设置、家庭模块、孩子主题、家庭集成、任务、打卡、媒体和家长审核 API 已接入。
 - 家庭邮件与 COS 配置支持读取、创建者维护、删除及验证端口；运行组合未提供外部连接 verifier 时，测试接口返回安全的 `503`。
 - Prisma Schema、迁移 SQL、容器契约和启动依赖顺序已静态验证；并发与失败回滚已通过状态型聚合套件验证。真实 PostgreSQL 行锁、约束和 Redis 服务端竞争由具备对应服务的 CI 或部署节点继续验证。
@@ -381,4 +395,6 @@ flowchart LR
 - 当前错误映射测试覆盖 404 与未处理异常；后续业务错误按新增领域路由扩展。
 - Next.js 14 配置保留受支持的 `outputFileTracingRoot` 和同源 API rewrite；本地预览通过平台内置端口预览能力访问。
 - 双端按家庭模块读取模型过滤导航并保护直接路由；孩子端实时读取并应用本人等级主题。
+- 生产安全上下文中的受支持浏览器注册同源模块 Service Worker；开发环境保持直接网络行为。离线写入仅覆盖单人 TICK/TEXT 与 PHOTO/VIDEO/MIXED 草稿，协作提交仍使用在线周期入口。
+- `i56-web` 已完成真实 Chromium 验证；PWA public 资产由 Web 容器显式装配。
 - Playwright 使用同源 API 路由模拟覆盖家长端 9 页、孩子端 6 页、角色门禁、核心写入、PIN 锁定、COS multipart、兑换和退款；后端 HTTP 集成套件承担完整业务闭环验证。

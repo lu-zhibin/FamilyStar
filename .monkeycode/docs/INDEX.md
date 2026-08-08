@@ -8,7 +8,7 @@
 - 实施任务：Phase 1 基线 12 个阶段及真实运行缺陷修复任务 13、14、15、16 已完成
 - 测试策略：全部测试任务纳入必做范围
 - 源码实现：阶段 1 至阶段 12 已完成；核心闭环和自动化质量门禁已通过
-- 当前迭代：产品补全阶段 11 质量门禁已通过，完整单元回归 131 个文件、986 项通过
+- 当前迭代：产品补全阶段 12 已完成 PWA 应用壳、离线打卡队列和媒体确认恢复；`i56-web` 真实 Chromium 全部通过
 - 打卡历史与批量媒体访问读模型：见 `专有概念/HistoryReadModel.md`
 - 最近更新：2026-08-08
 
@@ -16,9 +16,9 @@
 
 | 文档 | 用途 | 状态 |
 |---|---|---|
-| `ARCHITECTURE.md` | 当前系统结构、依赖和运行边界 | 已同步至产品补全任务 10.4 |
-| `INTERFACES.md` | 当前 HTTP、类型、数据模型和工作区接口 | 已同步至产品补全任务 10.4 |
-| `DEVELOPER_GUIDE.md` | 环境、命令、工作流和验证方式 | 已同步至产品补全任务 11.2 |
+| `ARCHITECTURE.md` | 当前系统结构、依赖和运行边界 | 已同步至产品补全任务 12.4 |
+| `INTERFACES.md` | 当前 HTTP、类型、数据模型和工作区接口 | 已同步至产品补全任务 12.4 |
+| `DEVELOPER_GUIDE.md` | 环境、命令、工作流和验证方式 | 已同步至产品补全任务 12.4 |
 | `模块/API.md` | Hono API 组合、领域适配器、迁移和验证入口 | 已同步至 Phase 1 任务 15 |
 | `模块/Web.md` | 统一登录入口、家长端与孩子端路由、真实数据状态、组件与响应式交互 | 已同步至界面稳定性修复 `9ef173c` |
 | `专有概念/Rewards.md` | 奖励池、资格、图片与库存配置 | 已同步至任务 7.1 |
@@ -34,6 +34,7 @@
 | `专有概念/FamilySettings.md` | 家庭规则默认值、校验、读写与持久化边界 | 已同步至产品补全任务 10.1 |
 | `专有概念/FamilyModuleSettings.md` | 核心与可选模块目录、依赖、并发更新和双端可见性 | 已同步至产品补全任务 10.4 |
 | `专有概念/ChildThemes.md` | 孩子主题目录、等级解锁、选择持久化和受控 Token | 已同步至产品补全任务 10.4 |
+| `专有概念/OfflineCheckInSync.md` | PWA 缓存边界、IndexedDB v2、owner 隔离、离线状态机与媒体确认恢复 | 已同步至产品补全任务 12.4 |
 | `专有概念/CredentialVault.md` | 家庭级信封加密、主密钥配置与重包裹 | 已同步至任务 2.7 |
 | `专有概念/SecurityBoundaries.md` | 集中认证、RBAC、家庭隔离、CSRF 与审计 | 已同步至阶段 10 |
 | `专有概念/WorkerRuntime.md` | Worker 作业、幂等、锁、重试和健康状态 | 已同步至阶段 11 |
@@ -75,6 +76,7 @@
 | `专有概念/FamilySettings.md` | `Family-Settings.md` |
 | `专有概念/FamilyModuleSettings.md` | `Family-Module-Settings.md` |
 | `专有概念/ChildThemes.md` | `Child-Themes.md` |
+| `专有概念/OfflineCheckInSync.md` | `Offline-Check-In-Sync.md` |
 | `专有概念/Tasks.md` | `Tasks.md` |
 | `专有概念/CheckInsAndMedia.md` | `Check-Ins-and-Media.md` |
 | `专有概念/SubmissionReviews.md` | `Submission-Reviews.md` |

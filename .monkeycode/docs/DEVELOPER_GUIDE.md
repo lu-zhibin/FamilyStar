@@ -164,6 +164,8 @@ pnpm db:seed
 
 产品补全阶段 11 的最新质量基线为聚焦回归 31 个文件、223 项和完整单元回归 131 个文件、986 项通过。全工作区类型检查、零警告 Lint、全局 Prettier、Prisma Schema、数据模型契约和全部生产构建均通过；`48d3bd0` 已对齐邀请仓储现行事件字段契约。
 
+产品补全阶段 12 由 `23e7ed4`、`4cececb`、`d175b2e`、`f4a1b31` 和 `8158e08` 完成应用壳、容器 public 装配、IndexedDB v2、离线恢复与边界强化。最终 `i56-web` 的真实 Chromium 验证全部通过。
+
 Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwright.config.cjs` 同时启动测试专用会话服务和临时 Next.js 服务，使服务端门户守卫经过真实 Cookie 与角色重定向路径；浏览器业务请求继续由每项测试的显式 API 契约夹具承接。九页家长巡检具有 120 秒独立预算，其余用例使用 60 秒预算。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
 
 ## Worker 开发
@@ -181,6 +183,8 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwri
 生产环境使用 `compose.prod.yml`，要求提供单一镜像仓库、不可变基础标签、公开地址、数据库密码和凭证保险库配置。Compose 分别追加 `-web`、`-api` 和 `-worker` 标签后缀；唯一公开入口为 `0.0.0.0:8099`，API、Worker、PostgreSQL 和 Redis 仅通过内部网络通信。
 
 迁移服务等待 PostgreSQL 和 Redis 健康后执行 `prisma migrate deploy`；API 与 Worker 等待迁移成功，Web 再等待 API 健康。容器运行细节见 `专有概念/ContainerRuntime.md`。
+
+Web 运行镜像必须同时包含 `.next/standalone`、`.next/static` 和 `apps/web/public`。最后一项承载 `sw.js`、`sw-policy.js`、`sw-runtime.js` 与 PWA 图标；容器契约测试锁定该复制边界。
 
 ## 家长认证开发
 
@@ -257,6 +261,16 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwri
 - `CHECKBOX`、`TEXT`、`PHOTO`、`VIDEO` 和 `MIXED` 使用统一内容校验；最多 9 张图片、1 个视频、视频最长 180 秒且不超过 100MB。
 - 上传完成接口只接受空对象，服务端从 COS 读取对象并校验 MIME、魔数、字节数和 SHA-256；客户端对象字节不进入 API 请求。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/check-ins apps/api/src/media apps/api/src/phase-1-check-in-media.integration.test.ts`。
+
+## PWA 与离线打卡开发
+
+- PWA 入口位于 `apps/web/app/manifest.ts`、`apps/web/app/offline/route.ts` 和 `apps/web/public/sw*.js`。缓存版本变化时更新 `PWA_CACHE_VERSION`，激活阶段只清理 `familystar-pwa-` 前缀旧缓存。
+- 请求分类保持公开缓存边界：API、认证、私有、跨源、授权与写请求 bypass；导航 network-first；`/_next/static/` cache-first；其余公开静态资源 stale-while-revalidate。缓存请求省略凭据，缓存响应排除私有指令、Cookie、重定向和跨源结果。
+- 离线仓储位于 `apps/web/lib/offline-check-in-repository.ts`。Schema 变更需要递增数据库版本并同步 object store、索引、旧记录隔离和 IndexedDB 测试。
+- 普通 TICK/TEXT 请求保存原始打卡幂等键并按创建顺序恢复。队首 conflict 或 business-failed 会阻塞后续记录，用户可显式重试或删除；网络与 5xx 使用有界退避，401/403 等待重新认证。
+- PHOTO/VIDEO/MIXED 保存本地 Blob，单图上限 25MB、单视频上限 100MB、全部草稿最多 10 个文件与 200MB。用户确认后才开始上传，并复用每文件上传键和整次打卡键。
+- owner 由已验证孩子 session 派生并保存为 `{ familyId, childId }`。离线启动可读取本地 owner 展示其草稿，自动重放需要在线 session 再授权；父级、畸形和 v1 无 owner 数据不会进入当前队列。
+- 聚焦验证命令为 `pnpm exec vitest run apps/web/app/manifest.test.ts apps/web/app/offline/route.test.ts apps/web/components/service-worker-registration.test.ts apps/web/lib/pwa-cache-policy.test.ts apps/web/lib/pwa-cache-runtime.test.ts apps/web/lib/check-in-submission.test.ts apps/web/lib/offline-check-in-repository.test.ts apps/web/lib/offline-owner-scope.test.ts apps/web/lib/offline-check-in-runner.test.ts apps/web/components/offline-check-in-status.test.tsx apps/web/components/child-portal.test.tsx apps/api/src/worker/container-contract.test.ts`。
 
 ## 提交审核开发
 
