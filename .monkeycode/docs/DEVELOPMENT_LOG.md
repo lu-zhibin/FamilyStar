@@ -1,5 +1,33 @@
 # FamilyStar 开发记录
 
+## 2026-08-15：完成任务 14 双环境运行态验收
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-ACCEPTANCE-001`
+- 分支：`dev`
+- 状态：任务 14.1、14.2 已完成，Git 发布与生产镜像元数据待关闭
+
+### 验证结果
+
+- `8098` 开发环境真实 E2E 14/14 通过。
+- `8099` 生产构建 HTTPS 环境真实 E2E 14/14 通过。
+- 普通 Playwright 23 项通过，14 项真实环境场景按配置跳过。
+- ESLint、Prettier 与 `git diff --check` 全部通过。
+- 开发预览：`https://8098-a9c18acafb19a352.monkeycode-ai.online`。
+- 生产构建预览：`https://8099-a9c18acafb19a352.monkeycode-ai.online`。
+
+### 稳定性与配置
+
+- 徽章双端真实场景总预算为 120 秒。
+- 通知真实场景从轻量设置页验证全局通知入口。
+- `REAL_ACCEPTANCE=1` 使用 20 秒跨网络断言窗口。
+- 生产 `PUBLIC_BASE_URL` 与公开 HTTPS 源保持一致，以满足 Secure Cookie 和 CSRF Origin 校验。
+- 需求 2 至 13 与设计正确性属性 1 至 8 的自动化证据已写入验收追溯矩阵。
+
+### 发布待办
+
+- 将 `dev` 快进发布到 `main` 并推送远端。
+- 保存 Web、API、Worker 不可变镜像 digest、上一健康回滚标签和部署元数据。
+
 ## 2026-08-08：完成 PWA 安装入口与 i60 真实验收
 
 - 记录 ID：`FS-PRODUCT-COMPLETION-PWA-I60-001`

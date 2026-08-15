@@ -166,7 +166,7 @@ pnpm db:seed
 
 产品补全阶段 12 由 `23e7ed4`、`4cececb`、`d175b2e`、`f4a1b31` 和 `8158e08` 完成应用壳、容器 public 装配、IndexedDB v2、离线恢复与边界强化。最终 `i56-web` 的真实 Chromium 验证全部通过。
 
-Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwright.config.cjs` 同时启动测试专用会话服务和临时 Next.js 服务，使服务端门户守卫经过真实 Cookie 与角色重定向路径；浏览器业务请求继续由每项测试的显式 API 契约夹具承接。九页家长巡检具有 120 秒独立预算，其余用例使用 60 秒预算。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
+Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwright.config.cjs` 同时启动测试专用会话服务和临时 Next.js 服务，使服务端门户守卫经过真实 Cookie 与角色重定向路径；浏览器业务请求继续由每项测试的显式 API 契约夹具承接。九页家长巡检和徽章双端真实场景具有 120 秒独立预算，其余用例使用 60 秒预算。`REAL_ACCEPTANCE=1` 时断言窗口为 20 秒，通知真实场景从轻量设置页验证全局通知入口。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
 
 ## Worker 开发
 

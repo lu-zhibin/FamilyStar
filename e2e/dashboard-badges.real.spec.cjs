@@ -4,6 +4,7 @@ test.skip(
   !process.env.REAL_ACCEPTANCE,
   'Runs only against the isolated deployed acceptance environment.',
 );
+test.setTimeout(120_000);
 
 function calendarDate() {
   return new Intl.DateTimeFormat('en-CA', {

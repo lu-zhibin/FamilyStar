@@ -78,7 +78,7 @@ test('closes parent and child notification read flows and persists parent prefer
   await waitForNotification(childContext.request, '审核已通过');
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/dashboard');
+  await page.goto('/settings');
   const parentBell = page.getByRole('link', { name: /^通知，\d+ 条未读$/ });
   await expect(parentBell).toBeVisible();
   await parentBell.click();

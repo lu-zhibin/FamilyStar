@@ -154,7 +154,24 @@ API 继续作为唯一业务授权边界。Web 仅保存界面状态、离线请
 - 组件与 Playwright 覆盖家长九页、孩子六页、完整 CRUD、错误恢复和移动视口。
 - PWA 测试覆盖 manifest、离线导航、队列重放、幂等冲突和媒体草稿恢复。
 - 迁移通过 Prisma validate、迁移部署、数据库约束和回滚备份验证。
-- `8098` 使用隔离家庭完成家长与孩子真实浏览器验收，`8099` 完成生产只读烟雾验收。
+- `8098` 与生产构建 HTTPS `8099` 均使用隔离家庭完成 14 项家长与孩子真实浏览器验收。
+
+## 验收追溯矩阵
+
+| 需求 | 主要自动化证据 | 正确性属性 |
+|---|---|---|
+| 2 家庭总览 | `dashboard-badges.real.spec.cjs`、`dual-portals-navigation.real.spec.cjs` | 1、3、5 |
+| 3 积分、统计与排行 | `analytics-rankings.real.spec.cjs`、`points-read-model.real.spec.cjs` | 1、2、3、4 |
+| 4 历史与成长记录 | `history-media-access.real.spec.cjs`、`growth-records.real.spec.cjs` | 1、2、3、6 |
+| 5 家庭与成员管理 | `family-management.real.spec.cjs`、`child-profile-management.real.spec.cjs` | 1、3 |
+| 6 任务管理 | `task-management.real.spec.cjs` | 1、3、6 |
+| 7 审核体验 | `submission-reviews.real.spec.cjs` | 1、2、5、6 |
+| 8 奖励、兑换与愿望 | `reward-management.real.spec.cjs` | 1、4、6、7 |
+| 9 徽章 | `dashboard-badges.real.spec.cjs` | 1、5、6 |
+| 10 通知 | `notifications-modules.real.spec.cjs` | 1、2、5 |
+| 11 PWA 与离线 | `offline-check-ins.real.spec.cjs`、`themes-pwa.real.spec.cjs` | 8 |
+| 12 模块与主题 | `notifications-modules.real.spec.cjs`、`themes-pwa.real.spec.cjs` | 1、7 |
+| 13 质量与发布 | 普通 Playwright 23 项、双环境真实 E2E 各 14 项、`ops/release-scripts.test.ts` | 1 至 8 |
 
 ## References
 

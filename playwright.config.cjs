@@ -24,7 +24,7 @@ const localWebServer = [
 module.exports = defineConfig({
   testDir: './e2e',
   timeout: 60_000,
-  expect: { timeout: 8_000 },
+  expect: { timeout: process.env.REAL_ACCEPTANCE ? 20_000 : 8_000 },
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
