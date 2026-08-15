@@ -5,3 +5,4 @@ design/
 **/dist/
 **/node_modules/
 pnpm-lock.yaml
+apps/web/public/icons/*.svg

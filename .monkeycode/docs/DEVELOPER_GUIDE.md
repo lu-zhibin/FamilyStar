@@ -2,7 +2,7 @@
 
 ## 项目目的
 
-FamilyStar 提供家庭任务打卡、积分成长和奖励兑换能力。Phase 1 的 12 个实施阶段已完成，后续迭代继续沿用 `../specs/phase-1-mvp/tasklist.md` 的质量标准。
+FamilyStar 提供家庭任务打卡、积分成长和奖励兑换能力。Phase 1 的 12 个实施阶段及真实运行缺陷修复任务 13、14、15 已完成，后续迭代继续沿用 `../specs/phase-1-mvp/tasklist.md` 的质量标准。
 
 ## 前置条件
 
@@ -156,13 +156,17 @@ pnpm db:seed
 
 ## 测试状态
 
-任务 1.5 使用 Vitest 3.2.4 建立正式测试套件。阶段 12 的单元测试共有 73 个测试文件和 452 项测试；集成命令运行 5 个文件和 23 项测试；完整覆盖率运行共有 78 个文件和 475 项测试。测试覆盖基础设施、认证、任务打卡、媒体审核、积分等级、奖励库存、兑换状态机、愿望闭环、双端组件、安全边界、Worker 作业、容器静态契约、核心 HTTP 闭环及并发失败回滚。
+任务 1.5 使用 Vitest 3.2.4 建立正式测试套件。任务 15 实现完成时完整 Vitest 套件共有 82 个测试文件和 528 项测试。测试覆盖基础设施、认证、任务编辑、孩子本人任务读取、任务打卡、媒体审核、家庭待审队列、积分等级、奖励库存、兑换状态机、愿望闭环、双端组件、安全边界、Worker 作业、容器静态契约、核心 HTTP 闭环及并发失败回滚。
 
 `pnpm test:coverage` 使用 V8 检查核心源码，认证、家庭设置、任务、打卡、媒体、积分、等级、奖励、凭证、安全中间件和 Worker 均纳入统计，四项门禁均为 70%。阶段 12 最终验证中 statements 与 lines 为 80.59%、branches 为 78.11%、functions 为 90.19%。覆盖率产物位于 `coverage/unit/`，该目录不进入版本控制。
 
-阶段 12 的 `pnpm quality` 已按顺序通过格式检查、零警告 Lint、全工作区类型检查、Prisma 与迁移契约、覆盖率、生产构建、设计系统、API 基础契约和 7 项 Playwright E2E。
+任务 15 已通过完整 Vitest 套件、核心 HTTP 闭环集成测试、覆盖率门禁、格式检查、零警告 Lint、全工作区类型检查、Prisma 契约、生产构建和 9 项 Playwright E2E。
 
-Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwright.config.cjs` 启动临时 Next.js 服务。九页家长巡检具有 120 秒独立预算，其余用例使用 60 秒预算。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
+产品补全阶段 11 的最新质量基线为聚焦回归 31 个文件、223 项和完整单元回归 131 个文件、986 项通过。全工作区类型检查、零警告 Lint、全局 Prettier、Prisma Schema、数据模型契约和全部生产构建均通过；`48d3bd0` 已对齐邀请仓储现行事件字段契约。
+
+产品补全阶段 12 由 `23e7ed4`、`4cececb`、`d175b2e`、`f4a1b31` 和 `8158e08` 完成应用壳、容器 public 装配、IndexedDB v2、离线恢复与边界强化。最终 `i56-web` 的真实 Chromium 验证全部通过。
+
+Playwright 通过全局 `@playwright/test` 与 Chromium 运行。根级 `playwright.config.cjs` 同时启动测试专用会话服务和临时 Next.js 服务，使服务端门户守卫经过真实 Cookie 与角色重定向路径；浏览器业务请求继续由每项测试的显式 API 契约夹具承接。九页家长巡检和徽章双端真实场景具有 120 秒独立预算，其余用例使用 60 秒预算。`REAL_ACCEPTANCE=1` 时断言窗口为 20 秒，通知真实场景从轻量设置页验证全局通知入口。运行中的 `next dev` 与 `next build` 共享 `.next`，执行完整质量链路前应停止预览服务，门禁完成后再重启预览。
 
 ## Worker 开发
 
@@ -180,6 +184,8 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 
 迁移服务等待 PostgreSQL 和 Redis 健康后执行 `prisma migrate deploy`；API 与 Worker 等待迁移成功，Web 再等待 API 健康。容器运行细节见 `专有概念/ContainerRuntime.md`。
 
+Web 运行镜像必须同时包含 `.next/standalone`、`.next/static` 和 `apps/web/public`。最后一项承载 `sw.js`、`sw-policy.js`、`sw-runtime.js` 与 PWA 图标；容器契约测试锁定该复制边界。
+
 ## 家长认证开发
 
 - 认证代码位于 `apps/api/src/family-auth/`，通过小型仓储、密码和会话端口隔离 PostgreSQL、bcrypt 与 Redis I/O。
@@ -196,6 +202,20 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 - `RedisChildLoginRateLimiter` 使用家庭与孩子范围的 10 次/15 分钟固定窗口，HTTP 响应分别暴露锁定和限流剩余秒数。
 - `RedisSessionStore` 为每个主体维护 revision；有效读取续期 30 天，凭据变更和软删除通过递增 revision 撤销旧会话。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/family-auth`。
+
+## 统一家庭登录开发
+
+- 根路径控制器位于 `apps/web/components/auth-landing.tsx`，认证请求与错误映射位于 `apps/web/lib/auth.ts`。
+- 浏览器只请求同源 `/api/v1`；已有会话、家长登录注册、家庭码查询和孩子登录均使用统一响应信封。
+- 家庭码在浏览器和服务端始终按字符串处理；输入使用数字键盘提示，服务端执行严格 6 位数字校验并保留前导零。
+- `20260801130000_migrate_family_codes_to_six_digits` 在事务和独占表锁内为历史家庭换码，家庭数量超过 100 万时终止迁移；数据库字段、CHECK 和唯一索引提供最终格式与冲突保护。
+- 登录成功使用 `router.replace()` 进入角色门户，避免浏览器返回到登录入口；本地角色信息仅用于现有门户显示，API 授权继续以 HttpOnly 会话为准。
+- 家长和孩子门户页面在服务端调用 `/api/v1/auth/session` 校验有效会话与角色，失效会话在业务组件渲染前返回统一入口，角色不匹配时进入对应门户。
+- 双端退出使用 `POST /api/v1/auth/logout` 删除当前 Redis 令牌和 Cookie，成功后清理 `familystar_role`、`familystar_family_code` 与 `familystar_child_id`。
+- 门户 API 资源通过 `apps/web/lib/api-resource.ts` 区分 `loading`、`live`、`empty` 和 `error`；空数组是有效空状态，缺少必需响应字段进入错误状态。
+- 门户写操作仅使用服务端成功响应更新数据；请求失败保留当前真实数据并呈现错误。缺少读取接口的业务区域保持受限空态。
+- 家长端单人任务请求由 `buildSoloTaskDraft()` 集中构造。可选文本字段先去除首尾空白，空值从 JSON 请求中省略，避免与 API 的 optional non-empty Schema 产生契约漂移。
+- 聚焦验证命令为 `pnpm exec vitest run apps/web/components/auth-landing.test.tsx apps/web/lib/auth.test.ts apps/api/src/family-auth`。
 - 阶段 3 集成测试位于 `apps/api/src/phase-1-family-auth.integration.test.ts`，使用 copy-on-write 数据库状态和共享内存 Redis 命令端口组合真实领域服务。
 
 ## 家庭设置开发
@@ -206,13 +226,32 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 - 时区使用 IANA 标识；截止时间使用严格 `HH:mm`；天数、小时和额度使用非负安全整数；Streak 天数固定为 3、7、14、30、60、100。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/family-settings`。
 
+## 家庭模块开发
+
+- 共享目录位于 `packages/shared/src/family-modules.ts`；核心模块、可选模块、默认状态和依赖必须在同一拓扑中维护。
+- API 通过 `Family.settings.modules` 保存可选状态并以 `settingsVersion` 保护更新。PATCH 仅接受可选模块，创建者权限和依赖冲突由领域服务验证。
+- 新增受模块控制的 API 时，在 `apps/api/src/security/access-policy.ts` 登记可选模块键；中间件只使用已认证会话的家庭读取状态。
+- Web 的路由映射位于 `apps/web/lib/family-modules.ts`。读取失败时核心入口保持可用，可选入口进入关闭状态；设置成功后发布同页更新事件。
+- 聚焦验证命令为 `pnpm exec vitest run packages/shared/src/family-modules.test.ts apps/api/src/family-settings apps/api/src/security apps/web/lib/family-modules.test.ts apps/web/components/portal-shells.test.tsx apps/web/components/parent-portal.test.tsx`。
+
+## 孩子主题开发
+
+- 共享主题目录位于 `packages/shared/src/themes.ts`；每个主题定义稳定键、最低等级和 5 个受控 CSS Token。
+- API 领域位于 `apps/api/src/themes/`。读取和写入始终限定会话家庭、孩子主体、`CHILD` 角色与活动状态，保存时再次校验最低等级。
+- 数据库迁移为 `User.selectedTheme` 提供 `starlight` 默认值及键格式 CHECK；新增主题时保持键长度不超过 40。
+- Web 只通过 `trustedThemeTokens()` 应用与共享目录完全匹配的 Token，孩子 Shell 监听选择事件并更新根容器 CSS variables。
+- 聚焦验证命令为 `pnpm exec vitest run packages/shared/src/themes.test.ts apps/api/src/themes apps/web/lib/themes.test.ts apps/web/components/child-portal.test.tsx apps/web/components/portal-shells.test.tsx`。
+
 ## 任务领域开发
 
 - 领域代码位于 `apps/api/src/tasks/`，任务类型、任务、分配、频率和协作调度均通过小型端口隔离 Prisma 与 HTTP。
 - HTTP 使用 snake_case，领域和 JSONB 频率使用 camelCase；频率新增变体时同步更新判别联合、路由映射、规范化和表驱动测试。
 - Task 与 TaskAssignment 在同一 Prisma 事务中写入；替换分配使用软删除和唯一键 upsert，支持恢复历史分配。
+- 家长编辑普通任务字段时省略 assignments 并保留既有分配；可选说明使用 `null` 表达显式清空。
+- `GET /api/v1/tasks/me` 从孩子会话获取家庭和主体边界，按请求自然日期过滤活动 assignment、日期范围和生效频率，并应用逐孩覆盖。
 - 协作调度按家庭自然日期生成参与者与奖励积分快照，数据库唯一键负责并发下的最终幂等保护。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/tasks`。
+- Web 任务创建、编辑和孩子任务读取回归验证命令为 `pnpm exec vitest run apps/web/lib/parent-portal.test.ts apps/web/components/parent-portal.test.tsx apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/tasks/routes.test.ts apps/api/src/tasks/task-service.test.ts apps/api/src/tasks/prisma-task-repository.test.ts apps/api/src/security/middleware.test.ts`。
 
 ## 打卡与媒体开发
 
@@ -223,15 +262,27 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 - 上传完成接口只接受空对象，服务端从 COS 读取对象并校验 MIME、魔数、字节数和 SHA-256；客户端对象字节不进入 API 请求。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/check-ins apps/api/src/media apps/api/src/phase-1-check-in-media.integration.test.ts`。
 
+## PWA 与离线打卡开发
+
+- PWA 入口位于 `apps/web/app/manifest.ts`、`apps/web/app/offline/route.ts` 和 `apps/web/public/sw*.js`。缓存版本变化时更新 `PWA_CACHE_VERSION`，激活阶段只清理 `familystar-pwa-` 前缀旧缓存。
+- 请求分类保持公开缓存边界：API、认证、私有、跨源、授权与写请求 bypass；导航 network-first；`/_next/static/` cache-first；其余公开静态资源 stale-while-revalidate。缓存请求省略凭据，缓存响应排除私有指令、Cookie、重定向和跨源结果。
+- 离线仓储位于 `apps/web/lib/offline-check-in-repository.ts`。Schema 变更需要递增数据库版本并同步 object store、索引、旧记录隔离和 IndexedDB 测试。
+- 普通 TICK/TEXT 请求保存原始打卡幂等键并按创建顺序恢复。队首 conflict 或 business-failed 会阻塞后续记录，用户可显式重试或删除；网络与 5xx 使用有界退避，401/403 等待重新认证。
+- PHOTO/VIDEO/MIXED 保存本地 Blob，单图上限 25MB、单视频上限 100MB、全部草稿最多 10 个文件与 200MB。用户确认后才开始上传，并复用每文件上传键和整次打卡键。
+- owner 由已验证孩子 session 派生并保存为 `{ familyId, childId }`。离线启动可读取本地 owner 展示其草稿，自动重放需要在线 session 再授权；父级、畸形和 v1 无 owner 数据不会进入当前队列。
+- 聚焦验证命令为 `pnpm exec vitest run apps/web/app/manifest.test.ts apps/web/app/offline/route.test.ts apps/web/components/service-worker-registration.test.ts apps/web/lib/pwa-cache-policy.test.ts apps/web/lib/pwa-cache-runtime.test.ts apps/web/lib/check-in-submission.test.ts apps/web/lib/offline-check-in-repository.test.ts apps/web/lib/offline-owner-scope.test.ts apps/web/lib/offline-check-in-runner.test.ts apps/web/components/offline-check-in-status.test.tsx apps/web/components/child-portal.test.tsx apps/api/src/worker/container-contract.test.ts`。
+
 ## 提交审核开发
 
 - 审核代码位于 `apps/api/src/check-ins/review-types.ts`、`review-service.ts`、`review-timeout-service.ts`、`review-prisma-repository.ts` 和 `review-routes.ts`。
+- `GET /api/v1/family/submission-reviews/pending` 合并本家庭单人和协作 `PENDING` 聚合，返回任务、孩子、latest attempt 内容、媒体摘要和提交时间，并以稳定顺序限制为 100 条。
 - HTTP 和领域层要求家长会话；拒绝原因去除首尾空白后必须非空，请求 reason 上限为 2000 字符。
 - 所有审核写入要求 `Idempotency-Key`；同一家庭和目标的重试返回既有结果，跨目标复用同一键返回冲突。
 - `keys.reviewLock()` 构造目标级 Redis 键，服务通过 10 秒 owner-lock 串行化同一提交的审核，并在锁内复查幂等记录。
 - Prisma 仓储在一个事务中条件更新 `PENDING` 聚合并创建关联最新 attempt 的 `SubmissionReview`；数据库唯一约束处理最终竞争。
 - `SubmissionReviewTimeoutService.runBatch()` 每次只读取一个有界候选批次，按家庭设置和最新 attempt 提交时间判断到期，并使用 `timeout:<targetType>:<attemptId>` 作为确定性幂等键。
 - 超时审核与家长审核复用目标锁；自动事务再次核对最新 attempt 和 `PENDING`，冲突与重复执行返回安全跳过。独立 Worker 按分钟运行键周期调用单批执行器。
+- 家长 Web 审核请求使用 `review:<attemptId>:<decision>` 稳定幂等键；写入成功后重新读取权威队列，失败时保留当前记录。
 - 聚焦验证命令为 `pnpm exec vitest run apps/api/src/check-ins/review-service.test.ts apps/api/src/check-ins/review-prisma-repository.test.ts apps/api/src/check-ins/review-timeout-service.test.ts apps/api/src/check-ins/review-routes.test.ts`。
 
 ## 积分事务开发
@@ -279,6 +330,8 @@ Playwright 通过全局 `@playwright/test` 与 Chromium 运行，根级 `playwri
 - 提交审核历史迁移位于 `apps/api/prisma/migrations/20260731110000_add_submission_reviews/`，包含人工/超时来源及来源与审核人一致性约束。
 - 协作奖励快照迁移位于 `apps/api/prisma/migrations/20260731120000_add_collaboration_awards/`，追加 `points_earned`、`streak_multiplier` 及成对正值约束。
 - 奖励兑换与愿望保护迁移位于 `apps/api/prisma/migrations/20260731130000_add_reward_redemption_wish_guards/`，追加请求指纹、愿望终态时间、状态一致性约束、频次索引和退款唯一索引。
+- 家庭模块设置迁移位于 `apps/api/prisma/migrations/20260808100000_add_family_module_settings/`，补齐模块 JSON 并增加非负 `settings_version` 乐观锁。
+- 孩子主题迁移位于 `apps/api/prisma/migrations/20260808110000_add_user_selected_theme/`，增加默认主题和键格式约束。
 - Prisma Client 在 API 生产构建前自动生成。
 - `pnpm verify:data-model` 按目录顺序读取迁移历史，并检查核心模型、家庭边界、业务唯一键、Outbox 约束和关键索引。
 - 修改 datamodel 后先执行 `pnpm db:format`、`pnpm db:validate` 和 `pnpm db:generate`，再生成并审查 SQL 迁移。
@@ -314,7 +367,7 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 - 动态导入和运行时热插拔保留至 Phase 2。
 - 每个业务模块使用独立 workspace package，在 `src/manifest.json` 声明能力、依赖、权限和事件，并仅通过 `src/index.ts` 公开 manifest 与插件。
 - `@familystar/business-modules` 是应用组合入口；新增依赖时同步调整静态列表顺序，并确保每个依赖先于使用方。
-- 模块开关占位保持 `enabled: true` 和 `readOnly: true`，MVP 启动流程始终注册完整静态清单。
+- 进程启动仍注册完整静态插件清单；家庭模块设置负责 API 授权和 Web 可见性，不改变运行时插件装载。
 
 ## 事件与 Outbox 开发
 
@@ -330,6 +383,7 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 
 - `apps/web/tailwind.config.cjs` 将 FamilyStar 色彩、圆角、阴影、字号、字体和响应式边界公开为 Tailwind theme。
 - `apps/web/app/globals.css` 保存同源 CSS 变量、基础页面背景、焦点样式和减少动效偏好。
+- 孩子主题在 `.child-theme-shell` 根容器覆盖背景、表面、主色、辅色和文字 5 个变量；应用前必须通过共享目录值匹配校验。
 - `next/font/google` 自托管 Fredoka 与 Nunito，Tailwind 使用 `font-display` 和 `font-sans` 消费字体变量。
 - Lucide 图标使用 `lucide-react` 具名导入；装饰图标保持 `aria-hidden`，有语义图标提供可访问名称。
 - 页面容器最大宽度为 1200px，手机区间使用 16px 横向留白，其余区间使用 20px。
@@ -337,11 +391,12 @@ Next.js 14 的 `next dev` 与 `next build` 共用 `apps/web/.next`。开发服�
 ## 孩子端开发
 
 - 孩子端入口位于 `apps/web/app/child/`，六个 section 由 `apps/web/lib/child-portal.ts` 的固定白名单映射。
-- `ChildShell` 提供身份提示、账号切换、通知占位和五项固定底部导航；记录页沿用“我的”激活状态。
-- `ChildPortal` 对等级、奖励、兑换、愿望和切换目标使用同源 API。缺少聚合读取接口的区域显示演示或受限状态。
-- 打卡与兑换写请求分别生成作用域幂等键；兑换和愿望响应按当前等级返回的 `user_id` 再过滤本人记录。
+- `ChildShell` 提供身份提示、账号切换、通知入口、模块过滤、主题应用和五项底部导航；记录页沿用“我的”激活状态。
+- `ChildPortal` 对等级、奖励、兑换、愿望、切换目标和今日任务使用同源 API。缺少聚合读取接口的区域显示受限空态。
+- 当前孩子由等级接口的 `user_id` 与真实切换目标关联；兑换和愿望响应按该 ID 过滤本人记录。主页与今日打卡页使用浏览器本地自然日期读取 `/tasks/me`，完整打卡提交表单后续接入。
+- 兑换写请求生成作用域幂等键，成功后使用服务端记录更新视图；失败时保留已加载数据并显示错误。
 - 密码模式通过 `PATCH /api/v1/auth/child/password` 修改密码，成功后撤销该孩子全部会话并要求重新认证。
-- 聚焦验证命令为 `pnpm exec vitest run apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/family-auth/child-service.test.ts apps/api/src/family-auth/child-routes.test.ts`。
+- 聚焦验证命令为 `pnpm exec vitest run apps/web/lib/api-resource.test.ts apps/web/lib/child-portal.test.ts apps/web/components/child-portal.test.tsx apps/api/src/family-auth/child-service.test.ts apps/api/src/family-auth/child-routes.test.ts apps/api/src/tasks/routes.test.ts apps/api/src/tasks/task-service.test.ts apps/api/src/tasks/prisma-task-repository.test.ts apps/api/src/security/middleware.test.ts`。
 
 ## TypeScript 基线
 

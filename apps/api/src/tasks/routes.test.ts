@@ -60,6 +60,43 @@ function taskOperations(): TaskOperations {
     async list() {
       return { tasks: [task] };
     },
+    async listMine(input) {
+      return {
+        date: input.date,
+        tasks: [
+          {
+            taskId: task.id,
+            taskAssignmentId: task.assignments[0]!.id,
+            name: task.name,
+            description: task.description,
+            submissionGuide: task.submissionGuide,
+            collaborationMode: task.collaborationMode,
+            frequency: task.frequency,
+            points: task.basePoints,
+            checkType: task.checkType,
+            verifyMode: task.verifyMode,
+            startDate: task.assignments[0]!.startDate,
+            endDate: null,
+            collaborationRound: {
+              id: 'round-1',
+              status: 'ACTIVE',
+              startDate: '2026-08-01',
+              endDate: '2026-08-01',
+              participants: [
+                { nickname: '小星', isCurrentChild: true, submissionStatus: 'REJECTED' },
+                { nickname: '小月', isCurrentChild: false, submissionStatus: 'APPROVED' },
+              ],
+              mySubmission: {
+                id: 'submission-1',
+                status: 'REJECTED',
+                submittedAt: new Date('2026-08-01T10:00:00.000Z'),
+                reviewComment: '请补拍全景',
+              },
+            },
+          },
+        ],
+      };
+    },
     async create(input) {
       expect(input.task).toMatchObject({
         taskTypeId: 'type-1',
@@ -167,5 +204,90 @@ describe('task type HTTP routes', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ data: { task: { status: 'ARCHIVED' } } });
+  });
+
+  it('maps editable task fields into a partial update', async () => {
+    const operations = taskOperations();
+    const update = vi.fn().mockResolvedValue({
+      task: { ...task, name: '整理我的房间', description: null, basePoints: 20 },
+    });
+    operations.update = update;
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      taskOperations: operations,
+    });
+    const response = await app.request('/api/v1/family/tasks/task-1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', cookie: 'familystar_session=parent-session' },
+      body: JSON.stringify({
+        task_type_id: 'type-1',
+        name: '整理我的房间',
+        description: null,
+        check_type: 'TICK',
+        verify_mode: 'AUTO',
+        base_points: 20,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      sessionToken: 'parent-session',
+      taskId: 'task-1',
+      task: {
+        taskTypeId: 'type-1',
+        name: '整理我的房间',
+        description: null,
+        checkType: 'TICK',
+        verifyMode: 'AUTO',
+        basePoints: 20,
+      },
+    });
+    expect(await response.json()).toMatchObject({
+      data: { task: { name: '整理我的房间', description: null, base_points: 20 } },
+    });
+  });
+
+  it('returns only the child task assignment API shape', async () => {
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      taskOperations: taskOperations(),
+    });
+    const response = await app.request('/api/v1/tasks/me?date=2026-08-01', {
+      headers: { cookie: 'familystar_session=child-session' },
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { data: Record<string, unknown> };
+    expect(body.data).toMatchObject({
+      date: '2026-08-01',
+      tasks: [
+        {
+          task_id: 'task-1',
+          task_assignment_id: 'a-1',
+          name: '一起整理房间',
+          points: 10,
+          check_type: 'PHOTO',
+          collaboration_round: {
+            id: 'round-1',
+            status: 'ACTIVE',
+            participant_count: 2,
+            approved_count: 1,
+            participants: [
+              { nickname: '小星', is_me: true, submission_status: 'REJECTED' },
+              { nickname: '小月', is_me: false, submission_status: 'APPROVED' },
+            ],
+            my_submission: {
+              id: 'submission-1',
+              status: 'REJECTED',
+              submitted_at: '2026-08-01T10:00:00.000Z',
+              review_comment: '请补拍全景',
+            },
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(body.data)).not.toContain('family_id');
+    expect(JSON.stringify(body.data)).not.toContain('child_id');
+    expect(JSON.stringify(body.data)).not.toMatch(/content_text|media_ids|attempts|reviewed_by/);
   });
 });

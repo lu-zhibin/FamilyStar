@@ -72,6 +72,10 @@ export class RedisSessionStore implements SessionStore {
     }
   }
 
+  async revoke(token: string): Promise<void> {
+    await deleteSession(this.redis, this.keyspace.session(token));
+  }
+
   async revokeSubject(subjectId: string): Promise<void> {
     await incrementCounter(this.redis, this.keyspace.sessionRevision(subjectId));
   }

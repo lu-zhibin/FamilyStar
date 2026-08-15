@@ -37,6 +37,7 @@ function setup(session: AuthSession | null, found: LevelSubject | null = child) 
   const sessions: SessionStore = {
     create: vi.fn(),
     read: vi.fn().mockResolvedValue(session),
+    revoke: vi.fn(),
     revokeSubject: vi.fn(),
   };
   const repository: LevelRepository = {

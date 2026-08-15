@@ -602,6 +602,13 @@ export class PrismaRewardRepository implements RewardRepository {
         data: { status: 'CANCELLED', cancelledAt: input.now },
         include: { child: { select: { pointsBalance: true } } },
       });
+      await this.wishEvent(
+        transaction,
+        'rewards.wish.cancelled.v1',
+        value,
+        input.childId,
+        input.now,
+      );
       return wishRecord(value);
     });
   }
@@ -628,11 +635,28 @@ export class PrismaRewardRepository implements RewardRepository {
           status: input.reward.status ?? 'ACTIVE',
         },
       });
-      const adopted = await transaction.wish.update({
-        where: { id: wish.id },
+      const transition = await transaction.wish.updateMany({
+        where: {
+          id: wish.id,
+          familyId: input.familyId,
+          status: 'ACTIVE',
+          deletedAt: null,
+        },
         data: { status: 'ADOPTED', adoptedRewardId: reward.id, adoptedAt: input.now },
+      });
+      if (transition.count !== 1) throw new RewardConflictError('The wish cannot be adopted.');
+      const adopted = await transaction.wish.findFirst({
+        where: { id: wish.id, familyId: input.familyId, deletedAt: null },
         include: { child: { select: { pointsBalance: true } } },
       });
+      if (!adopted) throw new RewardConflictError('The adopted wish could not be read.');
+      await this.wishEvent(
+        transaction,
+        'rewards.wish.adopted.v1',
+        adopted,
+        input.parentId,
+        input.now,
+      );
       return { wish: wishRecord(adopted), reward: rewardRecord(reward) };
     });
   }
@@ -723,6 +747,32 @@ export class PrismaRewardRepository implements RewardRepository {
           child_id: redemption.childId,
           points_spent: redemption.pointsSpent,
           status: redemption.status,
+        },
+      }),
+    );
+  }
+
+  private wishEvent(
+    transaction: Prisma.TransactionClient,
+    eventName: 'rewards.wish.adopted.v1' | 'rewards.wish.cancelled.v1',
+    wish: Wish,
+    actorId: string,
+    occurredAt: Date,
+  ): Promise<void> {
+    return this.outbox.append(
+      transaction,
+      createDomainEvent({
+        event_id: this.idFactory(),
+        event_name: eventName,
+        occurred_at: occurredAt.toISOString(),
+        family_id: wish.familyId,
+        actor_id: actorId,
+        correlation_id: wish.id,
+        payload: {
+          wish_id: wish.id,
+          child_id: wish.childId,
+          wish_title: wish.title,
+          status: wish.status,
         },
       }),
     );

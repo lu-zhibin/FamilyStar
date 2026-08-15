@@ -42,15 +42,162 @@ function pointsWriter(transaction: object, earnCheckIn = vi.fn().mockResolvedVal
 }
 
 describe('PrismaSubmissionReviewRepository', () => {
+  it('merges the authenticated family pending submissions using latest attempts', async () => {
+    const prisma = {
+      checkIn: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'check-in-1',
+            task: { id: 'task-1', name: '晨读' },
+            child: { id: 'child-1', nickname: '小星' },
+            attempts: [
+              {
+                id: 'check-attempt-2',
+                contentText: '完成两章',
+                submittedAt: new Date('2026-07-31T11:00:00.000Z'),
+              },
+            ],
+            media: [
+              {
+                mediaAsset: { id: 'media-1', type: 'IMAGE', mimeType: 'image/jpeg' },
+              },
+            ],
+          },
+        ]),
+      },
+      collaborationSubmission: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: 'submission-1',
+            round: { task: { id: 'task-2', name: '整理房间' } },
+            child: { id: 'child-2', nickname: '小月' },
+            attempts: [
+              {
+                id: 'collaboration-attempt-1',
+                contentText: null,
+                submittedAt: new Date('2026-07-31T10:00:00.000Z'),
+              },
+            ],
+            media: [],
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    const result = await new PrismaSubmissionReviewRepository(prisma).listPendingReviews(
+      'family-1',
+      100,
+    );
+
+    expect(result.map(({ targetId }) => targetId)).toEqual(['submission-1', 'check-in-1']);
+    expect(result[1]).toMatchObject({
+      attemptId: 'check-attempt-2',
+      task: { name: '晨读' },
+      child: { nickname: '小星' },
+      media: [{ id: 'media-1', type: 'IMAGE' }],
+    });
+    expect(prisma.checkIn.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ familyId: 'family-1', status: 'PENDING' }),
+        take: 100,
+      }),
+    );
+    expect(prisma.collaborationSubmission.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ familyId: 'family-1', status: 'PENDING' }),
+        take: 100,
+      }),
+    );
+  });
+
+  it('filters family review history across solo and collaboration targets', async () => {
+    const prisma = {
+      submissionReview: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            ...databaseReview(),
+            checkInAttempt: {
+              checkInId: 'check-in-1',
+              checkIn: {
+                task: { id: 'task-1', name: '晨读' },
+                child: { id: 'child-1', nickname: '小星' },
+              },
+            },
+            collaborationAttempt: null,
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    const result = await new PrismaSubmissionReviewRepository(prisma).listReviewHistory({
+      familyId: 'family-1',
+      childId: 'child-1',
+      taskId: 'task-1',
+      decision: 'REJECTED',
+      startAt: new Date('2026-07-01T00:00:00.000Z'),
+      endAtExclusive: new Date('2026-08-01T00:00:00.000Z'),
+      cursor: {
+        reviewedAt: new Date('2026-07-15T12:00:00.000Z'),
+        reviewId: '00000000-0000-4000-8000-000000000001',
+      },
+      limit: 25,
+    });
+
+    expect(result[0]).toMatchObject({
+      targetId: 'check-in-1',
+      task: { id: 'task-1', name: '晨读' },
+      child: { id: 'child-1', nickname: '小星' },
+    });
+    expect(prisma.submissionReview.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          familyId: 'family-1',
+          decision: 'REJECTED',
+          reviewedAt: {
+            gte: new Date('2026-07-01T00:00:00.000Z'),
+            lt: new Date('2026-08-01T00:00:00.000Z'),
+          },
+          AND: [
+            { OR: expect.any(Array) },
+            {
+              OR: [
+                { reviewedAt: { lt: new Date('2026-07-15T12:00:00.000Z') } },
+                {
+                  reviewedAt: new Date('2026-07-15T12:00:00.000Z'),
+                  id: { lt: '00000000-0000-4000-8000-000000000001' },
+                },
+              ],
+            },
+          ],
+        }),
+        orderBy: [{ reviewedAt: 'desc' }, { id: 'desc' }],
+        take: 26,
+      }),
+    );
+  });
+
   it('updates only a pending check-in and creates its review in one transaction', async () => {
+    const familyId = '00000000-0000-4000-8000-000000000001';
+    const childId = '00000000-0000-4000-8000-000000000002';
+    const checkInId = '00000000-0000-4000-8000-000000000003';
+    const parentId = '00000000-0000-4000-8000-000000000004';
+    const eventId = '00000000-0000-4000-8000-000000000005';
+    const review = {
+      ...databaseReview(),
+      familyId,
+      reviewerId: parentId,
+      checkInAttempt: { checkInId },
+    };
     const transaction = {
       submissionReview: {
         findUnique: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue(databaseReview()),
+        create: vi.fn().mockResolvedValue(review),
       },
       checkIn: {
         findFirst: vi.fn().mockResolvedValue({
-          id: 'check-in-1',
+          id: checkInId,
+          childId,
+          taskAssignment: { task: { name: 'Morning reading' } },
           attempts: [{ id: 'attempt-1' }],
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -60,11 +207,17 @@ describe('PrismaSubmissionReviewRepository', () => {
       $transaction: vi.fn(async (operation) => operation(transaction)),
     } as unknown as PrismaClient;
     const points = pointsWriter(transaction);
+    const outbox = { append: vi.fn().mockResolvedValue(undefined) };
 
-    const result = await new PrismaSubmissionReviewRepository(prisma, points.writer).reviewCheckIn({
-      familyId: 'family-1',
-      checkInId: 'check-in-1',
-      reviewerId: 'parent-1',
+    const result = await new PrismaSubmissionReviewRepository(
+      prisma,
+      points.writer,
+      outbox,
+      () => eventId,
+    ).reviewCheckIn({
+      familyId,
+      checkInId,
+      reviewerId: parentId,
       idempotencyKey: 'review-key',
       decision: 'REJECTED',
       reason: 'Add a photo',
@@ -73,14 +226,14 @@ describe('PrismaSubmissionReviewRepository', () => {
 
     expect(transaction.checkIn.updateMany).toHaveBeenCalledWith({
       where: {
-        id: 'check-in-1',
-        familyId: 'family-1',
+        id: checkInId,
+        familyId,
         status: 'PENDING',
         deletedAt: null,
       },
       data: {
         status: 'REJECTED',
-        reviewerId: 'parent-1',
+        reviewerId: parentId,
         reviewedAt,
         reviewComment: 'Add a photo',
       },
@@ -97,10 +250,18 @@ describe('PrismaSubmissionReviewRepository', () => {
     );
     expect(result).toMatchObject({
       targetType: 'CHECK_IN',
-      targetId: 'check-in-1',
+      targetId: checkInId,
       attemptId: 'attempt-1',
     });
     expect(points.earnCheckIn).not.toHaveBeenCalled();
+    expect(outbox.append).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        event_id: eventId,
+        event_name: 'check-in.entry.rejected.v1',
+        payload: expect.objectContaining({ child_id: childId, task_name: 'Morning reading' }),
+      }),
+    );
   });
 
   it('returns a conflict when the pending condition no longer matches', async () => {

@@ -30,6 +30,7 @@ function fixture() {
         },
       ],
     }),
+    deleteExpiredNotifications: vi.fn().mockResolvedValue(8),
   };
   const collaborationScheduler = {
     generate: vi
@@ -74,7 +75,7 @@ function fixture() {
 }
 
 describe('createWorkerJobs', () => {
-  it('registers all five jobs with stable time buckets', () => {
+  it('registers all six jobs with stable time buckets', () => {
     const { jobs } = fixture();
 
     expect(jobs.map(({ name }) => name)).toEqual([
@@ -83,12 +84,14 @@ describe('createWorkerJobs', () => {
       'outbox-dispatch',
       'media-cleanup',
       'points-reconciliation',
+      'notification-cleanup',
     ]);
     expect(jobs.map((job) => job.runKey(NOW))).toEqual([
-      '2026-07-31',
+      String(Math.floor(NOW.getTime() / 60_000)),
       String(Math.floor(NOW.getTime() / 60_000)),
       String(Math.floor(NOW.getTime() / 5_000)),
       String(Math.floor(NOW.getTime() / 3_600_000)),
+      '2026-07-31',
       '2026-07-31',
     ]);
   });
@@ -137,6 +140,19 @@ describe('createWorkerJobs', () => {
       discrepancies: [{ userId: 'child-1', calculatedBalance: 10 }],
     });
     expect(repository.reconcilePoints).toHaveBeenCalledWith(100);
+  });
+
+  it('deletes one bounded batch of notifications strictly older than ninety days', async () => {
+    const { jobs, repository } = fixture();
+
+    await expect(jobs[5]?.execute(NOW)).resolves.toEqual({
+      deleted: 8,
+      cutoff: '2026-05-02T14:23:45.000Z',
+    });
+    expect(repository.deleteExpiredNotifications).toHaveBeenCalledWith(
+      new Date('2026-05-02T14:23:45.000Z'),
+      100,
+    );
   });
 });
 
@@ -202,6 +218,79 @@ describe('PrismaWorkerJobsRepository', () => {
     expect(transaction.mediaAsset.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { uploadStatus: 'FAILED', deletedAt: NOW } }),
     );
+  });
+
+  it('selects and deletes a stable bounded notification batch with a strict cutoff', async () => {
+    const findMany = vi
+      .fn()
+      .mockResolvedValue([{ id: 'notification-1' }, { id: 'notification-2' }]);
+    const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
+    const transaction = { notification: { findMany, deleteMany } };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: typeof transaction) => Promise<number>) =>
+        work(transaction),
+      ),
+    };
+    const repository = new PrismaWorkerJobsRepository(prisma as never);
+    const cutoff = new Date('2026-05-02T14:23:45.000Z');
+
+    await expect(repository.deleteExpiredNotifications(cutoff, 25)).resolves.toBe(2);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { createdAt: { lt: cutoff } },
+      select: { id: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: 25,
+    });
+    expect(deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: ['notification-1', 'notification-2'] }, createdAt: { lt: cutoff } },
+    });
+  });
+
+  it('property: cleanup honors the strict ninety-day edge, batch cap, and repeated execution', async () => {
+    const cutoff = new Date('2026-05-02T14:23:45.000Z');
+    const rows = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `expired-${index}`,
+        createdAt: new Date(cutoff.getTime() - index - 1),
+      })),
+      { id: 'exact-cutoff', createdAt: new Date(cutoff) },
+      { id: 'newer', createdAt: new Date(cutoff.getTime() + 1) },
+    ];
+    const notification = {
+      findMany: vi.fn(async ({ where, take }) =>
+        rows
+          .filter((row) => row.createdAt < where.createdAt.lt)
+          .sort(
+            (left, right) =>
+              left.createdAt.getTime() - right.createdAt.getTime() ||
+              left.id.localeCompare(right.id),
+          )
+          .slice(0, take)
+          .map(({ id }) => ({ id })),
+      ),
+      deleteMany: vi.fn(async ({ where }) => {
+        const ids = new Set(where.id.in);
+        let count = 0;
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          const row = rows[index];
+          if (row && ids.has(row.id) && row.createdAt < where.createdAt.lt) {
+            rows.splice(index, 1);
+            count += 1;
+          }
+        }
+        return { count };
+      }),
+    };
+    const repository = new PrismaWorkerJobsRepository({
+      $transaction: vi.fn(async (work) => work({ notification })),
+    } as never);
+
+    await expect(repository.deleteExpiredNotifications(cutoff, 3)).resolves.toBe(3);
+    await expect(repository.deleteExpiredNotifications(cutoff, 3)).resolves.toBe(2);
+    await expect(repository.deleteExpiredNotifications(cutoff, 3)).resolves.toBe(0);
+
+    expect(rows.map(({ id }) => id)).toEqual(['exact-cutoff', 'newer']);
+    expect(notification.findMany.mock.calls.map(([input]) => input.take)).toEqual([3, 3, 3]);
   });
 
   it('recalculates balances and earned totals from immutable points logs', async () => {

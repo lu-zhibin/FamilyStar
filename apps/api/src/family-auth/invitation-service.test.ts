@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { OutboxWriter, TransactionRunner } from '../events/outbox.js';
 import { INVITATION_TTL_MILLISECONDS } from './constants.js';
-import { INVITATION_EMAIL_REQUESTED_EVENT } from './invitation-events.js';
+import {
+  INVITATION_ACCEPTED_EVENT,
+  INVITATION_CREATED_EVENT,
+  INVITATION_EMAIL_REQUESTED_EVENT,
+  INVITATION_RESENT_EVENT,
+  INVITATION_REVOKED_EVENT,
+} from './invitation-events.js';
 import { FamilyInvitationService, InvitationAuthenticationError } from './invitation-service.js';
 import type { PasswordHasher } from './password.js';
 import type { AuthSession, FamilyInvitationRepository, SessionStore } from './types.js';
@@ -34,14 +40,33 @@ function createHarness(options: { emailConfigured?: boolean; session?: AuthSessi
         emailConfigured: options.emailConfigured ?? false,
       };
     },
+    async refresh(_transaction, input) {
+      writes.push(input);
+      return {
+        invitation: {
+          id: input.invitationId,
+          familyId,
+          invitedById: input.actorId,
+          email: 'second@example.com',
+          expiresAt: input.expiresAt,
+        },
+        emailConfigured: options.emailConfigured ?? false,
+      };
+    },
+    async revoke(_transaction, input) {
+      writes.push(input);
+      return { id: input.invitationId, email: 'second@example.com' };
+    },
     async accept(_transaction, input) {
       writes.push(input);
       return {
         id: parentId,
         familyId,
+        familyCode: '123456',
         nickname: input.nickname,
         email: 'second@example.com',
         passwordHash: input.passwordHash,
+        invitationId,
       };
     },
   };
@@ -59,6 +84,7 @@ function createHarness(options: { emailConfigured?: boolean; session?: AuthSessi
         ? { subjectId: parentId, familyId, role: 'parent', issuedAt: fixedNow.toISOString() }
         : options.session;
     },
+    async revoke() {},
     async revokeSubject() {},
   };
   const passwords: PasswordHasher = {
@@ -106,7 +132,11 @@ describe('FamilyInvitationService', () => {
       delivery: 'copy-link',
       invitationLink: 'https://family.example/invite?token=plain-invitation-token',
     });
-    expect(harness.events).toHaveLength(0);
+    expect(harness.events).toHaveLength(1);
+    expect(harness.events[0]).toMatchObject({
+      event_name: INVITATION_CREATED_EVENT,
+      payload: { invitation_id: invitationId, email: 'second@example.com' },
+    });
   });
 
   it('queues one email event when family email is verified', async () => {
@@ -119,8 +149,8 @@ describe('FamilyInvitationService', () => {
 
     expect(result).toMatchObject({ delivery: 'email' });
     expect(result).not.toHaveProperty('invitationLink');
-    expect(harness.events).toHaveLength(1);
-    expect(harness.events[0]).toMatchObject({
+    expect(harness.events).toHaveLength(2);
+    expect(harness.events[1]).toMatchObject({
       event_name: INVITATION_EMAIL_REQUESTED_EVENT,
       family_id: familyId,
       actor_id: parentId,
@@ -174,10 +204,59 @@ describe('FamilyInvitationService', () => {
       parent: {
         id: parentId,
         familyId,
+        familyCode: '123456',
         nickname: 'Second Parent',
         email: 'second@example.com',
       },
       sessionToken: 'new-session',
+    });
+    expect(harness.events[0]).toMatchObject({
+      event_name: INVITATION_ACCEPTED_EVENT,
+      payload: { invitation_id: invitationId, email: 'second@example.com' },
+    });
+  });
+
+  it('resends an invitation with a rotated token and queues email in the same transaction', async () => {
+    const harness = createHarness({ emailConfigured: true });
+
+    const result = await harness.service.resend({
+      sessionToken: 'parent-session',
+      invitationId,
+      correlationId: 'request-resend',
+    });
+
+    expect(harness.writes[0]).toMatchObject({
+      actorId: parentId,
+      familyId,
+      invitationId,
+      expiresAt: new Date(fixedNow.getTime() + INVITATION_TTL_MILLISECONDS),
+    });
+    expect(harness.writes[0]).not.toMatchObject({ tokenHash: 'plain-invitation-token' });
+    expect(result).toMatchObject({ delivery: 'email', invitation: { id: invitationId } });
+    expect(harness.events).toHaveLength(2);
+    expect(harness.events[0]).toMatchObject({ event_name: INVITATION_RESENT_EVENT });
+    expect(harness.events[1]).toMatchObject({
+      event_name: INVITATION_EMAIL_REQUESTED_EVENT,
+      correlation_id: 'request-resend',
+      payload: { invitation_id: invitationId },
+    });
+  });
+
+  it('revokes a pending invitation through the creator family session', async () => {
+    const harness = createHarness();
+
+    await expect(
+      harness.service.revoke({ sessionToken: 'parent-session', invitationId }),
+    ).resolves.toEqual({ invitation: { id: invitationId, status: 'expired' } });
+    expect(harness.writes[0]).toMatchObject({
+      actorId: parentId,
+      familyId,
+      invitationId,
+      now: fixedNow,
+    });
+    expect(harness.events[0]).toMatchObject({
+      event_name: INVITATION_REVOKED_EVENT,
+      payload: { invitation_id: invitationId, email: 'second@example.com' },
     });
   });
 });

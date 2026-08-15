@@ -14,6 +14,9 @@ function parseApiInternalUrl(value) {
 const nextConfig = {
   output: 'standalone',
   transpilePackages: ['@familystar/shared'],
+  experimental: {
+    outputFileTracingRoot: new URL('../..', import.meta.url).pathname,
+  },
   async rewrites() {
     return [
       {
@@ -22,18 +25,6 @@ const nextConfig = {
       },
     ];
   },
-  ...(process.env.NODE_ENV === 'development'
-    ? {
-        experimental: {
-          allowedHosts: ['.monkeycode-ai.online'],
-          outputFileTracingRoot: new URL('../..', import.meta.url).pathname,
-        },
-      }
-    : {
-        experimental: {
-          outputFileTracingRoot: new URL('../..', import.meta.url).pathname,
-        },
-      }),
 };
 
 export default nextConfig;

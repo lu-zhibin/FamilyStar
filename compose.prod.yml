@@ -48,19 +48,37 @@ services:
     restart: unless-stopped
 
   migrate:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set IMAGE_TAG}-api
-    command: [pnpm, --filter, '@familystar/api', prisma:migrate:deploy]
-    environment: *backend-environment
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set immutable IMAGE_TAG}-api
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        case "$${IMAGE_TAG}" in
+          ''|latest|*[!A-Za-z0-9_.-]*) exit 64 ;;
+        esac
+        marker="/release-state/$${IMAGE_TAG}.migrated"
+        if [ "$${RUN_MIGRATIONS:-0}" = "1" ]; then
+          pnpm --filter '@familystar/api' prisma:migrate:deploy
+          touch "$${marker}"
+        else
+          test -f "$${marker}"
+        fi
+    environment:
+      <<: *backend-environment
+      IMAGE_TAG: ${IMAGE_TAG:?Set immutable IMAGE_TAG}
+      RUN_MIGRATIONS: '0'
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     networks: [internal]
+    volumes:
+      - release-state:/release-state
     restart: 'no'
 
   api:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set IMAGE_TAG}-api
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set immutable IMAGE_TAG}-api
     environment:
       <<: *backend-environment
       PORT: 3001
@@ -69,7 +87,7 @@ services:
     restart: unless-stopped
 
   worker:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set IMAGE_TAG}-worker
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set immutable IMAGE_TAG}-worker
     environment:
       <<: *backend-environment
       WORKER_PORT: 3002
@@ -82,7 +100,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set IMAGE_TAG}-web
+    image: ${FAMILYSTAR_IMAGE_REPOSITORY:?Set FAMILYSTAR_IMAGE_REPOSITORY}:${IMAGE_TAG:?Set immutable IMAGE_TAG}-web
     environment:
       API_INTERNAL_URL: http://api:3001
     depends_on:
@@ -100,3 +118,4 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  release-state:

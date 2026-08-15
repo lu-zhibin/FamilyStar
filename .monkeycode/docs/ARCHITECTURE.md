@@ -2,7 +2,7 @@
 
 ## 概述
 
-FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段已完成，家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
+FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打卡、积分、等级和奖励形成激励闭环。Phase 1 的 12 个阶段及真实运行缺陷修复任务 13、14、15 已完成，产品补全阶段 12 已交付 PWA 应用壳与离线打卡恢复。家庭身份、任务打卡、媒体审核、积分等级、奖励闭环、双端响应式页面、集中安全边界、后台运行时和自动化质量门禁均已实现。
 
 浏览器界面由 Next.js 14 App Router 提供。REST API 使用 Hono 并通过 `@hono/node-server` 运行在 Node.js 上。跨应用类型从 `@familystar/shared` 导入，减少 Web 与 API 之间的契约漂移。
 
@@ -29,7 +29,7 @@ FamilyStar 是面向有孩子家庭的成长管理 Web 应用，围绕任务打�
 | 后台运行时 | 独立 Worker、五类周期作业、Redis 调度锁、数据库运行记录、退避重试和健康端点 |
 | 容器运行时 | Web/API/Worker 多阶段镜像、PostgreSQL 16、Redis、迁移服务和双环境 Compose |
 | 凭证保险库 | Node.js Crypto AES-256-GCM、每记录数据密钥、版本化主密钥与 Prisma 重包裹适配器 |
-| 身份认证 | bcrypt.js cost 12、双家长邀请、孩子 PIN/密码、5 次失败锁定、10 次/15 分钟限流、Redis 滚动会话与主体撤销 |
+| 身份认证 | 家庭码统一入口、bcrypt.js cost 12、双家长邀请、孩子 PIN/密码、5 次失败锁定、10 次/15 分钟限流、Redis 滚动会话与主体撤销 |
 | 对象存储 | 已决定使用家庭级腾讯云 COS，任务 5 实现 |
 
 ## 项目结构
@@ -69,9 +69,20 @@ FamilyStar/
 - 位置：`apps/web/`
 - 入口：`app/layout.tsx`、`app/page.tsx`
 - 样式入口：`app/globals.css`、`tailwind.config.cjs`。
-- 职责：提供浏览器页面、元数据、品牌字体、视觉 Token、家长端九路由和孩子端六路由。
+- 职责：提供统一家庭登录入口、浏览器页面、元数据、品牌字体、视觉 Token、家长端九路由和孩子端六路由。
 - 当前依赖：React、Next.js、Tailwind CSS、Lucide React、`@familystar/shared`。
 - 响应式边界：mobile 小于 768px，tablet 为 768px 至 1024px，desktop 大于 1024px。
+- PWA 壳：`app/manifest.ts`、`app/offline/route.ts`、`public/sw.js` 与 `components/service-worker-registration.tsx` 提供安装清单、离线回退和生产安全上下文注册。
+- 离线打卡：`lib/check-in-submission.ts`、`offline-check-in-repository.ts` 与 `offline-check-in-runner.ts` 保存 TICK/TEXT 请求和媒体 Blob，并在身份确认后恢复提交。
+
+### PWA 与离线恢复
+
+- Service Worker 预缓存版本化根壳、离线页、manifest 与图标，只管理 `familystar-pwa-` 前缀缓存；导航采用 network-first 并在网络失败时返回 `/offline`。
+- 同源 `/_next/static/` 使用 cache-first，其余公开静态资源使用 stale-while-revalidate。缓存请求省略 Cookie，仅保留 `Accept`；API、认证、私有、跨源、授权、非 GET 请求及带 `private`、`no-store`、`Set-Cookie` 的响应绕过缓存。
+- 浏览器数据库 `familystar-offline` 当前版本为 2，包含 `check-in-queue` 与 `media-drafts`。普通记录保存原打卡幂等键；媒体记录保存 Blob、上传幂等键、打卡幂等键及已上传媒体 ID。
+- 每条记录绑定 `{ familyId, childId }` owner。页面仅展示当前 owner 数据，仓储的 claim、重试、删除和媒体更新再次校验 owner；v2 之前无 owner 的记录保持隔离。
+- 普通队列按 `createdAt + id` 串行 claim，使用 30 秒租约防止并发重放。网络和 5xx 回到 pending 并指数退避，401/403 暂停当前 runner，409 进入 conflict，其余 4xx 进入 business-failed；终态记录等待用户重试或删除。
+- 媒体草稿保持 awaiting-confirmation，用户明确确认后依次上传。已完成媒体 ID 与稳定幂等键支持中断恢复，全部媒体就绪后提交打卡并清除本地草稿。
 
 ### API 应用
 
@@ -79,7 +90,7 @@ FamilyStar/
 - 应用入口：`src/app.ts`
 - 进程入口：`src/server.ts`
 - 职责：定义 Hono 应用并通过 Node.js HTTP 服务器启动。
-- 当前端点：服务信息、健康检查、家庭认证与设置、孩子本人密码修改、任务、单人/协作打卡、媒体、提交审核、等级、奖励、兑换和愿望。
+- 当前端点：服务信息、健康检查、家庭认证与设置、家庭模块、孩子主题与密码修改、任务、单人/协作打卡、媒体、提交审核、等级、奖励、兑换和愿望。
 - 启动配置：`src/config/environment.ts` 在监听端口前校验环境变量。
 - 请求基础：`src/http/` 提供请求 ID、JSON 日志和统一响应构造器。
 - 数据定义：`prisma/schema.prisma` 提供 PostgreSQL 核心实体、关系、索引和 Prisma Client 契约。
@@ -90,13 +101,15 @@ FamilyStar/
 - 审核历史：`20260731110000_add_submission_reviews` 追加 attempt 级审核记录、人工/超时来源、来源审核人一致性、目标一致性、拒绝原因和幂等保护。
 - 协作奖励：`20260731120000_add_collaboration_awards` 为参与者追加实得积分和 Streak 倍率快照，并约束两列同时为空或同时为正。
 - 奖励闭环：`20260731130000_add_reward_redemption_wish_guards` 追加兑换请求指纹、愿望终态时间、状态一致性约束、频次索引和兑换退款唯一索引。
+- 家庭码升级：`20260801130000_migrate_family_codes_to_six_digits` 在独占表锁和事务内为全部历史家庭重新分配唯一 6 位数字码，将字段收紧为 `VARCHAR(6)` 并以 CHECK 保护格式；家庭数超过 100 万时迁移终止。
 - Redis 基础：`src/infrastructure/redis/` 提供客户端工厂、生命周期、键空间和原子命令封装。
 - 事件基础：`src/events/` 提供 manifest 绑定 EventBus、事务 Outbox 端口、Prisma 仓储、分发器和幂等消费者。
 - 插件组合：进程监听前调用 `initializeBusinessModules()`，按静态依赖拓扑注册五个模块。
 - 家长认证：`src/family-auth/` 提供默认数据、密码策略、领域服务、Prisma 仓储、Redis 会话和 Hono 路由。
-- 家庭设置：`src/family-settings/` 提供规则规范化、家长权限、JSONB 仓储和 Hono 路由。
+- 家庭设置：`src/family-settings/` 提供规则规范化、模块目录与依赖校验、家长权限、JSONB 仓储和 Hono 路由。
+- 孩子主题：`src/themes/` 提供固定主题目录、等级解锁、孩子会话隔离、选择持久化和 Hono 路由。
 - 任务领域：`src/tasks/` 提供家庭任务类型、任务与分配、频率计算、协作调度、Prisma 仓储和 Hono 路由。
-- 提交审核：`src/check-ins/review-*` 提供家长审核、单批超时审核、Redis owner-lock、Prisma 事务仓储和 Hono 路由。
+- 提交审核：`src/check-ins/review-*` 提供家庭待审队列、家长审核、单批超时审核、Redis owner-lock、Prisma 事务仓储和 Hono 路由。
 - 等级领域：`src/levels/` 提供累计积分等级派生、只升不降读取、当前权益与下级进度，以及孩子本人和家长家庭范围 HTTP 路由。
 - 奖励领域：`src/rewards/` 提供奖励 CRUD、资格和库存、幂等兑换预扣、审批兑现退款、愿望槽位与采纳，以及家长和孩子角色路由。
 
@@ -110,6 +123,11 @@ FamilyStar/
 
 ### 家长认证与家庭初始化
 
+- 根路径提供家长与孩子共用入口；家长可登录或创建家庭，孩子通过 6 位数字家庭码查询活动档案并使用 PIN 登录。
+- 每个家庭持有全局唯一的 6 位数字家庭码；升级迁移为全部历史家庭重新分配新码并使旧码失效，新家庭使用加密随机源生成，数据库唯一索引和有限重试处理创建冲突。
+- `GET /api/v1/auth/session` 返回有效会话角色和家庭码，Web 据此将家长和孩子分别送入 `/dashboard` 与 `/child`。
+- 家长和孩子门户在 Next.js 服务端读取同一会话接口并校验角色；Cookie 缺失、会话失效或角色不匹配时，在渲染业务页面前跳转到统一入口或正确门户。
+- `POST /api/v1/auth/logout` 删除当前 Redis 会话令牌并清除 Cookie；双端退出成功后同步清理浏览器身份提示。
 - 注册先规范化邮箱、验证至少 12 字符及 bcrypt 72 字节边界，再使用 cost 12 生成密码哈希。
 - Prisma 仓储在单个事务中创建家庭、创建者、创建者关联、5 种家庭任务类型和 20 级配置。
 - 浏览器 IANA 时区通过 `Intl.DateTimeFormat` 验证，无效或缺失值回退为 `Asia/Shanghai`。
@@ -134,17 +152,34 @@ FamilyStar/
 - 读取时将历史空对象或缺失字段与当前默认值合并；更新时保存完整规范形态并保留家庭播报等无关 JSON 字段。
 - `Family.settings` 继续使用现有 JSONB 列，任务 3.5 未增加数据库结构迁移。
 
+### 家庭模块设置
+
+- `@familystar/shared` 定义 5 个始终启用的核心模块、6 个默认启用的可选模块及其依赖拓扑；API 和 Web 消费同一只读模型。
+- 模块状态保存在 `Family.settings.modules`，`Family.settingsVersion` 为读取模型和 PATCH 提供乐观并发版本；迁移为历史家庭补齐对象并增加非负版本约束。
+- 家长和孩子均可读取当前家庭模块；只有 `Family.createdById` 对应的家庭创建者可修改可选模块。启用时要求依赖已启用，关闭时要求已启用依赖方先关闭。
+- 关闭模块只改变设置。安全中间件按会话家庭拒绝被关闭模块的受保护 API，双端 Shell 过滤对应导航并为直接访问展示数据保留提示。
+
+### 孩子主题
+
+- `@familystar/shared` 提供 `starlight`、`ocean`、`forest` 和 `sunset` 固定目录，分别从等级 1、3、5、8 解锁，并只公开 5 个受控 CSS 颜色 Token。
+- `User.selectedTheme` 保存孩子选择并默认 `starlight`；主题仓储同时限定会话家庭、孩子主体、`CHILD` 角色、活动状态和最低等级。
+- 孩子 Shell 读取服务端权威目录并在根容器应用已选择主题。Web 只接受与共享目录完全匹配的 Token，选择成功后通过浏览器事件即时更新当前 Shell。
+
 ### 任务与周期调度
 
 - 家长会话可管理家庭任务类型与任务；所有查询和写入由服务端会话确定家庭边界。
 - 预设任务类型允许覆盖名称、图标、排序和默认验收方式；自定义类型使用软删除，预设类型及有关联活动任务的类型受删除保护。
 - 任务支持单人或协作模式、五种打卡方式、自动或人工验收、提交说明、基础积分及 ACTIVE、INACTIVE、ARCHIVED 状态。
 - 分配层支持逐孩积分、频率、打卡方式、验收方式和日期范围覆盖；协作任务至少保留两名不同孩子。
+- 家长编辑任务普通字段时保持既有 assignments；空任务说明和提交说明通过显式 `null` 清空。
+- 孩子本人任务查询以会话中的 `familyId` 与 `subjectId` 为唯一身份边界，只读取当前孩子的活动分配，再按请求自然日期应用分配范围、任务频率和逐孩频率覆盖。
+- 孩子任务视图返回有效积分、频率、打卡方式和验收方式，以及打卡提交所需的 assignment ID；家庭 ID 和孩子 ID 不进入响应。
 - 频率使用 daily、weekly_count、weekdays 和 date_range 判别联合；每周以周一开始，家庭截止时间转换为 UTC，补打卡窗口按家庭天数计算。
 - 协作调度为每个到期日期生成参与者和奖励积分快照；日期派生 round number 与数据库 `(task_id, round_number)` 唯一约束共同保证重复调度幂等。
 
 ### 提交审核
 
+- 家长通过家庭范围队列读取单人打卡与协作提交的当前 `PENDING` 聚合。队列附带任务、孩子、最新 attempt 内容、媒体摘要和提交时间，合并后按提交时间稳定排序并限制为 100 条。
 - 家长可对单人打卡和协作提交执行 `APPROVED` 或 `REJECTED` 决策，并按提交聚合读取按审核时间升序排列的历史。
 - 拒绝决策要求去除首尾空白后仍有内容的原因；HTTP 请求使用最长 128 字符的 `Idempotency-Key`。
 - 服务先检查家庭级幂等记录，再获取目标级 10 秒 Redis owner-lock，获取锁后复查幂等记录。
@@ -153,6 +188,7 @@ FamilyStar/
 - 超时单批执行器读取有限候选，按每条候选所属家庭的 `reviewTimeoutHours` 和最新 attempt `submittedAt` 判断到期；值为 0 时跳过自动审核，默认值为 48 小时。
 - 到期候选使用与家长审核相同的目标锁，事务内再次核对 latest attempt 和 `PENDING` 状态；锁竞争、家长抢先审核、重复执行和唯一冲突均安全跳过。
 - API 与 Worker 共享可复用的 `submissionReviewTimeoutBatch`；Worker 按分钟运行键负责周期调用。
+- 家长审核页在写入成功后重新读取服务端权威队列；写入失败时保留当前记录，写入成功但刷新失败时提示重新确认服务端状态。
 
 ### 数据层
 
@@ -220,7 +256,7 @@ FamilyStar/
 - 位置：`packages/shared/`
 - 公开入口：`src/index.ts`
 - 职责：维护 Web、API、Worker 和业务模块都需要的稳定 TypeScript 契约。
-- 当前类型：媒体、服务信息、健康状态、错误码、统一 API 响应、插件 manifest 和版本化领域事件契约。
+- 当前类型：媒体、服务信息、健康状态、错误码、统一 API 响应、家庭模块目录、主题目录、插件 manifest 和版本化领域事件契约。
 - 当前运行时契约：错误码、PluginRegistry 以及事件名解析和不可变事件信封创建器。
 
 ### 插件内核
@@ -239,7 +275,7 @@ FamilyStar/
 - 每个模块仅从 `@familystar/shared` 导入插件公开契约，并通过自身 package 入口导出冻结 manifest 与插件。
 - 聚合包 `@familystar/business-modules` 固定 `tasks → check-in → points → levels → rewards` 注册顺序，依赖位于使用方之前。
 - 发布与订阅事件全部采用版本化命名；静态清单内的每个订阅事件均存在声明发布方。
-- `MODULE_TOGGLE_PLACEHOLDERS` 为五个模块提供 `enabled: true`、`readOnly: true` 和 `coming-soon` 元数据，不参与运行时装载决策。
+- 静态插件清单继续决定进程启动时的代码装载；家庭模块设置在请求授权和 Web 可见性层控制可选业务能力，不执行运行时热卸载。
 
 ### 事件基础设施
 
@@ -256,6 +292,9 @@ FamilyStar/
 ```mermaid
 flowchart LR
     Browser["浏览器"] --> Web["Next.js Web"]
+    Browser --> ServiceWorker["Service Worker"]
+    ServiceWorker --> CacheStorage["公开应用壳缓存"]
+    Browser --> IndexedDB["IndexedDB 离线队列"]
     Web -->|"同源 /api rewrite"| API["Hono API"]
     Web --> Shared["共享类型包"]
     Node["Node HTTP Server"] --> API["Hono API"]
@@ -307,7 +346,7 @@ API 进程在监听端口前同步完成模块清单注册，非法 manifest、�
 
 根级 `pnpm build` 使用递归 workspace 构建。共享类型先生成 JavaScript 与声明文件，五个模块包随后生成独立 `dist/`，聚合包完成后 API 和 Web 消费其导出。应用构建产物分别位于 `apps/api/dist/` 和 `apps/web/.next/`，Web 同时生成 standalone 运行目录。
 
-根级多阶段 `Dockerfile` 使用锁文件安装依赖并复用 BuildKit pnpm 缓存，构建后分别输出 `web`、`api` 和 `worker` 非 root 目标。开发 Compose 可本地构建三类镜像；生产 Compose 要求显式镜像仓库和不可变 `IMAGE_TAG`。
+根级多阶段 `Dockerfile` 使用锁文件安装依赖并复用 BuildKit pnpm 缓存，构建后分别输出 `web`、`api` 和 `worker` 非 root 目标。Web target 同时复制 standalone、`.next/static` 和 `apps/web/public`，确保 Service Worker、缓存策略模块和 PWA 图标进入运行镜像。开发 Compose 可本地构建三类镜像；生产 Compose 要求显式镜像仓库和不可变 `IMAGE_TAG`。
 
 根级 `tsconfig.base.json` 启用 strict、索引访问检查、精确可选属性、override 检查和 switch fallthrough 检查。`pnpm lint` 对源码执行零警告 ESLint 门禁，`pnpm format:check` 验证 Prettier 格式。
 
@@ -348,12 +387,14 @@ flowchart LR
 - API 当前直接监听 `3001`，公开路由使用 `/api/v1` 前缀。
 - Web 当前监听 Next.js 默认端口 `3000`，通过 `API_INTERNAL_URL` 将同源 `/api` 转发至 Hono。
 - 数据模型和迁移历史已就绪，事件基础设施提供可注入 Prisma Client 的适配器，API 组合根已实例化惰性 Prisma 与 Redis 认证适配器。
-- Docker 配置已建立 PostgreSQL 16 与 Redis 运行组合；当前 Agent 环境缺少 Docker CLI，容器启动和真实迁移执行仍需在具备 Docker 的运行环境验证。
-- 家长注册登录、双家长邀请、孩子档案、认证保护、会话撤销、家庭设置、家庭集成、任务、打卡、媒体和家长审核 API 已接入。
+- Docker 配置已建立 PostgreSQL 16 与 Redis 运行组合；Web target 的 PWA public 资产装配已由容器契约和 `i56-web` 真实 Chromium 验证。
+- 家长注册登录、双家长邀请、孩子档案、认证保护、会话撤销、家庭设置、家庭模块、孩子主题、家庭集成、任务、打卡、媒体和家长审核 API 已接入。
 - 家庭邮件与 COS 配置支持读取、创建者维护、删除及验证端口；运行组合未提供外部连接 verifier 时，测试接口返回安全的 `503`。
 - Prisma Schema、迁移 SQL、容器契约和启动依赖顺序已静态验证；并发与失败回滚已通过状态型聚合套件验证。真实 PostgreSQL 行锁、约束和 Redis 服务端竞争由具备对应服务的 CI 或部署节点继续验证。
 - 静态 PluginRegistry、EventBus、Outbox、五个插件 manifest、API 和 Worker 启动组合已就绪；任务、打卡、审核超时、动态 Streak、单人/协作积分、等级和奖励领域行为已完成。
 - 当前错误映射测试覆盖 404 与未处理异常；后续业务错误按新增领域路由扩展。
-- `experimental.allowedHosts` 仅在开发模式注入以满足平台域名配置要求；Next.js 14 开发服务器会输出未识别配置警告。
-- 孩子端实时读取等级、奖励、兑换、愿望和账号切换目标；今日任务、积分流水、排行、徽章与成长记录聚合缺少读取接口时显示明确演示或受限状态。
+- Next.js 14 配置保留受支持的 `outputFileTracingRoot` 和同源 API rewrite；本地预览通过平台内置端口预览能力访问。
+- 双端按家庭模块读取模型过滤导航并保护直接路由；孩子端实时读取并应用本人等级主题。
+- 生产安全上下文中的受支持浏览器注册同源模块 Service Worker；开发环境保持直接网络行为。离线写入仅覆盖单人 TICK/TEXT 与 PHOTO/VIDEO/MIXED 草稿，协作提交仍使用在线周期入口。
+- `i56-web` 已完成真实 Chromium 验证；PWA public 资产由 Web 容器显式装配。
 - Playwright 使用同源 API 路由模拟覆盖家长端 9 页、孩子端 6 页、角色门禁、核心写入、PIN 锁定、COS multipart、兑换和退款；后端 HTTP 集成套件承担完整业务闭环验证。

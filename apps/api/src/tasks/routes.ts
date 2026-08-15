@@ -14,12 +14,14 @@ import {
   TaskTypeSessionRequiredError,
 } from './task-type-service.js';
 import {
+  ChildTaskSessionRequiredError,
   InvalidTaskError,
   TaskNotFoundError,
   TaskSessionRequiredError,
   TaskStateConflictError,
 } from './task-service.js';
 import type {
+  ChildTaskRecord,
   TaskAssignmentInput,
   TaskCreateInput,
   TaskFrequency,
@@ -81,7 +83,14 @@ const taskInput = z
     assignments: z.array(assignmentSchema).min(1),
   })
   .strict();
-const taskPatch = taskInput.partial().refine((value) => Object.keys(value).length > 0);
+const taskPatch = taskInput
+  .extend({
+    description: z.string().trim().min(1).nullable().optional(),
+    submission_guide: z.string().trim().min(1).nullable().optional(),
+  })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0);
+const childTaskDate = z.string().date();
 
 async function readJson(context: Context<AppEnvironment>): Promise<unknown> {
   try {
@@ -157,6 +166,12 @@ function mapError(context: Context<AppEnvironment>, error: unknown) {
     );
   }
   if (error instanceof TaskSessionRequiredError) {
+    return context.json(
+      createErrorResponse(ERROR_CODES.UNAUTHORIZED, error.message, requestId),
+      401,
+    );
+  }
+  if (error instanceof ChildTaskSessionRequiredError) {
     return context.json(
       createErrorResponse(ERROR_CODES.UNAUTHORIZED, error.message, requestId),
       401,
@@ -271,6 +286,55 @@ function outputTask(value: TaskRecord) {
   };
 }
 
+function outputChildTask(value: ChildTaskRecord) {
+  return {
+    task_id: value.taskId,
+    task_assignment_id: value.taskAssignmentId,
+    name: value.name,
+    description: value.description,
+    submission_guide: value.submissionGuide,
+    collaboration_mode: value.collaborationMode,
+    frequency: outputFrequency(value.frequency),
+    points: value.points,
+    check_type: value.checkType,
+    verify_mode: value.verifyMode,
+    start_date: value.startDate,
+    end_date: value.endDate,
+    ...(value.collaborationRound === undefined
+      ? {}
+      : {
+          collaboration_round:
+            value.collaborationRound === null
+              ? null
+              : {
+                  id: value.collaborationRound.id,
+                  status: value.collaborationRound.status,
+                  start_date: value.collaborationRound.startDate,
+                  end_date: value.collaborationRound.endDate,
+                  participant_count: value.collaborationRound.participants.length,
+                  approved_count: value.collaborationRound.participants.filter(
+                    ({ submissionStatus }) => submissionStatus === 'APPROVED',
+                  ).length,
+                  participants: value.collaborationRound.participants.map((participant) => ({
+                    nickname: participant.nickname,
+                    is_me: participant.isCurrentChild,
+                    submission_status: participant.submissionStatus,
+                  })),
+                  my_submission:
+                    value.collaborationRound.mySubmission === null
+                      ? null
+                      : {
+                          id: value.collaborationRound.mySubmission.id,
+                          status: value.collaborationRound.mySubmission.status,
+                          submitted_at:
+                            value.collaborationRound.mySubmission.submittedAt.toISOString(),
+                          review_comment: value.collaborationRound.mySubmission.reviewComment,
+                        },
+                },
+        }),
+  };
+}
+
 export function registerTaskTypeRoutes(
   api: Hono<AppEnvironment>,
   operations: TaskTypeOperations,
@@ -378,6 +442,37 @@ export function registerTaskRoutes(
   operations: TaskOperations,
   secureCookies: boolean,
 ): void {
+  api.get('/tasks/me', async (context) => {
+    const parsedDate = childTaskDate.safeParse(
+      context.req.query('date') ?? new Date().toISOString().slice(0, 10),
+    );
+    if (!parsedDate.success) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.INVALID_REQUEST,
+          'Invalid task date.',
+          context.get('requestId'),
+        ),
+        400,
+      );
+    }
+    try {
+      const result = await operations.listMine({
+        ...sessionInput(context),
+        date: parsedDate.data,
+      });
+      renew(context, secureCookies);
+      return context.json(
+        createSuccessResponse(
+          { date: result.date, tasks: result.tasks.map(outputChildTask) },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
   api.get('/family/tasks', async (context) => {
     try {
       const result = await operations.list(sessionInput(context));

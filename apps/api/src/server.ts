@@ -40,6 +40,24 @@ import { RewardService } from './rewards/service.js';
 import { PrismaAuditWriter } from './security/audit.js';
 import { IntegrationSettingsService } from './infrastructure/credentials/integration-service.js';
 import { PrismaIntegrationSettingsRepository } from './infrastructure/credentials/integration-prisma-repository.js';
+import { PrismaPointsReadRepository } from './points/prisma-repository.js';
+import { PointsReadService } from './points/service.js';
+import { PrismaHistoryRepository } from './check-ins/history-prisma-repository.js';
+import { HistoryService } from './check-ins/history-service.js';
+import { PrismaMediaAccessRepository } from './media/access-prisma-repository.js';
+import { MediaAccessService } from './media/access-service.js';
+import { PrismaBadgeRepository } from './badges/prisma-repository.js';
+import { BadgeService } from './badges/service.js';
+import { PrismaDashboardRepository } from './dashboard/prisma-repository.js';
+import { DashboardService } from './dashboard/service.js';
+import { PrismaAnalyticsRepository } from './analytics/prisma-repository.js';
+import { AnalyticsService } from './analytics/service.js';
+import { PrismaGrowthRecordRepository } from './growth-records/prisma-repository.js';
+import { GrowthRecordService } from './growth-records/service.js';
+import { PrismaNotificationRepository } from './notifications/prisma-repository.js';
+import { NotificationService } from './notifications/service.js';
+import { PrismaThemeRepository } from './themes/prisma-repository.js';
+import { ThemeService } from './themes/service.js';
 
 const environment = parseEnvironment(process.env);
 const credentialVault = initializeCredentialVault(environment);
@@ -55,6 +73,11 @@ const redisCommands: RedisCommandPort = {
 const familyAuthRepository = new PrismaFamilyAuthRepository(prisma);
 const redisKeyspace = createRedisKeyspace(environment.REDIS_KEY_PREFIX);
 const sessionStore = new RedisSessionStore(redisCommands, redisKeyspace);
+const cosClient = new TencentCosClient();
+const cosConnectionProvider = new PrismaCosConnectionProvider(
+  new PrismaCredentialVaultRepository(prisma),
+  credentialVault,
+);
 const integrationSettingsOperations = new IntegrationSettingsService(
   new PrismaIntegrationSettingsRepository(prisma),
   sessionStore,
@@ -94,13 +117,46 @@ const taskOperations = new TaskService({
 const mediaOperations = new MediaService({
   repository: new PrismaMediaRepository(prisma),
   sessions: sessionStore,
-  connections: new PrismaCosConnectionProvider(
-    new PrismaCredentialVaultRepository(prisma),
-    credentialVault,
-  ),
-  cos: new TencentCosClient(),
+  connections: cosConnectionProvider,
+  cos: cosClient,
+});
+const mediaAccessOperations = new MediaAccessService({
+  repository: new PrismaMediaAccessRepository(prisma),
+  sessions: sessionStore,
+  connections: cosConnectionProvider,
+  cos: cosClient,
 });
 const pointsTransactionWriter = new PrismaPointsTransactionWriter(prisma, new PrismaOutboxWriter());
+const pointsReadOperations = new PointsReadService({
+  repository: new PrismaPointsReadRepository(prisma),
+  sessions: sessionStore,
+});
+const historyOperations = new HistoryService({
+  repository: new PrismaHistoryRepository(prisma),
+  sessions: sessionStore,
+});
+const badgeRepository = new PrismaBadgeRepository(prisma);
+const badgeOperations = new BadgeService({ repository: badgeRepository, sessions: sessionStore });
+const dashboardOperations = new DashboardService({
+  repository: new PrismaDashboardRepository(prisma, badgeRepository),
+  sessions: sessionStore,
+});
+const analyticsOperations = new AnalyticsService({
+  repository: new PrismaAnalyticsRepository(prisma),
+  sessions: sessionStore,
+});
+const growthRecordOperations = new GrowthRecordService({
+  repository: new PrismaGrowthRecordRepository(prisma),
+  sessions: sessionStore,
+});
+const notificationOperations = new NotificationService({
+  repository: new PrismaNotificationRepository(prisma),
+  sessions: sessionStore,
+});
+const themeOperations = new ThemeService({
+  repository: new PrismaThemeRepository(prisma),
+  sessions: sessionStore,
+});
 const levelOperations = new LevelService({
   repository: new PrismaLevelRepository(prisma),
   sessions: sessionStore,
@@ -134,6 +190,7 @@ const app = createApp({
   invitationService,
   childAccountService,
   familySettingsService,
+  familyModuleStatus: familySettingsService,
   taskTypeOperations,
   taskOperations,
   mediaOperations,
@@ -144,6 +201,15 @@ const app = createApp({
   sessionStore,
   auditWriter: new PrismaAuditWriter(prisma),
   integrationSettingsOperations,
+  pointsReadOperations,
+  historyOperations,
+  mediaAccessOperations,
+  dashboardOperations,
+  badgeOperations,
+  analyticsOperations,
+  growthRecordOperations,
+  notificationOperations,
+  themeOperations,
   secureCookies: environment.NODE_ENV === 'production',
 });
 

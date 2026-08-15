@@ -37,6 +37,8 @@ import type {
   FamilyInvitationRepository,
   InvitationCreation,
   ParentIdentity,
+  RefreshInvitationInput,
+  RevokeInvitationInput,
 } from './family-auth/types.js';
 import { createRedisKeyspace } from './infrastructure/redis/keys.js';
 import type { RedisCommandPort } from './infrastructure/redis/primitives.js';
@@ -46,6 +48,7 @@ const PARENT_PASSWORD = 'parent-pass-123';
 
 type FamilyRecord = {
   id: string;
+  familyCode: string;
   name: string;
   createdById: string;
   settings: Record<string, unknown>;
@@ -61,7 +64,7 @@ type InvitationRecord = {
   email: string;
   tokenHash: string;
   expiresAt: Date;
-  status: 'pending' | 'accepted';
+  status: 'pending' | 'accepted' | 'expired';
 };
 
 type ChildRecord = ChildIdentity & { deletedAt: Date | null };
@@ -167,6 +170,10 @@ class MemoryFamilyStore
     return parent ? this.parentIdentity(parent) : null;
   }
 
+  async findActiveFamilyCodeById(familyId: string): Promise<string | null> {
+    return this.state.families.find((family) => family.id === familyId)?.familyCode ?? null;
+  }
+
   async createFamilyWithParent(input: FamilyInitialization): Promise<ParentIdentity> {
     return this.run(async (transaction) => {
       if (
@@ -181,6 +188,7 @@ class MemoryFamilyStore
       const parent: ParentRecord = {
         id: parentId,
         familyId,
+        familyCode: input.familyCode,
         nickname: input.nickname,
         email: input.email,
         passwordHash: input.passwordHash,
@@ -188,6 +196,7 @@ class MemoryFamilyStore
       };
       transaction.families.push({
         id: familyId,
+        familyCode: input.familyCode,
         name: input.familyName,
         createdById: parentId,
         settings: structuredClone(input.settings),
@@ -254,10 +263,54 @@ class MemoryFamilyStore
     };
   }
 
+  async refresh(
+    transaction: FamilyAuthState,
+    input: RefreshInvitationInput,
+  ): Promise<InvitationCreation> {
+    const family = transaction.families.find((candidate) => candidate.id === input.familyId);
+    if (!family || family.createdById !== input.actorId) {
+      throw new InvitationCreatorRequiredError();
+    }
+    const invitation = transaction.invitations.find(
+      (candidate) => candidate.id === input.invitationId && candidate.familyId === input.familyId,
+    );
+    if (!invitation || invitation.status !== 'pending') throw new InvitationUnavailableError();
+    if (invitation.expiresAt <= input.now) throw new InvitationExpiredError();
+    invitation.tokenHash = input.tokenHash;
+    invitation.expiresAt = new Date(input.expiresAt);
+    invitation.invitedById = input.actorId;
+    return {
+      invitation: {
+        id: invitation.id,
+        familyId: invitation.familyId,
+        invitedById: invitation.invitedById,
+        email: invitation.email,
+        expiresAt: new Date(invitation.expiresAt),
+      },
+      emailConfigured: family.emailConfigured,
+    };
+  }
+
+  async revoke(
+    transaction: FamilyAuthState,
+    input: RevokeInvitationInput,
+  ): Promise<{ id: string; email: string }> {
+    const family = transaction.families.find((candidate) => candidate.id === input.familyId);
+    if (!family || family.createdById !== input.actorId) {
+      throw new InvitationCreatorRequiredError();
+    }
+    const invitation = transaction.invitations.find(
+      (candidate) => candidate.id === input.invitationId && candidate.familyId === input.familyId,
+    );
+    if (!invitation || invitation.status === 'accepted') throw new InvitationUnavailableError();
+    invitation.status = 'expired';
+    return { id: invitation.id, email: invitation.email };
+  }
+
   async accept(
     transaction: FamilyAuthState,
     input: AcceptInvitationInput,
-  ): Promise<ParentIdentity> {
+  ): Promise<ParentIdentity & { invitationId: string }> {
     const invitation = transaction.invitations.find(
       (candidate) => candidate.tokenHash === input.tokenHash,
     );
@@ -279,9 +332,12 @@ class MemoryFamilyStore
     ) {
       throw new ParentEmailConflictError();
     }
+    const family = transaction.families.find((candidate) => candidate.id === invitation.familyId);
+    if (!family) throw new InvitationUnavailableError();
     const parent: ParentRecord = {
       id: this.id(),
       familyId: invitation.familyId,
+      familyCode: family.familyCode,
       nickname: input.nickname,
       email: invitation.email,
       passwordHash: input.passwordHash,
@@ -289,13 +345,18 @@ class MemoryFamilyStore
     };
     transaction.parents.push(parent);
     invitation.status = 'accepted';
-    return this.parentIdentity(parent);
+    return { ...this.parentIdentity(parent), invitationId: invitation.id };
   }
 
   async listActiveChildren(familyId: string): Promise<ChildProfile[]> {
     return this.state.children
       .filter((child) => child.familyId === familyId && child.deletedAt === null)
       .map(publicChild);
+  }
+
+  async findActiveFamilyByCode(familyCode: string) {
+    const family = this.state.families.find((candidate) => candidate.familyCode === familyCode);
+    return family ? { id: family.id, name: family.name, familyCode: family.familyCode } : null;
   }
 
   async findActiveChild(familyId: string, childId: string): Promise<ChildIdentity | null> {
@@ -392,6 +453,7 @@ class MemoryFamilyStore
     return {
       id: parent.id,
       familyId: parent.familyId,
+      familyCode: parent.familyCode,
       nickname: parent.nickname,
       email: parent.email,
       passwordHash: parent.passwordHash,
@@ -518,11 +580,23 @@ describe('Phase 1 family authentication integration', () => {
 
     expect(created.delivery).toBe('email');
     expect(afterCreate.invitations).toHaveLength(1);
-    expect(afterCreate.outbox).toHaveLength(1);
+    expect(afterCreate.outbox).toHaveLength(2);
+    expect(afterCreate.outbox).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event_name: 'family.invitation.created.v1',
+          family_id: firstParent.parent.familyId,
+          actor_id: firstParent.parent.id,
+        }),
+        expect.objectContaining({
+          event_name: 'family.invitation.email-requested.v1',
+          correlation_id: 'stage-3-integration',
+        }),
+      ]),
+    );
     expect(afterCreate.outbox[0]).toMatchObject({
       family_id: firstParent.parent.familyId,
       actor_id: firstParent.parent.id,
-      correlation_id: 'stage-3-integration',
     });
     expect(afterCreate.invitations[0]?.tokenHash).toBe(
       createHash('sha256').update(invitationToken).digest('hex'),
@@ -537,6 +611,11 @@ describe('Phase 1 family authentication integration', () => {
     expect(accepted.parent.familyId).toBe(firstParent.parent.familyId);
     expect(afterAccept.parents).toHaveLength(2);
     expect(afterAccept.invitations[0]?.status).toBe('accepted');
+    expect(afterAccept.outbox).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ event_name: 'family.invitation.accepted.v1' }),
+      ]),
+    );
     await expect(sessions.read(accepted.sessionToken)).resolves.toMatchObject({
       subjectId: accepted.parent.id,
       familyId: firstParent.parent.familyId,

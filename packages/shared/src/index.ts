@@ -17,6 +17,22 @@ export {
   PluginRegistryError,
   validatePluginManifest,
 } from './plugins.js';
+export {
+  CORE_FAMILY_MODULE_IDS,
+  DEFAULT_OPTIONAL_FAMILY_MODULE_STATES,
+  FAMILY_MODULE_DEFINITIONS,
+  OPTIONAL_FAMILY_MODULE_IDS,
+} from './family-modules.js';
+export { DEFAULT_THEME_KEY, findTheme, THEME_CATALOG } from './themes.js';
+export type { ThemeDefinition, ThemeTokenName } from './themes.js';
+export type {
+  CoreFamilyModuleId,
+  FamilyModuleDefinition,
+  FamilyModuleId,
+  FamilyModulesReadModel,
+  FamilyModuleState,
+  OptionalFamilyModuleId,
+} from './family-modules.js';
 export type {
   Plugin,
   PluginManifest,
@@ -46,6 +62,11 @@ export type ServiceInfo = {
 export type ApiResponseMeta = {
   request_id: string;
   timestamp: string;
+};
+
+export type CursorPage = {
+  next_cursor: string | null;
+  has_more: boolean;
 };
 
 export type ApiSuccessResponse<T> = {

@@ -56,6 +56,19 @@ const switchSchema = z
   })
   .strict();
 
+const familyCode = z
+  .string()
+  .trim()
+  .pipe(z.string().regex(/^[0-9]{6}$/));
+const familyLookupSchema = z.object({ family_code: familyCode }).strict();
+const childLoginSchema = z
+  .object({
+    family_code: familyCode,
+    child_id: z.string().uuid(),
+    credential: z.string().min(1),
+  })
+  .strict();
+
 const passwordChangeSchema = z
   .object({
     current_password: z.string().min(1),
@@ -97,6 +110,20 @@ function attachSessionCookie(
     sameSite: 'Lax',
     secure,
   });
+}
+
+function publicLoginChild(child: {
+  id: string;
+  nickname: string;
+  grade: string | null;
+  avatarMediaId: string | null;
+}) {
+  return {
+    id: child.id,
+    nickname: child.nickname,
+    grade: child.grade,
+    avatar_media_id: child.avatarMediaId,
+  };
 }
 
 function mapError(context: Context<AppEnvironment>, error: unknown) {
@@ -257,6 +284,61 @@ export function registerChildAccountRoutes(
       const result = await service.listSwitchTargets(sessionInput(context));
       renewCurrentSession(context, secureCookies);
       return context.json(createSuccessResponse(result, context.get('requestId')));
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
+  api.post('/auth/child/family', async (context) => {
+    const parsed = familyLookupSchema.safeParse(await readJson(context));
+    if (!parsed.success) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.INVALID_REQUEST,
+          'Invalid family lookup request.',
+          context.get('requestId'),
+        ),
+        400,
+      );
+    }
+    try {
+      const result = await service.findFamily({ familyCode: parsed.data.family_code });
+      return context.json(
+        createSuccessResponse(
+          {
+            family: { name: result.family.name, family_code: result.family.familyCode },
+            children: result.children.map(publicLoginChild),
+          },
+          context.get('requestId'),
+        ),
+      );
+    } catch (error) {
+      return mapError(context, error);
+    }
+  });
+
+  api.post('/auth/child/login', async (context) => {
+    const parsed = childLoginSchema.safeParse(await readJson(context));
+    if (!parsed.success) {
+      return context.json(
+        createErrorResponse(
+          ERROR_CODES.INVALID_REQUEST,
+          'Invalid child login request.',
+          context.get('requestId'),
+        ),
+        400,
+      );
+    }
+    try {
+      const result = await service.login({
+        familyCode: parsed.data.family_code,
+        childId: parsed.data.child_id,
+        credential: parsed.data.credential,
+      });
+      attachSessionCookie(context, result.sessionToken, secureCookies);
+      return context.json(
+        createSuccessResponse({ child: publicLoginChild(result.child) }, context.get('requestId')),
+      );
     } catch (error) {
       return mapError(context, error);
     }

@@ -227,6 +227,7 @@ function fixture() {
           ? { subjectId: childId, familyId, role: 'child' as const, issuedAt: now.toISOString() }
           : null;
       },
+      async revoke() {},
       async revokeSubject() {},
     },
     now: () => now,

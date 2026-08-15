@@ -63,6 +63,22 @@
 
 使用规范化邮箱和密码登录家长账号。成功返回公开家长身份并设置新的 30 天会话 Cookie；凭据错误返回 `401 UNAUTHORIZED`。响应不包含密码哈希或会话令牌字段。
 
+### `GET /api/v1/auth/session`
+
+读取当前 `familystar_session` Cookie。有效会话返回 `role`、`subject_id`、`family_id` 和 `family_code`，同时刷新 Redis TTL 与 Cookie Max-Age；缺少或失效会话返回 `401 UNAUTHORIZED`。
+
+### `POST /api/v1/auth/logout`
+
+撤销当前 `familystar_session` 对应的单个 Redis 会话并清除 Cookie。接口允许家长或孩子会话调用，成功返回 `{ "logged_out": true }`；缺少或失效会话返回 `401 UNAUTHORIZED`，浏览器跨站写请求继续受精确 Origin 和 Fetch Metadata 保护。
+
+### `POST /api/v1/auth/child/family`
+
+接收严格的 `{ "family_code": "<6 位数字>" }` 请求，家庭码按字符串处理并保留前导零。成功返回家庭名称、家庭码和活动孩子公开档案；每个孩子只包含 `id`、`nickname`、`grade` 和 `avatar_media_id`。格式错误返回 `400 INVALID_REQUEST`，不可用家庭返回无差异的 `401 UNAUTHORIZED`。
+
+### `POST /api/v1/auth/child/login`
+
+接收 `family_code`、UUID `child_id` 和 `credential`。服务先解析活动家庭，再确认孩子归属并复用 PIN/密码校验、5 次失败锁定和 15 分钟 10 次限流；成功设置孩子 30 天会话 Cookie并返回公开孩子档案。
+
 ### `POST /api/v1/auth/parent/invitations`
 
 家庭创建者使用 `familystar_session` Cookie 邀请第二位家长。请求字段为 `email`。成功返回邀请 ID、规范化邮箱、7 天到期时间和 `delivery`。家庭邮件配置为 `VERIFIED` 时，`delivery` 为 `email` 且同事务写入邮件请求 Outbox 事件；其余状态返回 `copy-link` 和可复制 `invitationLink`。缺少会话返回 `401`，共同管理者返回 `403`，家庭已有两位家长或邮箱冲突返回 `409`。
@@ -95,6 +111,18 @@
 
 读取历史 `{}` 或缺字段记录时，服务补齐 `Asia/Shanghai`、`23:59`、3 天、48 小时、额度 0 和默认六档倍率。PATCH 保存完整 camelCase JSONB 形态，并保留未由该接口管理的现有字段。
 
+### 家庭模块接口
+
+`GET /api/v1/family/modules` 允许任意有效家长或孩子会话读取当前家庭模块模型。响应包含 `version` 和按共享目录排序的 `modules`；每项包含 `id`、`category`、`enabled`、`configurable` 与 `dependencies`。核心模块始终启用且不可配置，缺失的可选模块状态默认启用。
+
+`PATCH /api/v1/family/modules` 仅允许家长会话，请求严格包含非负 `version` 和至少一个可选模块布尔值。领域服务进一步要求操作者为家庭创建者，并以 `Family.settingsVersion` 执行条件更新。版本变化、缺失依赖或仍有启用依赖方时返回 `409 CONFLICT`，`details.reason` 分别为 `VERSION_CONFLICT`、`MISSING_DEPENDENCY` 或 `DEPENDENCY_IN_USE`；依赖项通过 `details.dependencies` 返回。
+
+### 孩子主题接口
+
+`GET /api/v1/themes` 仅允许孩子会话，返回 `current_level`、`selected_theme` 和完整主题目录。每个主题包含 `key`、`name`、`description`、`minimum_level`、受控 `tokens`、`unlocked` 与 `selected`。
+
+`PATCH /api/v1/themes/selection` 严格接收 `{ "theme_key": "<小写主题键>" }`。服务从孩子会话取得家庭与主体，按服务端 `currentLevel` 验证解锁后更新 `User.selectedTheme`。未知键返回 `400 INVALID_REQUEST`；锁定主题返回 `409 CONFLICT`，详情包含主题键、要求等级和当前等级；家长会话返回 `403 FORBIDDEN`。
+
 ### 任务类型接口
 
 `GET /api/v1/family/task-types`、`POST /api/v1/family/task-types`、`PATCH /api/v1/family/task-types/:taskTypeId` 和 `DELETE /api/v1/family/task-types/:taskTypeId` 提供家庭任务类型管理。预设副本可覆盖，自定义类型可软删除；预设删除和活动任务引用冲突返回 `409 CONFLICT`。
@@ -105,6 +133,16 @@
 
 任务请求包含 `task_type_id`、`name`、`check_type`、`frequency`、`base_points` 和 `assignments`，并可包含提交说明、验收方式和单人/协作模式。分配项可覆盖积分、频率、打卡方式和验收方式；协作模式至少要求两名不同孩子。
 
+Web 任务表单通过 `buildSoloTaskDraft()` 构造单人每日任务请求。可选 `description` 为空白时省略该字段；存在内容时先去除首尾空白，保持与 API 的“缺省或至少一个字符”Schema 一致。
+
+家长编辑表单通过 `buildTaskPatch()` 更新任务类型、名称、说明、打卡方式、验收方式和基础积分。PATCH 省略 `assignments` 时保留既有分配；`description` 与 `submission_guide` 接受 `null` 以显式清空可选文本。归档任务编辑返回 `409 CONFLICT`。
+
+### 孩子本人任务接口
+
+`GET /api/v1/tasks/me?date=YYYY-MM-DD` 要求孩子会话。`date` 可省略并默认使用服务端 UTC 自然日期；Web 显式发送浏览器本地自然日期。非法日期返回 `400 INVALID_REQUEST`，未认证请求返回 `401 UNAUTHORIZED`，家长会话返回 `403 FORBIDDEN`。
+
+服务端从会话获取家庭和孩子身份，只返回当前孩子在指定日期有效、任务状态为 `ACTIVE` 且频率到期的分配。成功数据包含请求 `date` 和 `tasks`；每项任务包含 `task_id`、`task_assignment_id`、名称、可空说明与提交说明、协作模式、有效频率、有效积分、有效打卡方式、有效验收方式及分配起止日期。响应不包含家庭 ID 或孩子 ID。
+
 ### 打卡接口
 
 `POST /api/v1/check-ins` 使用孩子会话提交单人打卡，请求头必须携带最多 128 字符的 `Idempotency-Key`。请求包含 `task_assignment_id`、可选 `check_date` 和 `content`；`content` 可包含最多 10000 字符文字与最多 10 个媒体 UUID。`GET /api/v1/check-ins/:id` 返回同家庭当前孩子可见的打卡及全部提交历史。
@@ -113,11 +151,13 @@
 
 ### 提交审核接口
 
+`GET /api/v1/family/submission-reviews/pending` 由家长读取当前家庭最多 100 条待审记录。服务合并当前状态仍为 `PENDING` 的单人打卡与协作提交，按 `submitted_at`、目标类型和目标 ID 稳定排序。每条记录包含 `target_type`、`target_id`、`attempt_id`、任务 `id/name`、孩子 `id/nickname`、最新 attempt 的 `content_text`、媒体 `id/type` 摘要和 `submitted_at`。空队列返回 `{ "reviews": [] }`。
+
 `POST /api/v1/check-ins/:id/reviews` 和 `POST /api/v1/collaboration-submissions/:id/reviews` 由家长审核单人或协作提交。两个接口要求有效家长 Cookie 和最长 128 字符的 `Idempotency-Key`，请求体严格包含 `status: "APPROVED" | "REJECTED"` 与可选 `reason`；reason 最长 2000 字符，拒绝时必须包含非空原因。
 
 `GET /api/v1/check-ins/:id/reviews` 和 `GET /api/v1/collaboration-submissions/:id/reviews` 由家长读取本家庭目标的审核历史，结果按 `reviewed_at` 升序返回。审核对象包含 `id`、`target_type`、`target_id`、`attempt_id`、`status`、`source`、`reason`、`reviewer_id` 和 `reviewed_at`。人工记录的 `source` 为 `PARENT` 且包含 reviewer，超时记录的 `source` 为 `TIMEOUT` 且 `reviewer_id` 为 `null`。
 
-成功审核返回 `200` 并续期会话 Cookie。缺少有效会话返回 `401 UNAUTHORIZED`，孩子会话返回 `403 FORBIDDEN`，非法请求返回 `400 INVALID_REQUEST`，审核写入中的不可见目标返回 `404 NOT_FOUND`，锁竞争、状态竞争或幂等键冲突返回 `409 CONFLICT`。同一家庭、同一幂等键和同一目标的重试返回既有审核记录；历史查询对无记录目标返回空数组。
+待审队列和成功审核返回 `200` 并续期会话 Cookie。缺少有效会话返回 `401 UNAUTHORIZED`，孩子会话返回 `403 FORBIDDEN`，非法请求返回 `400 INVALID_REQUEST`，审核写入中的不可见目标返回 `404 NOT_FOUND`，锁竞争、状态竞争或幂等键冲突返回 `409 CONFLICT`。同一家庭、同一幂等键和同一目标的重试返回既有审核记录；历史查询对无记录目标返回空数组。
 
 ### 等级接口
 
@@ -161,13 +201,23 @@
 
 ### `/`
 
-Next.js App Router 首页，展示 FamilyStar 视觉工程基础状态。根布局设置 `zh-CN` 文档语言、页面标题、描述以及 Fredoka/Nunito 字体变量；页面使用 FamilyStar Design Tokens、Lucide SVG 和 768px 响应式布局。
+Next.js App Router 首页提供统一家庭登录入口。页面先读取服务端有效会话并按角色进入 `/dashboard` 或 `/child`；未认证用户可在家长登录、创建家庭和孩子家庭码两步登录之间切换。页面使用 FamilyStar Design Tokens、Lucide SVG、可见键盘焦点和 320px 至 2560px 响应式布局。
 
 ### 家长端与孩子端
 
-家长端使用 `/dashboard`、`/tasks`、`/reviews`、`/rewards`、`/levels`、`/stats`、`/records`、`/family` 和 `/settings`。孩子端使用 `/child`、`/child/check-ins`、`/child/achievements`、`/child/rewards`、`/child/records` 和 `/child/profile`。两个动态路由均限制为固定白名单，未知 section 返回 Next.js 404。
+家长端使用 `/dashboard`、`/tasks`、`/reviews`、`/rewards`、`/levels`、`/stats`、`/records`、`/family` 和 `/settings`。孩子端使用 `/child`、`/child/check-ins`、`/child/achievements`、`/child/rewards`、`/child/records` 和 `/child/profile`。两个动态路由均限制为固定白名单，未知 section 返回 Next.js 404；Shell 依据 `/family/modules` 过滤可选入口，设置页提供创建者模块开关，孩子资料页提供等级主题目录。
 
-孩子端五项底部导航将“我的记录”归入“我的”激活状态。浏览器角色守卫阻止已知家长角色进入孩子端；后端写接口继续以 HttpOnly 会话角色和本人范围作为授权边界。
+孩子端五项底部导航将“我的记录”归入“我的”激活状态。家长和孩子动态路由在 Next.js 服务端调用会话接口校验角色，业务 API 继续以 HttpOnly 会话角色和本人范围作为授权边界；两个门户均提供当前会话退出入口。
+
+### PWA 浏览器接口
+
+`/manifest.webmanifest` 公开稳定应用 ID `/`、standalone 展示、主题色及 192px/512px 本地图标。`/offline` 返回自包含响应式 HTML；`/sw.js` 仅在 production、安全上下文且浏览器支持 Service Worker 时以同源 module worker 注册。
+
+Service Worker 将请求分类为 `navigation`、`cache-first`、`stale-while-revalidate` 或 `bypass`。API、auth、private、跨源、授权、非 GET 请求固定 bypass；公开缓存请求使用 `credentials: "omit"`，仅接受同源、200、非重定向且未声明 private/no-store、Set-Cookie 或 `Vary: *` 的响应。
+
+浏览器 IndexedDB `familystar-offline` v2 提供 `check-in-queue` 与 `media-drafts` 两个 object store。队列索引为 `intentId` 唯一索引及 `createdAt`、`status`；媒体索引为 `intentId`、`createdAt`、`status`、`taskId`、`queueId`。记录 owner 固定为 `{ familyId, childId }`，所有恢复和变更接口按双字段校验。
+
+`OfflineCheckInRepository` 提供 enqueue/list/claim/attempt/conflict/business-failed/completed/retry/delete，以及媒体 save/list/uploading/uploaded/failed/remove 操作。`OfflineCheckInRunner.run()` 合并并发调用并按稳定顺序重放；`confirmMediaDrafts()` 仅在用户确认后上传 Blob。完整状态与限制见 `专有概念/OfflineCheckInSync.md`。
 
 ## 共享类型
 
@@ -307,7 +357,7 @@ Prisma 6.19.2 使用 PostgreSQL datasource，生成 29 个模型。主要聚合�
 | `connectRedis()`、`disconnectRedis()` | 按客户端连接状态建立或销毁连接 |
 | `createRedisKeyspace()` | 创建 session、rate-limit、scheduler-lock、review-lock、idempotency 和 cache 隔离键 |
 | `RedisCommandPort` | 通过单一 `sendCommand()` 接口隔离 node-redis 与领域调用方 |
-| `writeSession()`、`readSession()`、`deleteSession()` | 管理带 TTL 的不透明会话值 |
+| `writeSession()`、`readSession()`、`deleteSession()` | 管理带 TTL 的不透明会话值与当前令牌撤销 |
 | `consumeRateLimit()` | 原子消费固定窗口限额并返回是否允许、已消费量、剩余量和重试秒数 |
 | `acquireLock()`、`releaseLock()` | 使用所有者令牌和毫秒 TTL 管理调度锁 |
 | `claimIdempotency()` | 使用带秒级 TTL 的原子占位标记首次消费 |
@@ -322,7 +372,11 @@ Prisma 6.19.2 使用 PostgreSQL datasource，生成 29 个模型。主要聚合�
 
 ## 家庭设置接口
 
-`apps/api/src/family-settings/` 公开内部 `FamilySettingsOperations` 与 `FamilySettingsRepository` 端口。`FamilySettingsService` 负责家长会话、默认合并和规则校验，`PrismaFamilySettingsRepository` 仅操作活动家庭的 `Family.settings` JSONB，HTTP 路由负责 snake_case 映射和 Cookie 续期。
+`apps/api/src/family-settings/` 公开内部 `FamilySettingsOperations`、`FamilySettingsRepository` 与 `FamilyModuleStatusPort` 契约。`FamilySettingsService` 负责设置默认合并、模块目录解析、创建者权限、依赖校验和版本冲突；`PrismaFamilySettingsRepository` 以 `settingsVersion` 条件更新活动家庭的 `Family.settings` JSONB，HTTP 路由负责 snake_case 映射和 Cookie 续期。
+
+## 主题领域接口
+
+`apps/api/src/themes/` 公开 `ThemeOperations`、`ThemeRepository`、`ThemeSubject` 与 `ThemeView`。`ThemeService` 使用孩子会话和共享 `THEME_CATALOG` 派生解锁与选中状态；`PrismaThemeRepository` 按家庭、孩子角色和活动状态读取，并在保存时再次以最低等级条件保护写入。
 
 ## 任务领域接口
 
@@ -448,11 +502,11 @@ Next.js 将浏览器发往 `/api/:path*` 的请求转发至 `${API_INTERNAL_URL}
 
 ## 后续接口边界
 
-当前家庭接口已覆盖家长、邀请、孩子账号、认证保护、家庭设置、任务、打卡、媒体、家长审核、等级、奖励、兑换和愿望。审核超时由内部单批执行器处理并由独立 Worker 周期调用；动态 Streak、统一发分、等级同步和兑换预扣退款已作为内部事务能力接入。
+当前家庭接口已覆盖家长、邀请、孩子账号、认证保护、家庭设置、家庭模块、孩子主题、任务、打卡、媒体、家长审核、等级、奖励、兑换和愿望。审核超时由内部单批执行器处理并由独立 Worker 周期调用；动态 Streak、统一发分、等级同步和兑换预扣退款已作为内部事务能力接入。
 
 ## 契约验证
 
-`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务。`pnpm test:integration` 运行 5 个 Phase 1 集成文件和 23 项核心闭环、并发回滚测试。`pnpm test:e2e` 运行 7 项 Playwright 浏览器测试，覆盖双端 15 个路由及关键交互。阶段 12 最终覆盖率运行共有 78 个测试文件、475 项测试通过。
+`pnpm test:unit` 验证共享响应契约、Hono 请求基础、基础设施、插件与事件组合及全部领域服务。阶段 12 新增 manifest、离线页、Service Worker 注册、缓存分类与运行策略、IndexedDB 仓储、owner 隔离、提交编排、顺序重放、409 权威状态、5xx 退避和媒体确认恢复测试；最终 `i56-web` 真实 Chromium 全部通过。`pnpm test:integration` 聚焦 Phase 1 核心闭环与并发回滚聚合，`pnpm test:e2e` 承担双端真实浏览器验证。
 
 ## 开发种子接口
 

@@ -1,6 +1,10 @@
 import { EventBus } from '../events/event-bus.js';
+import { IdempotentEventConsumer } from '../events/idempotent-consumer.js';
 import { OutboxDispatcher } from '../events/outbox.js';
 import { PrismaOutboxRepository } from '../events/prisma-outbox.js';
+import { RedisEventReceiptStore } from '../events/redis-event-receipts.js';
+import { CHECK_IN_APPROVED_EVENT } from '../check-ins/events.js';
+import { GrowthRecordEventConsumer } from '../growth-records/event-consumer.js';
 import { SubmissionReviewTimeoutService } from '../check-ins/review-timeout-service.js';
 import { PrismaSubmissionReviewRepository } from '../check-ins/review-prisma-repository.js';
 import { initializeCredentialVault } from '../infrastructure/credentials/runtime.js';
@@ -19,6 +23,13 @@ import { createWorkerJobs, PrismaWorkerJobsRepository } from './jobs.js';
 import { WorkerJobRunner } from './job-runner.js';
 import { PrismaWorkerJobRunRepository } from './prisma-job-run-repository.js';
 import { WorkerScheduler } from './scheduler.js';
+import { BadgeEventConsumer, BADGE_EVENT_NAMES } from '../badges/event-consumer.js';
+import { PrismaBadgeRepository } from '../badges/prisma-repository.js';
+import {
+  NotificationEventConsumer,
+  registerNotificationEventConsumer,
+} from '../notifications/event-consumer.js';
+import { PrismaNotificationRepository } from '../notifications/prisma-repository.js';
 
 export function createWorkerRuntime(input: {
   environment: AppEnvironment;
@@ -37,6 +48,54 @@ export function createWorkerRuntime(input: {
   const points = new PrismaPointsTransactionWriter(prisma);
   const credentialVault = initializeCredentialVault(environment);
   const cos = new TencentCosClient();
+  const eventBus = new EventBus();
+  const badgeEventConsumer = new BadgeEventConsumer(new PrismaBadgeRepository(prisma));
+  const growthRecordProjector = new GrowthRecordEventConsumer(prisma);
+  const notificationProjector = new NotificationEventConsumer(
+    new PrismaNotificationRepository(prisma),
+  );
+  const growthRecordConsumer = new IdempotentEventConsumer(
+    new RedisEventReceiptStore(redisCommands, keys),
+    async (event) => {
+      await growthRecordProjector.handle(event);
+    },
+    { consumer: 'growth-record-projector-v1', receiptTtlSeconds: 86_400 },
+  );
+  const badgeScope = eventBus.createScope({
+    name: 'badge-evaluator',
+    version: '1.0.0',
+    capabilities: ['badge-evaluation'],
+    dependencies: [],
+    permissions: [],
+    publishes: [],
+    subscribes: BADGE_EVENT_NAMES,
+  });
+  for (const eventName of BADGE_EVENT_NAMES) {
+    badgeScope.subscribe(eventName, async (event) => {
+      await badgeEventConsumer.handle(event);
+    });
+  }
+  const notificationConsumer = new IdempotentEventConsumer(
+    new RedisEventReceiptStore(redisCommands, keys),
+    async (event) => {
+      await notificationProjector.handle(event);
+    },
+    { consumer: 'notification-projector-v1', receiptTtlSeconds: 86_400 },
+  );
+  registerNotificationEventConsumer(eventBus, notificationConsumer);
+  eventBus
+    .createScope({
+      name: 'growth-record-projector',
+      version: '1.0.0',
+      capabilities: ['growth-record-projection'],
+      dependencies: [],
+      permissions: [],
+      publishes: [],
+      subscribes: [CHECK_IN_APPROVED_EVENT],
+    })
+    .subscribe(CHECK_IN_APPROVED_EVENT, async (event) => {
+      await growthRecordConsumer.consume(event);
+    });
   const jobs = createWorkerJobs({
     repository: new PrismaWorkerJobsRepository(prisma),
     collaborationScheduler: new CollaborationScheduler(
@@ -50,7 +109,7 @@ export function createWorkerRuntime(input: {
     }),
     outbox: new OutboxDispatcher(
       new PrismaOutboxRepository(prisma),
-      new EventBus().createOutboxPublisher(),
+      eventBus.createOutboxPublisher(),
       {
         workerId: input.workerId,
         batchSize: environment.WORKER_BATCH_SIZE,

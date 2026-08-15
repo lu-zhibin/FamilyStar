@@ -38,6 +38,32 @@ function operations(): ChildAccountOperations {
     async listSwitchTargets() {
       return { children: [child] };
     },
+    async findFamily(input) {
+      expect(input).toEqual({ familyCode: '123456' });
+      return {
+        family: { name: 'Star Family', familyCode: input.familyCode },
+        children: [
+          {
+            id: child.id,
+            nickname: child.nickname,
+            grade: child.grade,
+            avatarMediaId: child.avatarMediaId,
+          },
+        ],
+      };
+    },
+    async login(input) {
+      expect(input).toEqual({ familyCode: '123456', childId, credential: '1234' });
+      return {
+        child: {
+          id: child.id,
+          nickname: child.nickname,
+          grade: child.grade,
+          avatarMediaId: child.avatarMediaId,
+        },
+        sessionToken: 'public-child-session',
+      };
+    },
     async switchToChild(input) {
       expect(input).toEqual({
         sessionToken: 'parent-session',
@@ -106,6 +132,91 @@ describe('child account HTTP routes', () => {
     expect(response.headers.get('set-cookie')).toContain('familystar_session=child-session');
     expect(response.headers.get('set-cookie')).toContain('HttpOnly');
     expect(await response.json()).toMatchObject({ data: { child: { id: childId } } });
+  });
+
+  it('looks up a family and logs in a child without an existing session', async () => {
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      childAccountService: operations(),
+    });
+    const familyResponse = await app.request('/api/v1/auth/child/family', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: ' 123456 ' }),
+    });
+    expect(familyResponse.status).toBe(200);
+    const familyBody = await familyResponse.json();
+    expect(familyBody).toMatchObject({
+      data: {
+        family: { name: 'Star Family', family_code: '123456' },
+        children: [
+          {
+            id: childId,
+            nickname: 'Child',
+            grade: null,
+            avatar_media_id: null,
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(familyBody)).not.toContain('familyId');
+    expect(JSON.stringify(familyBody)).not.toContain('credentialType');
+
+    const loginResponse = await app.request('/api/v1/auth/child/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: '123456', child_id: childId, credential: '1234' }),
+    });
+    expect(loginResponse.status).toBe(200);
+    expect(loginResponse.headers.get('set-cookie')).toContain(
+      'familystar_session=public-child-session',
+    );
+  });
+
+  it('uses stable public failures for invalid family lookup and child credentials', async () => {
+    const childAccounts = operations();
+    childAccounts.findFamily = async () => {
+      throw new ChildAuthenticationError('Invalid family code or unavailable family.');
+    };
+    childAccounts.login = async () => {
+      throw new ChildAuthenticationError('Invalid child profile or credential.');
+    };
+    const app = createApp({
+      publicBaseUrl: 'http://localhost:3000',
+      childAccountService: childAccounts,
+    });
+    const malformed = await app.request('/api/v1/auth/child/family', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: 'bad' }),
+    });
+    const malformedLength = await app.request('/api/v1/auth/child/family', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: '1234567' }),
+    });
+    const malformedCharacters = await app.request('/api/v1/auth/child/family', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: '12A456' }),
+    });
+    const unavailable = await app.request('/api/v1/auth/child/family', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: '999999' }),
+    });
+    const unauthorized = await app.request('/api/v1/auth/child/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ family_code: '123456', child_id: childId, credential: 'wrong' }),
+    });
+
+    expect(malformed.status).toBe(400);
+    expect(malformedLength.status).toBe(400);
+    expect(malformedCharacters.status).toBe(400);
+    expect(unavailable.status).toBe(401);
+    expect(unauthorized.status).toBe(401);
+    expect(JSON.stringify(await unauthorized.json())).not.toContain('wrong');
   });
 
   it('maps invalid account credentials to a stable unauthorized response', async () => {

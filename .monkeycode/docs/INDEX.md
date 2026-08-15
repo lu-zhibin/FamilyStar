@@ -5,30 +5,36 @@
 - 阶段：Phase 1 Web MVP 的 12 个阶段已完成
 - 产品与设计基线：FamilyStar v5
 - MVP 开发决策：已确认
-- 实施任务：12 个阶段，84 个可执行检查项
+- 实施任务：Phase 1 基线 12 个阶段及真实运行缺陷修复任务 13、14、15、16 已完成
 - 测试策略：全部测试任务纳入必做范围
 - 源码实现：阶段 1 至阶段 12 已完成；核心闭环和自动化质量门禁已通过
-- 最近更新：2026-08-01
+- 当前迭代：产品补全任务 14 已完成；普通 Playwright 23 项、开发 `8098` 与生产构建 HTTPS `8099` 的真实 E2E 各 14 项全部通过
+- 打卡历史与批量媒体访问读模型：见 `专有概念/HistoryReadModel.md`
+- 最近更新：2026-08-15
 
 ## 文档导航
 
 | 文档 | 用途 | 状态 |
 |---|---|---|
-| `ARCHITECTURE.md` | 当前系统结构、依赖和运行边界 | 已同步至阶段 12 |
-| `INTERFACES.md` | 当前 HTTP、类型、数据模型和工作区接口 | 已同步至阶段 12 |
-| `DEVELOPER_GUIDE.md` | 环境、命令、工作流和验证方式 | 已同步至阶段 12 |
-| `模块/API.md` | Hono API 组合、领域适配器、迁移和验证入口 | 已同步至阶段 7 |
-| `模块/Web.md` | 家长端与孩子端路由、数据降级、组件与响应式交互 | 已同步至阶段 9 |
+| `ARCHITECTURE.md` | 当前系统结构、依赖和运行边界 | 已同步至产品补全任务 12.4 |
+| `INTERFACES.md` | 当前 HTTP、类型、数据模型和工作区接口 | 已同步至产品补全任务 12.4 |
+| `DEVELOPER_GUIDE.md` | 环境、命令、工作流和验证方式 | 已同步至产品补全任务 12.4 |
+| `模块/API.md` | Hono API 组合、领域适配器、迁移和验证入口 | 已同步至 Phase 1 任务 15 |
+| `模块/Web.md` | 统一登录入口、家长端与孩子端路由、真实数据状态、组件与响应式交互 | 已同步至界面稳定性修复 `9ef173c` |
 | `专有概念/Rewards.md` | 奖励池、资格、图片与库存配置 | 已同步至任务 7.1 |
-| `专有概念/Redemptions.md` | 兑换预扣、幂等、审批、兑现与退款事务 | 已同步至任务 7.4 |
-| `专有概念/Wishes.md` | 愿望槽位、实时进度、取消与采纳 | 已同步至任务 7.5 |
+| `专有概念/Redemptions.md` | 兑换预扣、幂等、审批、兑现、退款与双端状态交互 | 已同步至产品补全任务 6.4 |
+| `专有概念/Wishes.md` | 愿望槽位、实时进度、取消、采纳与双端交互 | 已同步至产品补全任务 6.4 |
+| `专有概念/Notifications.md` | 通知事件、偏好、幂等分页、已读、清理与双端通知中心 | 已同步至产品补全任务 9.5 |
 | `专有概念/Levels.md` | 累计积分等级派生、单调同步、进度与权益读取 | 已同步至阶段 6 |
 | `专有概念/PointsLedger.md` | Streak、单人/协作发分、幂等流水、乐观锁与余额事件 | 已同步至阶段 6 |
-| `专有概念/SubmissionReviews.md` | 单人/协作提交的人工与超时审核、历史、幂等与发分衔接 | 已同步至阶段 6 |
+| `专有概念/SubmissionReviews.md` | 家庭待审队列、人工与超时审核、历史、幂等与发分衔接 | 已同步至 Phase 1 任务 15 |
 | `专有概念/CheckInsAndMedia.md` | 单人/协作打卡、提交历史和 COS 媒体流程 | 已同步至任务 6.1 |
-| `专有概念/Tasks.md` | 任务类型、任务分配、频率和协作周期 | 已同步至任务 4.6 |
-| `专有概念/Authentication.md` | 家长与孩子认证、家庭初始化、邀请、密码与会话边界 | 已同步至任务 3.6 |
-| `专有概念/FamilySettings.md` | 家庭规则默认值、校验、读写与持久化边界 | 已同步至任务 3.5 |
+| `专有概念/Tasks.md` | 任务类型、任务分配、孩子本人任务视图、频率和协作周期 | 已同步至 Phase 1 任务 15 |
+| `专有概念/Authentication.md` | 家长与孩子认证、家庭码、家庭初始化、邀请、密码与会话边界 | 已同步至统一家庭登录任务 2.1 |
+| `专有概念/FamilySettings.md` | 家庭规则默认值、校验、读写与持久化边界 | 已同步至产品补全任务 10.1 |
+| `专有概念/FamilyModuleSettings.md` | 核心与可选模块目录、依赖、并发更新和双端可见性 | 已同步至产品补全任务 10.4 |
+| `专有概念/ChildThemes.md` | 孩子主题目录、等级解锁、选择持久化和受控 Token | 已同步至产品补全任务 10.4 |
+| `专有概念/OfflineCheckInSync.md` | PWA 缓存边界、IndexedDB v2、owner 隔离、离线状态机与媒体确认恢复 | 已同步至产品补全任务 12.4 |
 | `专有概念/CredentialVault.md` | 家庭级信封加密、主密钥配置与重包裹 | 已同步至任务 2.7 |
 | `专有概念/SecurityBoundaries.md` | 集中认证、RBAC、家庭隔离、CSRF 与审计 | 已同步至阶段 10 |
 | `专有概念/WorkerRuntime.md` | Worker 作业、幂等、锁、重试和健康状态 | 已同步至阶段 11 |
@@ -68,6 +74,9 @@
 | `专有概念/ContainerRuntime.md` | `Container-Runtime.md` |
 | `专有概念/Authentication.md` | `Authentication.md` |
 | `专有概念/FamilySettings.md` | `Family-Settings.md` |
+| `专有概念/FamilyModuleSettings.md` | `Family-Module-Settings.md` |
+| `专有概念/ChildThemes.md` | `Child-Themes.md` |
+| `专有概念/OfflineCheckInSync.md` | `Offline-Check-In-Sync.md` |
 | `专有概念/Tasks.md` | `Tasks.md` |
 | `专有概念/CheckInsAndMedia.md` | `Check-Ins-and-Media.md` |
 | `专有概念/SubmissionReviews.md` | `Submission-Reviews.md` |
@@ -76,6 +85,7 @@
 | `专有概念/Rewards.md` | `Rewards.md` |
 | `专有概念/Redemptions.md` | `Redemptions.md` |
 | `专有概念/Wishes.md` | `Wishes.md` |
+| `专有概念/Notifications.md` | `Notifications.md` |
 | `模块/BusinessModules.md` | `Business-Modules.md` |
 | `模块/Web.md` | `Web-Parent-Portal.md` |
 | `../specs/decisions.md` | `MVP-Development-Decisions.md` |

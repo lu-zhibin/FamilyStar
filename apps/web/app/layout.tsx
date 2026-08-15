@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Fredoka, Nunito } from 'next/font/google';
 import type { ReactNode } from 'react';
 
+import { ServiceWorkerRegistration } from '../components/service-worker-registration';
 import './globals.css';
 
 const fredoka = Fredoka({
@@ -18,8 +19,10 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
+  applicationName: 'FamilyStar',
   title: 'FamilyStar',
   description: '家庭成长管理工具',
+  manifest: '/manifest.webmanifest',
 };
 
 type RootLayoutProps = Readonly<{
@@ -29,7 +32,10 @@ type RootLayoutProps = Readonly<{
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="zh-CN" className={`${fredoka.variable} ${nunito.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorkerRegistration />
+      </body>
     </html>
   );
 }

@@ -29,8 +29,27 @@ import type { AppEnvironment } from './http/types.js';
 import type { SessionStore } from './family-auth/types.js';
 import type { AuditWriter } from './security/audit.js';
 import { createSecurityMiddleware } from './security/middleware.js';
+import type { FamilyModuleStatusPort } from './security/module-access.js';
 import { registerIntegrationSettingsRoutes } from './infrastructure/credentials/integration-routes.js';
 import type { IntegrationSettingsOperations } from './infrastructure/credentials/integration-service.js';
+import { registerPointsReadRoutes } from './points/routes.js';
+import type { PointsReadOperations } from './points/types.js';
+import { registerHistoryRoutes } from './check-ins/history-routes.js';
+import type { HistoryOperations } from './check-ins/history-types.js';
+import { registerMediaAccessRoutes } from './media/access-routes.js';
+import type { MediaAccessOperations } from './media/access-types.js';
+import { registerDashboardRoutes } from './dashboard/routes.js';
+import type { DashboardOperations } from './dashboard/types.js';
+import { registerBadgeRoutes } from './badges/routes.js';
+import type { BadgeOperations } from './badges/types.js';
+import { registerAnalyticsRoutes } from './analytics/routes.js';
+import type { AnalyticsOperations } from './analytics/types.js';
+import { registerGrowthRecordRoutes } from './growth-records/routes.js';
+import type { GrowthRecordOperations } from './growth-records/types.js';
+import { registerNotificationRoutes } from './notifications/routes.js';
+import type { NotificationOperations } from './notifications/types.js';
+import { registerThemeRoutes } from './themes/routes.js';
+import type { ThemeOperations } from './themes/types.js';
 
 const service: ServiceInfo = {
   name: 'FamilyStar API',
@@ -52,7 +71,17 @@ export type CreateAppOptions = {
   rewardOperations?: RewardOperations;
   sessionStore?: SessionStore;
   auditWriter?: AuditWriter;
+  familyModuleStatus?: FamilyModuleStatusPort;
   integrationSettingsOperations?: IntegrationSettingsOperations;
+  pointsReadOperations?: PointsReadOperations;
+  historyOperations?: HistoryOperations;
+  mediaAccessOperations?: MediaAccessOperations;
+  dashboardOperations?: DashboardOperations;
+  badgeOperations?: BadgeOperations;
+  analyticsOperations?: AnalyticsOperations;
+  growthRecordOperations?: GrowthRecordOperations;
+  notificationOperations?: NotificationOperations;
+  themeOperations?: ThemeOperations;
   secureCookies?: boolean;
 };
 
@@ -71,7 +100,17 @@ export function createApp({
   rewardOperations,
   sessionStore,
   auditWriter,
+  familyModuleStatus,
   integrationSettingsOperations,
+  pointsReadOperations,
+  historyOperations,
+  mediaAccessOperations,
+  dashboardOperations,
+  badgeOperations,
+  analyticsOperations,
+  growthRecordOperations,
+  notificationOperations,
+  themeOperations,
   secureCookies = false,
 }: CreateAppOptions) {
   const app = new Hono<AppEnvironment>();
@@ -92,6 +131,7 @@ export function createApp({
         publicBaseUrl,
         sessions: sessionStore,
         ...(auditWriter === undefined ? {} : { auditWriter }),
+        ...(familyModuleStatus === undefined ? {} : { familyModuleStatus }),
       }),
     );
   }
@@ -146,6 +186,33 @@ export function createApp({
   }
   if (integrationSettingsOperations) {
     registerIntegrationSettingsRoutes(apiV1, integrationSettingsOperations);
+  }
+  if (pointsReadOperations) {
+    registerPointsReadRoutes(apiV1, pointsReadOperations, secureCookies);
+  }
+  if (historyOperations) {
+    registerHistoryRoutes(apiV1, historyOperations, secureCookies);
+  }
+  if (mediaAccessOperations) {
+    registerMediaAccessRoutes(apiV1, mediaAccessOperations, secureCookies);
+  }
+  if (dashboardOperations) {
+    registerDashboardRoutes(apiV1, dashboardOperations, secureCookies);
+  }
+  if (badgeOperations) {
+    registerBadgeRoutes(apiV1, badgeOperations, secureCookies);
+  }
+  if (analyticsOperations) {
+    registerAnalyticsRoutes(apiV1, analyticsOperations, secureCookies);
+  }
+  if (growthRecordOperations) {
+    registerGrowthRecordRoutes(apiV1, growthRecordOperations, secureCookies);
+  }
+  if (notificationOperations) {
+    registerNotificationRoutes(apiV1, notificationOperations, secureCookies);
+  }
+  if (themeOperations) {
+    registerThemeRoutes(apiV1, themeOperations, secureCookies);
   }
 
   app.notFound((context) =>

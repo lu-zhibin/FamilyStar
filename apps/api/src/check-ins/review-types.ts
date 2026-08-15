@@ -20,7 +20,64 @@ export type SubmissionReviewRecord = Readonly<{
   reviewedAt: Date;
 }>;
 
+export type PendingSubmissionReviewItem = Readonly<{
+  targetType: ReviewTargetType;
+  targetId: string;
+  attemptId: string;
+  task: Readonly<{ id: string; name: string }>;
+  child: Readonly<{ id: string; nickname: string }>;
+  contentText: string | null;
+  media: readonly Readonly<{
+    id: string;
+    type: 'IMAGE' | 'VIDEO' | 'AUDIO';
+    mimeType: string;
+  }>[];
+  submittedAt: Date;
+}>;
+
+export type PendingSubmissionReviewRecord = PendingSubmissionReviewItem &
+  Readonly<{
+    reviewDeadlineAt: Date | null;
+    isOverdue: boolean;
+  }>;
+
+export type ReviewHistoryRecord = SubmissionReviewRecord &
+  Readonly<{
+    task: Readonly<{ id: string; name: string }>;
+    child: Readonly<{ id: string; nickname: string }>;
+  }>;
+
+export type ReviewHistoryCursor = Readonly<{
+  reviewedAt: Date;
+  reviewId: string;
+}>;
+
+export type ReviewHistoryQuery = Readonly<{
+  childId?: string;
+  taskId?: string;
+  decision?: ReviewDecision;
+  startDate?: string;
+  endDate?: string;
+  cursor: Readonly<{ sortValue: string; id: string }> | null;
+  limit: number;
+}>;
+
 export type SubmissionReviewRepository = {
+  listPendingReviews(
+    familyId: string,
+    limit: number,
+  ): Promise<readonly PendingSubmissionReviewItem[]>;
+  findFamilySettings(familyId: string): Promise<Record<string, unknown> | null>;
+  listReviewHistory(input: {
+    familyId: string;
+    childId?: string;
+    taskId?: string;
+    decision?: ReviewDecision;
+    startAt?: Date;
+    endAtExclusive?: Date;
+    cursor: ReviewHistoryCursor | null;
+    limit: number;
+  }): Promise<readonly ReviewHistoryRecord[]>;
   findByIdempotencyKey(
     familyId: string,
     idempotencyKey: string,
@@ -92,6 +149,13 @@ type ReviewInput = {
 };
 
 export type SubmissionReviewOperations = {
+  listPendingReviews(input: { sessionToken?: string }): Promise<{
+    reviews: readonly PendingSubmissionReviewRecord[];
+  }>;
+  listReviewHistory?(input: ReviewHistoryQuery & { sessionToken?: string }): Promise<{
+    reviews: readonly ReviewHistoryRecord[];
+    page: Readonly<{ has_more: boolean; next_cursor: string | null }>;
+  }>;
   reviewCheckIn(input: ReviewInput & { checkInId: string }): Promise<{
     review: SubmissionReviewRecord;
   }>;

@@ -26,7 +26,11 @@ FROM dependencies AS build
 ARG API_INTERNAL_URL=http://api:3001
 ENV API_INTERNAL_URL=$API_INTERNAL_URL
 COPY . .
-RUN pnpm build
+RUN pnpm build && \
+    test -d /app/apps/api/prisma/migrations && \
+    test -f /app/apps/web/public/sw.js && \
+    test -d /app/apps/web/.next/standalone && \
+    test -d /app/apps/web/.next/static
 
 FROM node:${NODE_VERSION}-alpine AS web
 ENV NODE_ENV=production
@@ -35,6 +39,7 @@ ENV HOSTNAME=0.0.0.0
 WORKDIR /app
 COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=node:node /app/apps/web/public ./apps/web/public
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
@@ -44,6 +49,7 @@ CMD ["node", "apps/web/server.js"]
 FROM base AS backend-runtime
 ENV NODE_ENV=production
 COPY --from=build --chown=node:node /app /app
+RUN mkdir -p /release-state && chown node:node /release-state
 USER node
 
 FROM backend-runtime AS api

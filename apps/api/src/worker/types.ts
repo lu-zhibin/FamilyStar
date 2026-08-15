@@ -8,6 +8,7 @@ export const WORKER_JOB_NAMES = [
   'outbox-dispatch',
   'media-cleanup',
   'points-reconciliation',
+  'notification-cleanup',
 ] as const;
 
 export type WorkerJobName = (typeof WORKER_JOB_NAMES)[number];

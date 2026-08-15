@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PointsTransactionRetryError } from '../points/types.js';
 import type { PointsAwardPort, PointsTransactionWriter } from '../points/types.js';
 import { PrismaRewardRepository } from './prisma-repository.js';
-import { RewardConflictError, RewardEligibilityError } from './service.js';
+import { RewardAccessError, RewardConflictError, RewardEligibilityError } from './service.js';
 
 const now = new Date('2026-07-31T12:00:00.000Z');
 const familyId = '10000000-0000-4000-8000-000000000001';
@@ -114,7 +114,13 @@ function setup(transactionOverrides: Record<string, unknown> = {}) {
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
     user: { findFirst: vi.fn().mockResolvedValue(child()) },
-    wish: { findFirst: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
+    wish: {
+      findFirst: vi.fn(),
+      count: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
     mediaAsset: { findFirst: vi.fn() },
     $executeRaw: vi.fn().mockResolvedValue(1),
     ...transactionOverrides,
@@ -484,10 +490,9 @@ describe('PrismaRewardRepository wish transactions', () => {
       adoptedRewardId: rewardId,
       adoptedAt: now,
     };
-    const { transaction, repository } = setup();
-    transaction.wish.findFirst.mockResolvedValue(wish);
+    const { transaction, outbox, repository } = setup();
+    transaction.wish.findFirst.mockResolvedValueOnce(wish).mockResolvedValueOnce(adopted);
     transaction.reward.create.mockResolvedValue(reward({ name: wish.title, pointsCost: 100 }));
-    transaction.wish.update.mockResolvedValue(adopted);
 
     const result = await repository.adoptWish({
       familyId,
@@ -500,12 +505,78 @@ describe('PrismaRewardRepository wish transactions', () => {
     expect(transaction.reward.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ name: 'Telescope', pointsCost: 100, type: 'EXPERIENCE' }),
     });
-    expect(transaction.wish.update).toHaveBeenCalledWith(
+    expect(transaction.wish.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: expect.objectContaining({ familyId, status: 'ACTIVE', deletedAt: null }),
         data: { status: 'ADOPTED', adoptedRewardId: rewardId, adoptedAt: now },
       }),
     );
     expect(result.wish.pointsBalance).toBe(40);
+    expect(outbox.append).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        event_name: 'rewards.wish.adopted.v1',
+        payload: expect.objectContaining({ wish_id: wish.id, child_id: childId }),
+      }),
+    );
+  });
+
+  it('rejects cross-family adoption before creating a reward', async () => {
+    const { transaction, repository } = setup();
+    transaction.wish.findFirst.mockResolvedValue(null);
+
+    await expect(
+      repository.adoptWish({
+        familyId: '10000000-0000-4000-8000-000000000002',
+        parentId,
+        wishId: 'wish-1',
+        reward: { type: 'EXPERIENCE' },
+        now,
+      }),
+    ).rejects.toBeInstanceOf(RewardAccessError);
+
+    expect(transaction.reward.create).not.toHaveBeenCalled();
+    expect(transaction.wish.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a concurrent adoption so the transaction rolls back its reward', async () => {
+    const activeWish = {
+      id: 'wish-1',
+      familyId,
+      childId,
+      title: 'Telescope',
+      description: null,
+      targetPoints: 100,
+      status: 'ACTIVE' as const,
+      adoptedRewardId: null,
+      cancelledAt: null,
+      adoptedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+      child: { pointsBalance: 40 },
+    };
+    const { transaction, repository } = setup();
+    transaction.wish.findFirst.mockResolvedValue(activeWish);
+    transaction.reward.create.mockResolvedValue(reward({ name: activeWish.title }));
+    transaction.wish.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      repository.adoptWish({
+        familyId,
+        parentId,
+        wishId: activeWish.id,
+        reward: { type: 'EXPERIENCE' },
+        now,
+      }),
+    ).rejects.toBeInstanceOf(RewardConflictError);
+
+    expect(transaction.wish.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ familyId, status: 'ACTIVE', deletedAt: null }),
+      }),
+    );
+    expect(transaction.wish.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it('creates and cancels a wish while preserving live balance progress', async () => {
@@ -526,7 +597,7 @@ describe('PrismaRewardRepository wish transactions', () => {
       child: { pointsBalance: 40 },
     };
     const cancelled = { ...activeWish, status: 'CANCELLED' as const, cancelledAt: now };
-    const { transaction, repository } = setup();
+    const { transaction, outbox, repository } = setup();
     transaction.wish.count.mockResolvedValue(0);
     transaction.wish.create.mockResolvedValue(activeWish);
     transaction.wish.findFirst.mockResolvedValue(activeWish);
@@ -538,5 +609,12 @@ describe('PrismaRewardRepository wish transactions', () => {
     await expect(
       repository.cancelWish({ familyId, childId, wishId: 'wish-1', now }),
     ).resolves.toMatchObject({ pointsBalance: 40, status: 'CANCELLED', cancelledAt: now });
+    expect(outbox.append).toHaveBeenCalledWith(
+      transaction,
+      expect.objectContaining({
+        event_name: 'rewards.wish.cancelled.v1',
+        payload: expect.objectContaining({ wish_id: 'wish-1', child_id: childId }),
+      }),
+    );
   });
 });

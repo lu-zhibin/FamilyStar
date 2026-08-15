@@ -112,4 +112,18 @@ describe('RedisSessionStore', () => {
       ['INCR', 'test:session-revision:child-1'],
     ]);
   });
+
+  it('revokes only the selected opaque session token', async () => {
+    const commands: string[][] = [];
+    const redis: RedisCommandPort = {
+      async sendCommand(arguments_) {
+        commands.push([...arguments_]);
+        return 1;
+      },
+    };
+    const store = new RedisSessionStore(redis, createRedisKeyspace('test'));
+
+    await expect(store.revoke('current-token')).resolves.toBeUndefined();
+    expect(commands).toEqual([['DEL', 'test:session:current-token']]);
+  });
 });

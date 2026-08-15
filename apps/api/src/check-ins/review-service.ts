@@ -1,8 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
+import { normalizeFamilySettings } from '../family-settings/service.js';
+import { encodeCursor, InvalidPaginationError } from '../http/cursor.js';
+import {
+  InvalidQueryFilterError,
+  parseFamilyDateRange,
+  parseUuidFilter,
+} from '../http/query-validation.js';
 import { acquireLock, releaseLock } from '../infrastructure/redis/primitives.js';
 import type {
   ReviewDecision,
+  ReviewHistoryQuery,
   ReviewTargetType,
   SubmissionReviewDependencies,
   SubmissionReviewOperations,
@@ -10,6 +18,7 @@ import type {
 } from './review-types.js';
 
 const REVIEW_LOCK_TTL_MILLISECONDS = 10_000;
+const PENDING_REVIEW_LIMIT = 100;
 
 export class SubmissionReviewError extends Error {
   constructor(
@@ -36,6 +45,73 @@ export class SubmissionReviewService implements SubmissionReviewOperations {
   constructor(private readonly dependencies: SubmissionReviewDependencies) {
     this.now = dependencies.now ?? (() => new Date());
     this.ownerTokenFactory = dependencies.ownerTokenFactory ?? randomUUID;
+  }
+
+  async listPendingReviews(input: Parameters<SubmissionReviewOperations['listPendingReviews']>[0]) {
+    const session = await this.requireParent(input.sessionToken);
+    const settings = await this.dependencies.repository.findFamilySettings(session.familyId);
+    if (!settings) throw new SubmissionReviewError('NOT_FOUND', 'The family was not found.');
+    const timeoutHours = normalizeFamilySettings(settings).reviewTimeoutHours;
+    const now = this.now().getTime();
+    const reviews = await this.dependencies.repository.listPendingReviews(
+      session.familyId,
+      PENDING_REVIEW_LIMIT,
+    );
+    return {
+      reviews: reviews.map((review) => {
+        const reviewDeadlineAt =
+          timeoutHours === 0
+            ? null
+            : new Date(review.submittedAt.getTime() + timeoutHours * 60 * 60 * 1000);
+        return {
+          ...review,
+          reviewDeadlineAt,
+          isOverdue: reviewDeadlineAt !== null && reviewDeadlineAt.getTime() <= now,
+        };
+      }),
+    };
+  }
+
+  async listReviewHistory(input: ReviewHistoryQuery & { sessionToken?: string }) {
+    const session = await this.requireParent(input.sessionToken);
+    const settings = await this.dependencies.repository.findFamilySettings(session.familyId);
+    if (!settings) throw new SubmissionReviewError('NOT_FOUND', 'The family was not found.');
+    if ((input.startDate === undefined) !== (input.endDate === undefined)) {
+      throw new InvalidQueryFilterError('start_date and end_date must be provided together.');
+    }
+    const dateRange =
+      input.startDate && input.endDate
+        ? parseFamilyDateRange({
+            startDate: input.startDate,
+            endDate: input.endDate,
+            timeZone: normalizeFamilySettings(settings).timeZone,
+            maxDays: 366,
+          })
+        : null;
+    const records = await this.dependencies.repository.listReviewHistory({
+      familyId: session.familyId,
+      ...(input.childId === undefined ? {} : { childId: input.childId }),
+      ...(input.taskId === undefined ? {} : { taskId: input.taskId }),
+      ...(input.decision === undefined ? {} : { decision: input.decision }),
+      ...(dateRange === null
+        ? {}
+        : { startAt: dateRange.startAt, endAtExclusive: dateRange.endAtExclusive }),
+      cursor: this.reviewHistoryCursor(input.cursor),
+      limit: input.limit,
+    });
+    const hasMore = records.length > input.limit;
+    const reviews = records.slice(0, input.limit);
+    const last = reviews.at(-1);
+    return {
+      reviews,
+      page: {
+        has_more: hasMore,
+        next_cursor:
+          hasMore && last
+            ? encodeCursor({ sortValue: last.reviewedAt.toISOString(), id: last.id })
+            : null,
+      },
+    };
   }
 
   async reviewCheckIn(input: Parameters<SubmissionReviewOperations['reviewCheckIn']>[0]) {
@@ -165,6 +241,25 @@ export class SubmissionReviewService implements SubmissionReviewOperations {
       throw new SubmissionReviewError('INVALID', 'A rejection reason is required.');
     }
     return normalized || undefined;
+  }
+
+  private reviewHistoryCursor(cursor: ReviewHistoryQuery['cursor']) {
+    if (!cursor) return null;
+    const reviewedAt = new Date(cursor.sortValue);
+    if (!Number.isFinite(reviewedAt.getTime()) || reviewedAt.toISOString() !== cursor.sortValue) {
+      throw new InvalidPaginationError('The cursor is invalid.');
+    }
+    try {
+      const reviewId = parseUuidFilter(cursor.id, 'cursor review id');
+      if (!reviewId) throw new InvalidPaginationError('The cursor is invalid.');
+      return { reviewedAt, reviewId };
+    } catch (error) {
+      if (error instanceof InvalidPaginationError) throw error;
+      if (error instanceof InvalidQueryFilterError) {
+        throw new InvalidPaginationError('The cursor is invalid.');
+      }
+      throw error;
+    }
   }
 
   private async requireParent(token?: string) {

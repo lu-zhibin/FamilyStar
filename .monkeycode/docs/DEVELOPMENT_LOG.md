@@ -26,6 +26,615 @@
 - 首个 PostgreSQL custom-format 备份保存到 `/home/ubuntu/familystar-data/backups/prod/postgres/familystar-prod-20260801-65ce519.dump`，文件大小为 129156 字节，权限为 `600`，保留策略为 60 天。
 - 回滚点为不可变标签 `v0.1.0-65ce519-*`；后续正式版本发布时继续保留最近两个已验证版本。
 - `home.wenwuge.vip` 已解析到服务器；OpenResty 当前尚未配置该域名的 HTTP 路由和 HTTPS 证书，HTTP 返回 404，HTTPS 返回 TLS SNI 错误。正式域名入口验收等待入口层配置。
+## 2026-08-15：完成任务 14 双环境运行态验收
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-ACCEPTANCE-001`
+- 分支：`dev`
+- 状态：任务 14.1、14.2 已完成，Git 发布与生产镜像元数据待关闭
+
+### 验证结果
+
+- `8098` 开发环境真实 E2E 14/14 通过。
+- `8099` 生产构建 HTTPS 环境真实 E2E 14/14 通过。
+- 普通 Playwright 23 项通过，14 项真实环境场景按配置跳过。
+- ESLint、Prettier 与 `git diff --check` 全部通过。
+- 开发预览：`https://8098-a9c18acafb19a352.monkeycode-ai.online`。
+- 生产构建预览：`https://8099-a9c18acafb19a352.monkeycode-ai.online`。
+
+### 稳定性与配置
+
+- 徽章双端真实场景总预算为 120 秒。
+- 通知真实场景从轻量设置页验证全局通知入口。
+- `REAL_ACCEPTANCE=1` 使用 20 秒跨网络断言窗口。
+- 生产 `PUBLIC_BASE_URL` 与公开 HTTPS 源保持一致，以满足 Secure Cookie 和 CSRF Origin 校验。
+- 需求 2 至 13 与设计正确性属性 1 至 8 的自动化证据已写入验收追溯矩阵。
+
+### 发布待办
+
+- 将 `dev` 快进发布到 `main` 并推送远端。
+- 保存 Web、API、Worker 不可变镜像 digest、上一健康回滚标签和部署元数据。
+
+## 2026-08-08：完成 PWA 安装入口与 i60 真实验收
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-PWA-I60-001`
+- 状态：i60 已部署到 `8098`，PWA/主题真实 HTTPS 验收与全量质量门禁通过
+- 提交：`3dc342e`
+
+### 实施与验证
+
+- Web 捕获 `beforeinstallprompt`，提供可访问、可关闭的“安装 FamilyStar”入口，支持安装进行中状态、`userChoice` 和 `appinstalled`。
+- i60 构建成功并完成迁移容器、API、Worker、Web 重建；PostgreSQL、Redis、API、Worker、Web 健康依赖链完成。
+- `REAL_ACCEPTANCE=1 PLAYWRIGHT_BASE_URL=https://home.wenwuge.vip pnpm exec playwright test e2e/themes-pwa.real.spec.cjs`：2 项通过，覆盖主题选择、manifest、缓存激活和离线回退。
+- 正确工作树的质量链路通过 148 个测试文件、1068 项测试，覆盖率为 83.73%；格式、Lint、类型、Prisma、生产构建、设计系统、API 基础契约和 `ops:check` 均通过。
+- 孩子端六页移动回归使用与家长端同类循环一致的 120 秒用例时限；聚焦用例 1/1 通过，完整 Playwright 中 18 项 mock 用例全部通过、20 项真实环境用例按设计跳过。
+- 阶段 13 自动化质量与发布工程能力、阶段 14 最终检查点全部完成，需求 2 至 13 和设计正确性属性 1 至 8 均具备实现与自动化证据。
+
+## 2026-08-08：完成第三个产品补全批次质量检查点
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-CHECKPOINT-003`
+- 分支：`dev`
+- 状态：阶段 11 质量门禁通过
+- 回归修复提交：`48d3bd0`
+
+### 验证结果
+
+- 徽章、通知、模块和主题聚焦回归共 31 个文件、223 项通过，覆盖迁移、消费者、Worker、权限、组件和事件重投。
+- 完整单元回归 131 个文件、986 项通过；全工作区类型检查、零警告 Lint、全局 Prettier、Prisma Schema、数据模型契约和全部生产构建通过。
+- `48d3bd0` 已将邀请仓储测试对齐现行事件字段契约，完整质量链路恢复通过。
+
+## 2026-08-08：完成通知中心、偏好与过期清理
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-NOTIFICATIONS-001`
+- 分支：`dev`
+- 状态：已部署到 `8098`，API、Worker 与双端 Chromium 验收通过
+- 提交：`5bba67c`、`20f16dc`、`0402835`、`2cd9575`、`c669458`
+
+### 实施与验证
+
+- 新增通知与偏好模型、稳定 cursor API、幂等已读、七类事件消费者、每日九十天批量清理，以及双端通知中心与家长偏好界面。
+- 通知聚焦 89 项、完整 Web 159 项通过；类型、Lint、格式及 API/Web 生产构建通过。
+- `i48-web` 与 `i46-api/worker` 五服务 healthy；真实验收覆盖事件重投、清理边界、分页、跨家庭隔离、角标、已读、偏好、安全跳转和双视口。
+
+## 2026-08-07：完成徽章属性与权限回归
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-BADGE-PROPERTIES-001`
+- 分支：`dev`
+- 状态：已部署到 `8098` 开发环境，真实 Chromium 与权限边界验收通过
+- 测试与修复提交：`3c0ccc2`
+
+### 实施与验证
+
+- 新增五种自动条件阈值属性、事件重投幂等、历史快照稳定、家庭角色隔离和双端组件状态测试；徽章聚焦 9 个文件、115 项通过。
+- 数字表单统一限制在 PostgreSQL `Int` 正整数范围，徽章模板、模板单项和手动颁发改用精确 HTTP 方法权限；全工作区类型、Lint 和格式通过。
+- `i43-api`、`i43-worker` 和 `i43-web` 已部署，五个服务 healthy；真实徽章闭环六项通过，认证态未定义模板方法稳定返回 `404`。
+
+## 2026-08-07：完成双端徽章管理页面
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-BADGE-PAGES-001`
+- 分支：`dev`
+- 状态：已部署到 `8098` 开发环境，真实 Chromium 验收通过
+- 功能提交：`7891729`
+
+### 实施结果
+
+- 家长端新增徽章管理入口，支持模板创建、编辑、启停、自定义模板受保护删除和手动颁发；写操作锁定重复提交，冲突后刷新服务端权威状态。
+- 孩子成就页接入本人徽章墙，区分已获得与未获得状态，使用颁发快照展示历史，并显示自动条件实时进度和手动颁发提示。
+- 双端复用统一徽章类型、条件标签、表单映射和进度计算；家长十项导航保持桌面与移动端可访问。
+
+### 验证与部署
+
+- Web 全量回归 16 个文件、143 项通过；Web 类型检查、修改文件零警告 ESLint、Prettier、生产构建和补丁检查通过。
+- 服务器本地镜像 `dev-20260807-7891729-i42-web` 已部署；API 与 Worker 保持 i41，五个 Compose 服务全部 healthy，IP 与域名健康接口返回 `200`。
+- 真实 Chromium 六项通过，覆盖模板列表、创建编辑、手动颁发、孩子已获得快照、未获得自动进度，以及 1440px 与 390px 无横向溢出。
+
+## 2026-08-07：完成第二个产品补全批次质量检查点
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-CHECKPOINT-002`
+- 分支：`dev`
+- 状态：阶段 7 质量门禁通过
+- 格式基线修复：`a363d9a`
+
+### 验证结果
+
+- 成长记录、任务、审核、奖励、兑换和愿望聚焦回归共 32 个文件、267 项通过，覆盖迁移、事件重投、事务竞态、家庭权限、历史快照、组件状态和弹窗可访问性。
+- 完整单元回归 112 个文件、815 项通过；全工作区类型检查、零警告 ESLint、全局 Prettier、Prisma Schema、数据模型契约、生产构建和补丁检查通过。
+- Web 类型检查与 Next.js 构建顺序执行，避免并发改写 `.next/types`；全局格式门禁同时修复 README 标题间距和一处真实 E2E 请求排版。
+
+## 2026-08-07：完成任务、审核、奖励与愿望回归保护
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-MANAGEMENT-REGRESSION-001`
+- 分支：`dev`
+- 状态：已部署到 `8098` 开发环境，真实 Chromium 验收通过
+- 功能与测试提交：`41de277`
+
+### 实施结果
+
+- 任务日期范围默认值复用家庭 IANA 时区自然日期，覆盖 UTC 日期与家庭日期不一致的边界。
+- 愿望采纳通过家庭范围、活动状态和未删除条件执行原子转换；并发状态竞争返回冲突，并由同一事务回滚已创建奖励。
+- 新增家庭自然日期、日期范围默认值、跨家庭愿望采纳和并发采纳回滚测试；历史保护、审核竞态、库存守恒和凭证弹窗可访问性沿用现有分层回归证据。
+
+### 验证与部署
+
+- 聚焦回归 10 个文件、145 项通过；完整单元回归 112 个文件、815 项通过；核心集成回归 5 个文件、23 项通过。
+- 全工作区类型检查、零警告 ESLint、本任务文件 Prettier、Prisma 校验、Web/API 生产构建和补丁检查通过。
+- 服务器本地镜像 `dev-20260807-41de277-i41-api`、`dev-20260807-41de277-i41-worker` 和 `dev-20260807-41de277-i41-web` 已部署；PostgreSQL、Redis、API、Worker 和 Web 全部 healthy，同源健康接口返回 `200`。
+- 真实 Chromium 4 项通过，覆盖任务历史保护、审核冲突刷新、凭证弹窗焦点约束与键盘切换、奖励库存保护和写入锁定。
+
+## 2026-08-07：完成兑换与愿望双端闭环
+
+- 记录 ID：`FS-PRODUCT-COMPLETION-REDEMPTION-WISH-001`
+- 分支：`dev`
+- 状态：已部署到 `8098` 开发环境，真实 Chromium 验收通过
+- 功能提交：`f4e4637`；运行态修复：`3de75de`、`2361f4b`
+
+### 实施结果
+
+- 家长端支持兑换批准、填写原因拒绝并原子退款、确认兑现，以及愿望采纳为正式奖励；写入成功和 `409` 冲突后均刷新服务端权威状态。
+- 孩子端展示全部活动愿望的真实槽位占用，支持满额锁定、取消后释放槽位，并统一本地化四种兑换状态与提交锁定。
+- 修复 Prisma 事务错误识别对运行时构造器的脆弱依赖，并修复奖励动作路由提取实例方法造成的接收者丢失。
+
+### 验证与部署
+
+- Web 全量回归 15 个文件、130 项通过；API 全量回归 96 个文件、640 项通过；TypeScript、ESLint、Prettier 和 Web 生产构建通过。
+- Web 使用 `dev-20260807-f4e4637-i38-web`，API 与 Worker 使用 `dev-20260807-2361f4b-i40-*`；PostgreSQL、Redis、API、Worker 和 Web 全部 healthy，IP、开发域名和健康接口均返回 `200`。
+- 真实 Chromium 闭环覆盖批准、兑现、拒绝退款、愿望取消、愿望采纳、槽位锁定和 `409` 权威刷新，最终兑换状态为 `FULFILLED`、`REJECTED`、`APPROVED`。
+
+## 2026-08-06：家庭总览与徽章后端
+
+- 记录 ID：`FS-DASHBOARD-BADGES-001`
+- 分支：`dev`
+- 状态：已部署到 `8098` 开发环境，真实 API 验收通过
+- 依据：`../specs/2026-08-05-product-completion/requirements.md`、`../specs/2026-08-05-product-completion/design.md`
+
+### 实施结果
+
+- 新增家庭总览聚合 API，按家庭 IANA 时区返回逐孩今日任务进度、积分、家庭待办和最多三十条近期动态。
+- 新增徽章模板、颁发和进度模型，家庭注册时初始化六个基础模板，并为既有活动家庭幂等回填。
+- 家长可管理自定义模板和手动颁发，孩子徽章墙展示已获得状态及条件进度；系统预设和已有颁发记录的模板受到破坏性修改保护。
+- Worker 消费积分、等级和协作事件评估自动条件，通过唯一键与事务 Outbox 保证颁发和事件重投幂等。
+
+### 验证与部署
+
+- dashboard、badge、权限和家庭初始化聚焦测试 73 项通过，API 单元回归 577 项通过；API 类型检查、相关 ESLint、Prisma 校验、数据模型验证和生产构建通过。
+- 迁移 `20260806090000_add_badge_domain` 成功应用；`i26-api` 与 `i26-worker` 容器 healthy，`i21-web` 保持原版本，IP 与开发域名健康接口均返回 `200`。
+- `8098` 真实 Chromium API 验收覆盖六个预设、自动与手动颁发、已颁发模板保护、今日总览统计、动态聚合及跨家庭隔离。
+
+## 2026-08-03：稳定登录标题与移动端家长导航
+
+- 记录 ID：`FS-WEB-RESPONSIVE-STABILITY-001`
+- 分支与修复提交：`dev` / `9ef173c`
+- 状态：已部署并通过浏览器验收
+
+### 问题与修复
+
+- 登录页右侧内容使用垂直居中，家长与孩子表单高度差会带动欢迎语、主标题和副标题上下移动；登录内容改为顶部对齐，使动态高度只在身份切换控件下方展开。
+- 家长端底部导航每项原有 72px 最小宽度，九项在手机视口产生横向滚动；移动断点改为九等分网格，并收紧图标、文字、间距、圆角和激活背景尺寸。
+- 统一家庭登录需求与技术设计已补充响应式稳定性验收标准，覆盖 320px 至 767px 导航和身份切换标题锚点。
+
+### 验证结果
+
+- 完整 Vitest 套件 82 个文件、529 项通过；Web TypeScript、零警告 ESLint、Prettier、设计系统检查、生产构建和 `git diff --check` 通过。
+- Playwright 11 项完整回归通过；390px 与 1280px 视口切换身份前后标题 y 坐标一致，320px 与 375px 视口的九项家长导航完整可见，导航和页面滚动宽度均等于可见宽度。
+- 开发环境真实浏览器验证 390px 标题 y=511.34375、1280px 标题 y=85，两种视口切换前后坐标均保持不变。
+
+## 2026-08-03：部署界面稳定性修复版本
+
+- 记录 ID：`FS-DEPLOY-DEV-011`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `9ef173c`
+
+### 发布结果
+
+- 从提交 `9ef173c` 的独立源码归档构建并推送 `dev-20260803-9ef173c-api`、`dev-20260803-9ef173c-worker` 和 `dev-20260803-9ef173c-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:7d87f6a3cab13364dfe993615dfb5f4a3f5c517c9c5c9d74a26db1799150478c`、`sha256:4662509dbd42bf9dcdeefc35f1a04792bfdfc3f2ccac6f496a1b906c175849f7` 和 `sha256:46f98b42de3c1d593046f5bfa23373b44a84b9e63b692c451619d6738c6734fd`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-9ef173c-20260803.dump`，文件大小 1641704 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy；公网首页返回 HTTP 200，同源健康接口返回 `status: ok`。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260803-a832dcc-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-9ef173c-20260803.dump`。
+
+## 2026-08-03：纠正家长端页面顶部留白验收对象
+
+- 记录 ID：`FS-PARENT-HEADER-SPACING-001`
+- 分支与修复提交：`dev` / `a832dcc`
+- 状态：已部署并通过真实页面验收
+
+### 回归与修复
+
+- 用户明确要求修复所有家长端页面从浏览器页面顶部到 Header 顶边的留白；此前验收错误地测量了 Header 底边到正文首个元素的距离。
+- `ParentShell` 的 Header 使用 `sticky top-0`，外层没有顶部 padding，因此目标距离确实为 0px。
+- `a832dcc` 为家长端公共外层增加 `pt-7 mobile:pt-5`，将目标距离设置为桌面 28px、手机 20px；家长端正文原有间距保持，误加到孩子端的主内容 padding 同时撤回。
+
+### 验证结果
+
+- 双端壳层组件测试 2 个文件、20 项通过；完整 Vitest 套件 82 个文件、528 项通过；Web TypeScript、零警告 ESLint、Prettier、生产构建和 `git diff --check` 通过。
+- 开发环境真实家长会话覆盖九个页面、桌面与手机两种视口，共 18 次检查；页面顶部到 Header 顶边的距离分别为 28px 和 20px。
+- 家长端手机总览实测 Header 顶边 y=20、Header 底边 y=85；孩子端公共壳层已恢复原有 0px 主内容 padding。
+
+## 2026-08-03：部署家长端 Header 顶部留白修复版本
+
+- 记录 ID：`FS-DEPLOY-DEV-010`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `a832dcc`；Compose 修复提交：`9429059`
+
+### 发布结果
+
+- 从提交 `a832dcc` 的独立源码归档构建并推送 `dev-20260803-a832dcc-api`、`dev-20260803-a832dcc-worker` 和 `dev-20260803-a832dcc-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:1b91314fc0b26d4d6f7f66b2aeab06e4b1726372a8bd6f6bc028d06ad6ca478e`、`sha256:ff9877432108975a9c94a85a3900e69a6c2a33a57d2129090ab21b61144a9207` 和 `sha256:3ac090a0e6f27a4c34448e937d992bfaedf5517b2d224eb43122cfd223e28596`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-a832dcc-20260803.dump`，文件大小 1596424 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 首次启动时 Corepack 访问 npm 超时；`9429059` 将迁移命令改为直接执行镜像内 Prisma CLI，消除运行时联网依赖。
+- 迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy；公网首页返回 HTTP 200，同源健康接口返回 `status: ok`。
+
+### 回滚点
+
+- 上一运行版本：`dev-20260803-2b7b7be-*`，该版本误改孩子端且未修复家长 Header 顶部距离。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-a832dcc-20260803.dump`。
+
+## 2026-08-02：统一家长端与孩子端页面顶部间距
+
+- 记录 ID：`FS-PARENT-SPACING-FIX-001`
+- 分支：`dev`
+- 状态：初次修复引入家长端顶部留白回归；`224d59f` 恢复家长端，`2b7b7be` 补齐孩子端
+- 依据：Phase 1 任务 8.1、9.1、16；PRD §3.1、§3.2、§8.3
+
+### 问题与根因
+
+- 家长端九个页面共用的 `ParentShell` 在主内容容器上设置 `py-7 mobile:py-5`，桌面端和移动端分别形成 28px 与 20px 的额外顶部留白。
+- 孩子端 `ChildShell` 的主内容容器曾仅使用 `page-shell`，双端公共页面起始位置因此产生差异。
+
+### 实施与验证结果
+
+- 初次修复提交 `d636aa3` 将家长端主内容容器从 `page-shell py-7 mobile:py-5` 改为纯 `page-shell`，导致九个家长页面贴近顶部边缘。
+- 初次验收仅检查 `<main>` 自身和首个内容节点均为 0px，未比较双端完整视觉起始位置，因此得出了错误的一致性结论。
+- 纠正提交 `224d59f` 恢复家长端原有响应式顶部页边距，后续提交 `2b7b7be` 为孩子端补齐相同类；双端回归断言均锁定该结构。
+- 家长端和孩子端组件测试共 2 个文件、20 项通过；修改文件的零警告 ESLint、Prettier 和 `git diff --check` 通过。
+- 根级 `pnpm dev` 启动 Next.js 与 Hono，本地 Next.js 端口 `3000` 通过平台预览代理连通性检查。
+- 完整纠正提交 `2b7b7be` 已发布到开发环境并通过双端真实页面验收，部署结果见 `FS-DEPLOY-DEV-009`。
+
+## 2026-08-02：纠正家长端顶部页边距回归
+
+- 记录 ID：`FS-PARENT-SPACING-REGRESSION-001`
+- 分支：`dev`
+- 修复提交：`224d59f`
+- 状态：已部署并通过真实页面验收
+
+### 回归与修复
+
+- `d636aa3` 删除了家长端公共 Shell 原有的 `py-7 mobile:py-5`，使九个家长页面的内容区贴近顶部边缘。
+- 用户提供的真实截图显示家长端顶部留白明显小于孩子端；截图分析估算家长端约 10–16px，孩子端约 20–30px。
+- `224d59f` 恢复原有响应式顶部页边距，并将组件测试从错误的纯 `page-shell` 断言改为 `page-shell py-7 mobile:py-5`。
+
+### 验证结果
+
+- 完整 Vitest 套件 82 个文件、528 项通过；Web TypeScript、零警告 ESLint、Prettier、生产构建和 `git diff --check` 通过。
+- 开发环境真实家长会话覆盖九个页面、桌面与手机两种视口，共 18 次检查；桌面端顶部页边距为 28px，移动端为 20px。
+- 真实家长端和孩子端手机截图分别留存，用于核对完整视觉起始位置。
+
+## 2026-08-02：部署家长端顶部页边距纠正版本
+
+- 记录 ID：`FS-DEPLOY-DEV-008`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `224d59f`
+
+### 发布结果
+
+- 从提交 `224d59f` 的独立源码归档构建并推送 `dev-20260802-224d59f-api`、`dev-20260802-224d59f-worker` 和 `dev-20260802-224d59f-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:597cf0dc794d97c0c71acade33d3f51486f6c76aa2dcf12deb1825f93f6fbabd`、`sha256:700272afcb49f12ee25e1b8c0abec01db100e8e4b38317566899201a7c08009c` 和 `sha256:69d26a5b2610e0eeaaef9aae02f28b8abe65d17f187879b24045ccb266140843`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-224d59f-20260802.dump`，文件大小 1264904 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 12 项 Prisma 迁移均已应用且无待处理迁移；迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。
+- 公网首页返回 HTTP 200，同源 `/api/v1/health` 返回 `status: ok`；运行中的 API、Worker 和 Web 均锁定到 `dev-20260802-224d59f-*`。
+
+### 回滚点
+
+- 安全视觉回滚版本：`dev-20260802-e8f5e28-*`；直接前序版本 `dev-20260802-d636aa3-*` 存在顶部留白回归。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-224d59f-20260802.dump`。
+
+## 2026-08-02：部署双端页面顶部间距修复开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-007`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `d636aa3`
+- 后续状态：该版本造成家长端顶部留白回归，已由 `FS-DEPLOY-DEV-008` 替换
+
+### 发布结果
+
+- 从提交 `d636aa3` 的独立源码归档构建并推送 `dev-20260802-d636aa3-api`、`dev-20260802-d636aa3-worker` 和 `dev-20260802-d636aa3-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:83e6425da5b0660951f83fc7718c401c6f5f8a8d4769208dea9b01883b0a1c11`、`sha256:adec48e764d4f5593b05273c88369484e7ed3e89c267b387f168c091c202e58f` 和 `sha256:458ff346007c8550752fa0d823d77c5da1a2a0d4698aed99e44427243a8e7121`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-d636aa3-20260802.dump`，文件大小 1209916 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 12 项 Prisma 迁移均已应用且无待处理迁移；迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。
+- 公网首页返回 HTTP 200，同源 `/api/v1/health` 返回 `status: ok`；运行中的 API、Worker 和 Web 均锁定到 `dev-20260802-d636aa3-*`。
+
+### 初次页面验收与遗漏
+
+- 通过公开同源 API 创建随机隔离家庭、家长和孩子账号，并分别建立真实家长与孩子会话。
+- 九个家长页面在 1440 × 900 和 390 × 844 两种视口检查为纯 `page-shell` 和 0px 顶部内边距。
+- 该验收标准遗漏孩子端头部内部留白和完整视觉起始位置，0px 结果实际对应家长端贴边回归。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260802-e8f5e28-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-d636aa3-20260802.dump`。
+
+## 2026-08-02：修复任务编辑与孩子分配任务可见性
+
+- 记录 ID：`FS-TASK-VISIBILITY-FIX-001`
+- 分支：`dev`
+- 状态：已提交、通过完整质量门禁并完成开发环境真实数据验收
+- 依据：Phase 1 任务 4.2、4.3、8.2、9.2 与新增任务 15；`../specs/decisions.md` §4、§5、§9、§10；PRD §3.1、§3.2、§4.1、§4.5
+
+### 问题与根因
+
+- 家长任务列表的编辑按钮缺少点击事件、编辑状态和 PATCH 请求，后端既有更新能力未被 Web 使用。
+- 孩子门户的今日任务区域仍为受限占位，后端缺少按孩子会话限定的任务读取端点；现有 `/family/tasks` 保持家长专用。
+
+### 范围与验收计划
+
+- 接通家长任务编辑表单，回填当前任务字段并通过 `PATCH /api/v1/family/tasks/:taskId` 持久化；成功后使用服务端响应更新列表，失败时保留表单和已有数据。
+- 新增孩子本人任务读取端点，家庭和孩子标识完全取自认证会话，查询限定活动任务、有效分配、分配日期范围和当日频率，并返回逐孩覆盖后的积分、频率、打卡方式和验收方式。
+- 孩子主页和今日打卡页显示服务端真实任务，分别处理加载、空数组和请求失败状态。
+- 补充纯请求构造、TaskService、Prisma 查询、HTTP 契约、RBAC 与 Playwright 回归测试；通过 TypeScript、ESLint、Prettier、单元测试、集成测试、浏览器测试和生产构建。
+- 部署到开发环境 `8098` 后，使用真实家庭验证家长修改任务可持久化，且被分配孩子重新登录后可见该任务。
+
+### 实施结果
+
+- 家长任务列表接通编辑弹窗、字段回填和 PATCH 写入；成功后以服务端任务替换列表记录，失败时保留弹窗输入。归档任务保持只读，普通字段编辑保持既有多孩分配不变。
+- PATCH 可将空任务说明和提交说明持久化为 `null`，支持显式清空可选文本。
+- 新增孩子专用 `GET /api/v1/tasks/me?date=YYYY-MM-DD`；服务使用会话中的家庭与孩子身份限定 Prisma 查询，并按任务状态、分配日期和生效频率过滤，返回逐孩覆盖后的积分、频率、打卡方式和验收方式。
+- 孩子主页与今日打卡页接入同一真实任务资源，分别呈现加载、空数据、错误与任务列表状态。
+
+### 验证结果
+
+- 任务、RBAC、Web helper 和双端组件定向测试共 11 个文件、66 项通过；核心 HTTP 闭环集成测试 1 项通过。
+- 完整质量门禁通过：82 个测试文件、528 项测试通过，Statements、Branches、Functions 与 Lines 覆盖率门禁通过。
+- Playwright 9 项通过，覆盖家长编辑后刷新持久化与孩子主页、今日打卡页任务可见性。
+- Prisma Schema 与迁移契约、TypeScript、零警告 ESLint、Prettier、生产构建、设计系统、API 基础检查和 `git diff --check` 通过。
+- 实现提交 `e8f5e28` 已发布到开发环境并通过真实双端验收，部署结果见 `FS-DEPLOY-DEV-006`。
+
+## 2026-08-02：部署任务编辑与孩子任务可见性开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-006`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `e8f5e28`
+
+### 发布结果
+
+- 从提交 `e8f5e28` 的独立源码归档构建并推送 `dev-20260802-e8f5e28-api`、`dev-20260802-e8f5e28-worker` 和 `dev-20260802-e8f5e28-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:086ff52f4f7138056cef894c51aa257def87acebe7e3029eb8c6108fce43d940`、`sha256:5f051428b134d8cf980dd7c30dd348d828c21862c2a2ca2510013b55cce044bb` 和 `sha256:f3f65dc1f65f26f48be511c549f352845270af9322c54816af9bf32abfb827c1`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-e8f5e28-20260802.dump`，文件大小 1178678 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- 12 项 Prisma 迁移均已应用且无待处理迁移；迁移容器退出码为 0，PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。
+- 公网首页返回 HTTP 200，同源 `/api/v1/health` 返回 `status: ok`；运行中的 API、Worker 和 Web 均锁定到 `dev-20260802-e8f5e28-*`。
+
+### 部署诊断
+
+- 首次 Compose 切换未显式加载 `/home/ubuntu/familystar-deploy/dev/.env.dev`，迁移容器因数据库认证失败退出。
+- 使用 `--env-file /home/ubuntu/familystar-deploy/dev/.env.dev` 重新执行后，命名 volume 中的数据保持完整，迁移和全部服务恢复健康。
+
+### 真实数据验收
+
+- 通过公开同源 API 创建随机隔离家庭、孩子和单人每日任务，并将任务真实分配给该孩子。
+- 家长在 `/tasks` 页面编辑任务名称、清空说明、切换为文字打卡并将基础积分改为 23；保存后刷新页面仍显示服务端持久化结果。
+- 家长任务 API 确认原 assignment ID、孩子归属和未编辑的提交说明保持不变，空任务说明持久化为 `null`。
+- 孩子通过家庭码和 PIN 建立全新会话后，`GET /api/v1/tasks/me` 返回逐孩生效的任务数据，且不包含家庭 ID 或孩子 ID。
+- 390 × 844 移动端 Chromium 验证 `/child` 与 `/child/check-ins` 均显示更新后的任务、23 星和文字打卡方式。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260802-b16c6fd-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-e8f5e28-20260802.dump`。
+
+## 2026-08-02：补齐家长审核队列与刷新持久化闭环
+
+- 记录 ID：`FS-REVIEW-QUEUE-FIX-001`
+- 分支：`dev`
+- 状态：已提交并通过开发环境真实数据验收
+- 依据：Phase 1 任务 6.1、6.3、8.2、12.2 与新增任务 14；`../specs/decisions.md` §2、§4、§9、§10；PRD §4.1.5、§4.2、§4.5
+
+### 实施结果
+
+- 新增 `GET /api/v1/family/submission-reviews/pending`，聚合单人打卡与协作提交的最新 `PENDING` 状态，并提供任务、孩子、latest attempt 内容、媒体摘要和提交时间；查询限定认证家庭和未删除实体，合并结果稳定排序并限制为 100 条。
+- 家长审核页接入真实队列；通过和打回分别调用现有审核写入，打回要求非空原因，幂等键绑定 attempt 与决定。写入成功后重新读取服务端权威队列，写入或刷新失败时保留当前记录并显示错误。
+- Playwright 增加测试专用服务端会话服务，使 Next.js 门户守卫经过真实 Cookie 角色校验；业务 API 使用显式契约夹具，孩子打卡聚合继续验证为受限状态。
+
+### 验证结果
+
+- 审核领域与 Web 定向测试通过；完整单元测试 77 个文件、496 项通过；核心 HTTP 闭环集成测试 1 项通过。
+- Playwright 8 项通过，覆盖家长与孩子页面、服务端角色守卫、审核权威重拉、重新挂载、稳定幂等键、失败保留及现有核心浏览器状态。
+- 全工作区 TypeScript、零警告 ESLint、Prettier、生产构建和 `git diff --check` 通过。
+- 审核 Prisma 测试继续覆盖批准后单人积分 writer 与协作周期统一发分调用；积分 writer 测试覆盖 `PointsLog`、余额、累计积分、等级同步和 Outbox 同事务写入。实现提交 `b16c6fd` 已通过开发环境真实数据闭环，部署结果见 `FS-DEPLOY-DEV-005`。
+
+## 2026-08-02：部署家长审核队列开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-005`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `b16c6fd`
+- Wiki 提交：`7a456e9`
+
+### 发布结果
+
+- 从提交 `b16c6fd` 的独立源码归档构建并推送 `dev-20260802-b16c6fd-api`、`dev-20260802-b16c6fd-worker` 和 `dev-20260802-b16c6fd-web`，同时更新 `dev-latest-*`。
+- API、Worker 和 Web 镜像 digest 分别为 `sha256:1206c42758f9d645943fa8480800853ec2b699ad36ee00728eb155b96aa01dd9`、`sha256:fe6e2e979e1e6c8aa891f656959f6d1202e878384a337a02ffa8cecbe1c7d0ce` 和 `sha256:4c7d8364ba69e7835f9a7d4d7db50a83b53171ef8a4349c34a0312f643426f91`。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-b16c6fd-20260802.dump`，文件大小 904729 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- Prisma 迁移容器成功退出；PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。运行中的 API、Worker 和 Web 均锁定到 `dev-20260802-b16c6fd-*`。
+- 公网首页返回 HTTP 200，同源 `/api/v1/health` 返回版本 `0.1.0` 和 `status: ok`。
+
+### 真实数据验收
+
+- 通过公开同源 API 创建新隔离家庭、孩子、单人每日人工审核任务和真实文字打卡；家长待审队列在提交后包含 1 条记录。
+- 家长批准后服务端权威队列变为空；重复使用绑定 attempt 与决定的幂等键批准，积分和等级保持不变；重新登录家长账号后队列仍为空。
+- 数据库确认打卡状态为 `APPROVED`、发放 30 积分且 streak 倍率为 1；孩子 `points_balance` 与 `points_earned_total` 均为 30，`current_level` 为 2。
+- 对应 attempt 仅有 1 条家长审核历史，对应打卡仅有 1 条积分流水；`points.balance.changed.v1` 和 `levels.level.advanced.v1` Outbox 各 1 条且均已发布。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260802-a7fd9b1-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-b16c6fd-20260802.dump`。
+
+## 2026-08-02：部署门户会话与真实数据修复开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-004`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `a7fd9b1`
+- 实现提交：`a7fd9b1`
+
+### 发布结果
+
+- 从提交 `a7fd9b1` 的独立源码归档构建并推送 `dev-20260802-a7fd9b1-api`、`dev-20260802-a7fd9b1-worker` 和 `dev-20260802-a7fd9b1-web`，`dev-latest-*` 已更新到相同镜像。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-backups/dev/pre-a7fd9b1-20260802.dump`，文件大小 738445 bytes，权限为 `600`；`pg_restore --list` 校验通过。
+- Prisma 迁移容器使用新 API 镜像成功退出，退出码为 0；PostgreSQL、Redis、API、Worker 和 Web 均为 healthy。
+- API、Worker 和 Web 运行镜像均锁定到 `dev-20260802-a7fd9b1-*`；公网首页返回 HTTP 200，同源 `/api/v1/health` 返回版本 `0.1.0` 和 `status: ok`。
+
+### 真实数据验收
+
+- 通过公开同源 API 创建新的隔离验收家庭和孩子，家长注册返回 201，有效会话读取返回 200，孩子创建返回 201。
+- 使用省略可选 `description` 的真实请求创建单人每日任务，接口返回 201，随后任务列表包含该服务端记录。
+- 当前家长会话退出返回 200 并清除 Cookie；复用旧 Cookie 读取会话返回 401，确认 Redis 单令牌撤销生效。
+- 验收创建的家庭、孩子和任务保留在开发数据库中，便于后续审核、积分、等级与奖励闭环回归。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260801-64df198-*`。
+- 数据库回滚备份：`/home/ubuntu/familystar-backups/dev/pre-a7fd9b1-20260802.dump`。
+
+## 2026-08-01：修复家长端创建任务默认请求 400
+
+- 记录 ID：`FS-TASK-CREATE-FIX-001`
+- 分支：`dev`
+- 依据：Phase 1 任务 4、任务 13；用户真实运行反馈
+
+### 调试证据与根因
+
+- 家长任务表单将“任务说明”定义为可选输入，留空时 `FormData` 返回空字符串。
+- 前端原请求固定携带 `description: ""`；API Schema 接受缺省 `description` 或去除首尾空白后至少一个字符的值，因此请求在进入任务服务前返回 `400 INVALID_REQUEST`。
+- API 路由成功测试省略该字段，原家长组件测试仅验证静态页面结构，未覆盖表单生成的真实请求体。
+
+### 修复与验证结果
+
+- 新增 `buildSoloTaskDraft()` 集中生成单人每日任务请求；空白说明从请求省略，有效说明去除首尾空白后保留。
+- 新增两项请求体回归测试，覆盖空白说明和有效说明；任务链路定向测试 4 个文件、28 项通过。
+- 完整单元测试 77 个文件、490 项通过；全工作区 TypeScript、零警告 ESLint、Prettier 和生产构建通过。
+- 本次修复已通过提交 `a7fd9b1` 发布到开发环境 `8098`，运行结果见 `FS-DEPLOY-DEV-004`。
+
+## 2026-08-01：移除认证门户演示数据与伪成功回退
+
+- 记录 ID：`FS-WEB-DATA-FIX-001`
+- 分支：`dev`
+- 依据：用户真实运行反馈；统一家庭登录任务 6
+
+### 范围与实施结果
+
+- 家长和孩子门户资源统一使用加载、实时、空数据和错误四种状态；空数组保持有效空状态，缺少必需字段的响应进入错误状态。
+- 移除门户中的预置人物、任务、积分、等级、奖励、兑换、愿望和排行数据，以及 Shell 中的预置家庭和账号身份。
+- 写请求以服务端响应作为成功依据；失败时保留已加载的真实数据并显示错误，不生成浏览器临时业务记录。
+- 缺少聚合读取接口的总览、审核、统计、流水、排行、徽章和记录区域显示明确受限空态；任务读取接口接入后再开放孩子打卡入口。
+- 孩子身份通过等级接口的当前用户 ID 与真实账号切换目标关联，等级加载完成前显示门户加载边界。
+
+### 验证结果
+
+- 全部 Web 测试 8 个文件、48 项通过；完整单元测试 77 个文件、488 项通过。
+- 全工作区 TypeScript、零警告 ESLint、Prettier、补丁空白检查和生产构建通过。
+- 源码搜索确认认证门户无预置人物与 demo 业务常量；登录表单保留“家庭名称”占位示例，仅用于输入提示。
+
+## 2026-08-01：修复双端退出与服务端会话边界
+
+- 记录 ID：`FS-AUTH-FIX-001`
+- 分支：`dev`
+- 依据：统一家庭登录需求 5、6；用户真实运行反馈
+
+### 范围与验收
+
+- 为当前会话提供显式退出 API，撤销 Redis 会话令牌并清除 HttpOnly Cookie。
+- 家长端和孩子端提供可访问的退出入口，成功后清理浏览器身份缓存并返回统一登录页。
+- 家长与孩子门户在服务端读取有效会话并校验角色；Cookie 缺失、会话失效和角色不符时执行安全跳转。
+- 运行认证、门户、类型、Lint 和构建定向验证，并在完成后记录结果。
+
+### 实施与验证结果
+
+- 新增 `POST /api/v1/auth/logout`，安全中间件要求任意有效家庭会话并执行同源写请求保护；成功删除当前 Redis 令牌并将 Cookie 立即过期。
+- 家长与孩子动态路由在 Next.js 服务端调用内部会话接口，业务页面仅在角色匹配时渲染；失效会话返回统一入口，其他有效角色进入对应门户。
+- 双端顶栏新增可访问退出按钮，成功后清理三个浏览器身份提示；失败时保留当前页面并显示错误状态。
+- 定向认证与门户测试 6 个文件、41 项通过；完整单元测试 76 个文件、484 项通过。
+- 全部工作区 TypeScript、定向零警告 ESLint、Prettier 和生产构建通过；门户路由构建结果为动态服务端渲染。
+
+## 2026-08-01：部署 6 位数字家庭码开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-003`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `64df198`
+- 实现提交：`38481cf`
+
+### 发布结果
+
+- 构建并推送 `dev-20260801-64df198-api`、`dev-20260801-64df198-worker` 和 `dev-20260801-64df198-web`，`dev-latest-*` 已指向当前版本。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-data/backups/dev/postgres/familystar-dev-pre-64df198.dump`，文件大小 285534 bytes，权限为 `600`。
+- Prisma 成功应用 `20260801130000_migrate_family_codes_to_six_digits`，迁移总数为 12；迁移前 3 个家庭码均为 10 位，迁移后全部为唯一 6 位数字。
+- PostgreSQL、Redis、API、Worker 和 Web 均为 healthy，迁移容器退出码为 0；公开同源健康接口返回版本 `0.1.0` 和 `status: ok`。
+
+### 验证结果
+
+- 完整 `pnpm quality` 通过：80 个测试文件、502 项测试，以及格式、零警告 Lint、类型、Prisma、数据模型、覆盖率、构建、设计系统、API 契约和 7 项 Playwright 检查。
+- Chromium 真实链路通过家长注册、6 位数字家庭码展示、HTTP 页面复制反馈和孩子档案创建。
+- 独立孩子会话通过 6 位家庭码查询、头像选择和 PIN 登录进入 `/child`；家长注册进入 `/dashboard`，孩子链路在 390 × 844 移动端视口通过。
+- 验收创建的家庭和孩子保留在开发数据库中，便于后续回归追踪。
+
+### 回滚点
+
+- 上一健康开发版本：`dev-20260801-d1c0bff-*`。
+- 数据库回滚备份：`familystar-dev-pre-64df198.dump`。
+
+## 2026-08-01：部署统一家庭登录开发版本
+
+- 记录 ID：`FS-DEPLOY-DEV-002`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `d1c0bff`
+
+### 发布结果
+
+- 构建并推送 `dev-20260801-d1c0bff-api`、`dev-20260801-d1c0bff-worker` 和 `dev-20260801-d1c0bff-web`，`dev-latest-*` 已指向当前版本。
+- 部署前创建 PostgreSQL custom-format 备份 `/home/ubuntu/familystar-data/backups/dev/postgres/familystar-dev-pre-a125d34.dump`，文件大小 225780 bytes，权限为 `600`。
+- Prisma 成功应用 `20260801000000_add_family_codes`，迁移总数为 11；所有家庭均已生成家庭码，数据库唯一约束验证通过。
+- PostgreSQL、Redis、API、Worker 和 Web 均为 healthy，迁移容器退出码为 0，当前无待应用迁移。
+
+### 运行态验收
+
+- 公网 `http://119.29.111.248:8098` 可访问，同源 `/api/v1/health` 返回 HTTP 200、版本 `0.1.0` 和 `status: ok`。
+- Chromium 真实链路通过家长注册、自动进入家长端、家庭成员页读取 10 位家庭码、HTTP 页面复制成功反馈和孩子档案创建。
+- 独立孩子会话通过家庭码查询、头像选择和 PIN 登录进入孩子端；家长与孩子已有会话访问根路径时均按角色自动跳转。
+- 孩子链路在 390 × 844 移动端视口通过。验收创建的测试家庭保留在开发数据库中，便于后续回归追踪。
+- 完整 `pnpm quality` 通过：80 个测试文件、502 项测试，以及格式、零警告 Lint、类型、Prisma、数据模型、覆盖率、构建、设计系统、API 契约和 7 项 Playwright 检查。
+
+### 回滚点
+
+- 上一统一登录版本：`dev-20260801-a125d34-*`。
+- Phase 1 原开发基线：`dev-20260801-80bd819-*`。
+
+## 2026-08-01：完成统一家庭登录 Web 任务 2
+
+- 记录 ID：`FS-UNIFIED-LOGIN-2`
+- 分支：`dev`
+- 依据：`../specs/2026-08-01-unified-family-login/requirements.md` 需求 1、2、4.5、5；`design.md` Web 组件与测试策略
+
+### 实施结果
+
+- 将根路径视觉基础页替换为统一家庭登录入口，提供家长登录、创建家庭和孩子两步登录流程。
+- 孩子流程支持 10 位家庭码规范化、家庭公开档案选择、4 至 6 位 PIN 提交和空孩子档案引导。
+- 页面启动时读取有效服务端会话并按角色跳转；会话网络异常保留登录能力并显示状态消息。
+- 补充 Tab 与 Tabpanel 关联、表单标签、状态消息、可见焦点和移动端布局，登录成功使用历史替换进入角色门户。
+- 新增同源认证请求、统一响应信封、锁定限流倒计时和中文错误映射测试。
+- 家庭成员页从受保护会话读取当前家庭码，提供孩子登录用途说明、复制操作以及独立的加载和失败状态。
+
+### 验证结果
+
+- 统一登录定向测试：2 个文件、13 项通过。
+- 全部 Web 测试：6 个文件、39 项通过。
+- Web TypeScript、定向零警告 ESLint、Prettier、生产构建和设计系统验证通过。
+- 全量 `pnpm quality` 通过：80 个测试文件、500 项测试，Statements/Lines 80.69%、Branches 78.18%、Functions 90.06%。
+- 全仓格式、Lint、类型、Prisma Schema 与数据模型契约、生产构建、设计系统、API 基础契约和 7 项 Playwright 场景全部通过。
+
+### 后续工作
+
+- 统一登录开发镜像和桌面、移动端运行态验收已由 `FS-DEPLOY-DEV-002` 完成。
 
 ## 2026-08-01：首次部署 Phase 1 开发容器
 

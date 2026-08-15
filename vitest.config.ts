@@ -7,6 +7,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@familystar/shared': fileURLToPath(
+        new URL('./packages/shared/src/index.ts', import.meta.url),
+      ),
       '@familystar/business-modules': fileURLToPath(
         new URL('./modules/src/index.ts', import.meta.url),
       ),
@@ -29,7 +32,12 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['apps/**/*.test.{ts,tsx}', 'packages/**/*.test.ts', 'modules/**/*.test.ts'],
+    include: [
+      'apps/**/*.test.{ts,tsx}',
+      'packages/**/*.test.ts',
+      'modules/**/*.test.ts',
+      'ops/**/*.test.ts',
+    ],
     coverage: {
       provider: 'v8',
       include: [

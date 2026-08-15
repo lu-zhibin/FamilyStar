@@ -1,6 +1,7 @@
 export type ParentIdentity = {
   id: string;
   familyId: string;
+  familyCode: string;
   nickname: string;
   email: string;
   passwordHash: string;
@@ -10,6 +11,7 @@ export type PublicParentIdentity = Omit<ParentIdentity, 'passwordHash'>;
 
 export type FamilyInitialization = {
   familyName: string;
+  familyCode: string;
   nickname: string;
   email: string;
   passwordHash: string;
@@ -19,6 +21,7 @@ export type FamilyInitialization = {
 export type FamilyAuthRepository = {
   createFamilyWithParent(input: FamilyInitialization): Promise<ParentIdentity>;
   findActiveParentByEmail(email: string): Promise<ParentIdentity | null>;
+  findActiveFamilyCodeById(familyId: string): Promise<string | null>;
 };
 
 export type AuthSession = {
@@ -31,6 +34,7 @@ export type AuthSession = {
 export type SessionStore = {
   create(session: AuthSession): Promise<string>;
   read(token: string): Promise<AuthSession | null>;
+  revoke(token: string): Promise<void>;
   revokeSubject(subjectId: string): Promise<void>;
 };
 
@@ -63,10 +67,34 @@ export type AcceptInvitationInput = {
   now: Date;
 };
 
+export type RefreshInvitationInput = {
+  actorId: string;
+  familyId: string;
+  invitationId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  now: Date;
+};
+
+export type RevokeInvitationInput = {
+  actorId: string;
+  familyId: string;
+  invitationId: string;
+  now: Date;
+};
+
 export type FamilyInvitationRepository<Transaction> = {
   createOrRefresh(
     transaction: Transaction,
     input: CreateInvitationInput,
   ): Promise<InvitationCreation>;
-  accept(transaction: Transaction, input: AcceptInvitationInput): Promise<ParentIdentity>;
+  refresh(transaction: Transaction, input: RefreshInvitationInput): Promise<InvitationCreation>;
+  revoke(
+    transaction: Transaction,
+    input: RevokeInvitationInput,
+  ): Promise<{ id: string; email: string }>;
+  accept(
+    transaction: Transaction,
+    input: AcceptInvitationInput,
+  ): Promise<ParentIdentity & { invitationId: string }>;
 };

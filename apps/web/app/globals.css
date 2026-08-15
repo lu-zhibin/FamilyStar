@@ -108,7 +108,7 @@
   }
 
   .nav-item {
-    @apply flex min-w-[72px] flex-1 flex-col items-center gap-0.5 rounded-card px-3 py-1.5 text-label font-extrabold text-brown-light transition hover:bg-sand;
+    @apply flex min-w-[72px] flex-1 flex-col items-center gap-0.5 rounded-card px-3 py-1.5 text-label font-extrabold text-brown-light transition hover:bg-sand mobile:min-w-0 mobile:gap-0 mobile:overflow-hidden mobile:rounded-lg mobile:px-0 mobile:py-1 mobile:text-[10px] mobile:leading-3;
   }
 
   .nav-item-active {
@@ -234,11 +234,11 @@
   }
 
   .chart-bars {
-    @apply flex h-52 items-end justify-around gap-2 border-b border-wood pt-4;
+    @apply flex h-52 items-end justify-start gap-2 overflow-x-auto border-b border-wood pt-4;
   }
 
   .chart-column {
-    @apply flex h-full flex-1 flex-col items-center justify-end gap-2 text-label font-bold text-brown-light;
+    @apply flex h-full min-w-10 flex-1 shrink-0 flex-col items-center justify-end gap-2 text-label font-bold text-brown-light;
   }
 
   .chart-column span {
@@ -282,6 +282,18 @@
 
   .child-card {
     @apply rounded-card-lg border border-wood bg-white p-5 shadow-warm mobile:p-4;
+  }
+
+  .child-theme-shell {
+    background: var(--color-background, var(--color-cream));
+    color: var(--color-text, var(--color-brown));
+    transition:
+      background-color 180ms ease,
+      color 180ms ease;
+  }
+
+  .child-theme-shell[data-theme] .child-card {
+    background-color: var(--color-surface);
   }
 
   .child-avatar,
