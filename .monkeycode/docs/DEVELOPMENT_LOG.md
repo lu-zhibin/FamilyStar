@@ -1,5 +1,33 @@
 # FamilyStar 开发记录
 
+## 2026-08-16：完成 main 生产发布与回滚验收
+
+- 记录 ID：`FS-DEPLOY-PROD-002`
+- 环境：正式环境，Docker Compose，公开端口 `8099`
+- 源分支与提交：`main` / `febebb4df8ee059d8730c3eda64c8b94926c8662`
+- 发布标签：`v0.1.0-febebb4`
+
+### 发布结果
+
+- `dev` 已合入并推送 `main`；生产发布使用干净的 `main` 快照构建。
+- API、Worker 和 Web 镜像已构建并推送到 `ccr.ccs.tencentyun.com/familystar/familystar`。
+- `prod-latest-api`、`prod-latest-worker` 和 `prod-latest-web` 已更新为本次发布摘要。
+- 生产标准 Compose 配置已指向不可变标签 `v0.1.0-febebb4-*`。
+
+### 镜像摘要
+
+- API：`sha256:c0d08d508d8706074e29675fd6b668f22905b39bfebd2981cbd5a21b38c9e792`
+- Worker：`sha256:c4544f960fcc4c6f4611ec313ab4387b42a110d1302faf4f01ddc2c5c408194e`
+- Web：`sha256:839d34797c9168a1759ca224ca69d001b592dd67005e02f76462b5bcc0deb858`
+
+### 验证与回滚
+
+- PostgreSQL custom-format 备份：`/home/ubuntu/familystar-data/backups/prod/postgres/v0.1.0-febebb4-20260816.dump`，大小约 13MB，权限为 `600`。
+- 备份 manifest、SHA-256、镜像 ID、容器健康状态和 HTTP 健康地址均通过 `verify-release.sh` 验证。
+- 迁移容器退出码为 `0`；PostgreSQL、Redis、API、Worker 和 Web 全部为 healthy。
+- 上一健康回滚点 `v0.1.0-65ce519-*` 及其镜像摘要保持保留。
+- 回滚元数据：`/home/ubuntu/familystar-data/backups/prod/postgres/v0.1.0-febebb4-20260816.rollback.json`。
+
 ## 2026-08-01：首次部署 Phase 1 正式容器
 
 - 记录 ID：`FS-DEPLOY-PROD-001`
@@ -30,7 +58,7 @@
 
 - 记录 ID：`FS-PRODUCT-COMPLETION-ACCEPTANCE-001`
 - 分支：`dev`
-- 状态：任务 14.1、14.2 已完成，Git 发布与生产镜像元数据待关闭
+- 状态：任务 14.1、14.2、Git 发布与生产镜像元数据均已完成
 
 ### 验证结果
 
@@ -49,10 +77,10 @@
 - 生产 `PUBLIC_BASE_URL` 与公开 HTTPS 源保持一致，以满足 Secure Cookie 和 CSRF Origin 校验。
 - 需求 2 至 13 与设计正确性属性 1 至 8 的自动化证据已写入验收追溯矩阵。
 
-### 发布待办
+### 发布结果
 
-- 将 `dev` 快进发布到 `main` 并推送远端。
-- 保存 Web、API、Worker 不可变镜像 digest、上一健康回滚标签和部署元数据。
+- `dev` 已合入并推送 `main`。
+- Web、API、Worker 不可变镜像 digest、上一健康回滚标签和部署元数据已保存。
 
 ## 2026-08-08：完成 PWA 安装入口与 i60 真实验收
 
