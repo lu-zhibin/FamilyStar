@@ -1,5 +1,33 @@
 # FamilyStar 开发记录
 
+## 2026-08-16：发布 df1909f 到 8098 开发环境
+
+- 记录 ID：`FS-DEPLOY-DEV-063`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `df1909f4681e2f0fc90db62b0df09e2daad20807`
+- 发布标签：`dev-20260816-df1909f-i63`
+
+### 发布结果
+
+- 从干净的 `df1909f` 快照构建并推送 API、Worker 和 Web 不可变镜像。
+- `dev-latest-api`、`dev-latest-worker` 和 `dev-latest-web` 已更新到本次发布摘要。
+- 迁移容器以退出码 `0` 完成；PostgreSQL、Redis、API、Worker 和 Web 全部为 healthy。
+- 服务器本地与公网 `8098` 首页和同源 `/api/v1/health` 均返回 HTTP 200。
+
+### 镜像摘要
+
+- API：`sha256:974be1bf611c86dc48b32cdf2a77a252079cdea8d4f988baab7758d2797d958d`
+- Worker：`sha256:b75abc5efd69c1bd56e6a22e42a6a9b452db969fb3ac0885b763d83eef5db9ba`
+- Web：`sha256:a02b0844056a587d760ca467f782cf69c4de5d0153598781f539d9a30ce96a7d`
+
+### 备份与回滚
+
+- PostgreSQL custom-format 备份：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260816-df1909f-i63.dump`，SHA-256 为 `ca2b72c29366df1524e38b8f35bad5ce728b2ce24674a4a660768b3c0ff7c70c`，manifest 包含 344 项。
+- 备份、镜像 ID、容器健康状态和 HTTP 健康地址通过 `verify-release.sh` 独立验证。
+- 上一健康回滚点为 `dev-20260810-da13253-i62-*`，对应 API、Worker 和 Web 的真实镜像 ID 已写入回滚元数据。
+- 回滚环境文件：`/home/ubuntu/familystar-deploy/releases/df1909f-i63/.env.dev.rollback-i62`。
+- 回滚元数据：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260816-df1909f-i63.rollback.json`。
+
 ## 2026-08-16：完成 main 生产发布与回滚验收
 
 - 记录 ID：`FS-DEPLOY-PROD-002`
