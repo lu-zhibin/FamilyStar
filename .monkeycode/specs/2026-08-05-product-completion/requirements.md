@@ -145,6 +145,9 @@
 3. WHEN TICK 或 TEXT 打卡在离线状态提交，Web 应用 SHALL 将请求保存到当前设备队列并在恢复网络后按原幂等键重放。
 4. WHEN 媒体打卡处于离线状态，Web 应用 SHALL 保留本地草稿并在恢复网络后请求用户确认上传。
 5. IF 离线重放产生业务冲突，Web 应用 SHALL 展示服务端权威状态并保留可审计失败结果。
+6. WHEN 家庭成员关闭安装入口，Web 应用 SHALL 持久化有效期为 72 小时的浏览器 Cookie。
+7. WHILE 安装入口抑制 Cookie 有效，Web 应用 SHALL 保持安装入口隐藏。
+8. WHILE Web 应用从移动设备桌面应用入口以独立显示模式运行，Web 应用 SHALL 保持安装入口隐藏。
 
 ### Requirement 12：模块开关与主题
 
