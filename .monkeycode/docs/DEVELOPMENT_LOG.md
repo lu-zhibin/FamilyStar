@@ -21,6 +21,35 @@
 - `@familystar/web` TypeScript 类型检查通过。
 - 本地 Next.js 开发服务器启动成功，预览代理连接正常，首页返回 HTTP 200。
 
+## 2026-08-17：发布 PWA 安装提示抑制到 8098 开发环境
+
+- 记录 ID：`FS-DEPLOY-DEV-064`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `4089b36f6f41d59f2fb66d5f9732370ccde02ea1`
+- 发布标签：`dev-20260817-4089b36-i64`
+
+### 发布结果
+
+- 从干净的 `4089b36` 快照构建并推送 API、Worker 和 Web 不可变镜像。
+- `dev-latest-api`、`dev-latest-worker` 和 `dev-latest-web` 已更新到本次发布摘要。
+- 迁移容器成功完成；PostgreSQL、Redis、API、Worker 和 Web 全部为 healthy。
+- 服务器本地 `8098` 首页和同源 `/api/v1/health` 均返回 HTTP 200。
+- 生产环境继续运行 `v0.1.0-febebb4-*`，`8099` 首页和同源 API 均返回 HTTP 200。
+
+### 镜像摘要
+
+- API：`sha256:cb8b497376d9141477c67975804847d27f6e69c6c86442b52b5dc27bf7198b0d`
+- Worker：`sha256:64987ad155434c1da41e3cbd0991ff1b06fa7e07164b3ad73c3eb913d89721b6`
+- Web：`sha256:f61d6e96a6e922447a8586172d3457a19a9d5c04bd80be8cf7ffb7ec11e0cac4`
+
+### 备份与回滚
+
+- PostgreSQL custom-format 备份：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260817-4089b36-i64.dump`，SHA-256 为 `85bef07b745f6f71c3bedf43d1ae072329d862b2e0f5d3ed25a5b6dd92199aaa`，manifest 包含 344 项。
+- 备份、镜像 ID、容器健康状态和 HTTP 健康地址通过 `verify-release.sh` 独立验证。
+- 上一健康回滚点为 `dev-20260816-df1909f-i63-*`，对应 API、Worker 和 Web 的真实镜像 ID 已写入回滚元数据。
+- 回滚环境文件：`/home/ubuntu/familystar-deploy/releases/4089b36-i64/.env.dev.rollback-i63`。
+- 回滚元数据：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260817-4089b36-i64.rollback.json`。
+
 ## 2026-08-17：固化双环境发布与 Docker 清理上下文
 
 - 记录 ID：`FS-OPS-CONTEXT-001`
