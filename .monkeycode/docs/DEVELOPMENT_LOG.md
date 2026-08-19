@@ -1,5 +1,33 @@
 # FamilyStar 开发记录
 
+## 2026-08-19：发布 PWA 收口版本到 8099 生产环境
+
+- 记录 ID：`FS-DEPLOY-PROD-003`
+- 环境：生产环境，Docker Compose，公开端口 `8099`
+- 源分支与提交：`main` / `476de8840fc7a9b3af60f0184b07e733a12461ef`
+- 发布标签：`v0.1.0-476de88`
+
+### 发布结果
+
+- `dev` 通过显式合并提交进入 `main`，生产镜像使用干净的 `476de88` 快照构建。
+- API、Worker 和 Web 不可变镜像及 `prod-latest-*` 标签已推送到腾讯云镜像仓库。
+- 迁移容器成功完成；PostgreSQL、Redis、API、Worker 和 Web 全部为 healthy。
+- 服务器本地与公网 `8099` 首页和同源 `/api/v1/health` 均返回 HTTP 200；开发环境 `8098` 同时保持健康。
+
+### 镜像摘要
+
+- API：`sha256:2daeb90a66ff1a4bff11adf7737123f36d3831e020d679ba94b1c21f4ba88d32`
+- Worker：`sha256:026a57bc52a5e086fdf4f2bd001b3f4525807b19d6bfb26b77258932263dcfa2`
+- Web：`sha256:2801b1895f22c6989bab36c9dd0fff17729657b3a88fdbbd686f51594cbf8070`
+
+### 备份与回滚
+
+- PostgreSQL custom-format 备份：`/home/ubuntu/familystar-data/backups/prod/postgres/v0.1.0-476de88-20260819.dump`，SHA-256 为 `16523d2023d7f05db0fc79bee65fc1af3d74bd9e050488b6ba67f212341d2dd6`，manifest 包含 345 项。
+- 备份、镜像 ID、容器健康状态和 HTTP 健康地址通过 `verify-release.sh` 独立验证。
+- 上一健康回滚点为 `v0.1.0-febebb4-*`，对应 API、Worker 和 Web 的真实镜像 ID 已写入回滚元数据。
+- 回滚环境文件：`/home/ubuntu/familystar-deploy/releases/476de88-prod/.env.prod.rollback-febebb4`。
+- 回滚元数据：`/home/ubuntu/familystar-data/backups/prod/postgres/v0.1.0-476de88-20260819.rollback.json`。
+
 ## 2026-08-17：完成 PWA 安装提示抑制与桌面启动识别
 
 - 记录 ID：`FS-PWA-INSTALL-PROMPT-001`
