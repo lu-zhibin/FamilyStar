@@ -1,5 +1,105 @@
 # FamilyStar 开发记录
 
+## 2026-08-17：完成 PWA 安装提示抑制与桌面启动识别
+
+- 记录 ID：`FS-PWA-INSTALL-PROMPT-001`
+- 规格：产品补全 Requirement 11.6、11.7、11.8，任务 12.5
+- 范围：Web PWA 安装提示和浏览器本地状态
+
+### 实施结果
+
+- 用户关闭“安装 FamilyStar”入口时写入 `familystar_install_prompt_dismissed=1` Cookie，有效期固定为 259200 秒。
+- Cookie 使用全站路径与 `SameSite=Lax`；安全上下文同时设置 `Secure`。
+- `beforeinstallprompt` 事件展示入口前读取 Cookie，72 小时有效期内保持安装入口隐藏。
+- 使用标准 `display-mode: standalone` 与 iOS `navigator.standalone` 识别移动设备桌面应用启动，独立运行上下文保持安装入口隐藏。
+- 浏览器限制 Cookie 写入时，当前页面会话仍立即关闭安装入口。
+
+### 验证结果
+
+- `service-worker-registration.test.tsx` 共 8 项测试通过，覆盖 Cookie 名称、72 小时有效期、安全属性、精确读取和两类独立显示模式。
+- 修改文件 ESLint 零警告，Prettier 和 `git diff --check` 通过。
+- `@familystar/web` TypeScript 类型检查通过。
+- 本地 Next.js 开发服务器启动成功，预览代理连接正常，首页返回 HTTP 200。
+
+## 2026-08-17：发布 PWA 安装提示抑制到 8098 开发环境
+
+- 记录 ID：`FS-DEPLOY-DEV-064`
+- 环境：开发环境，Docker Compose，公开端口 `8098`
+- 源分支与提交：`dev` / `4089b36f6f41d59f2fb66d5f9732370ccde02ea1`
+- 发布标签：`dev-20260817-4089b36-i64`
+
+### 发布结果
+
+- 从干净的 `4089b36` 快照构建并推送 API、Worker 和 Web 不可变镜像。
+- `dev-latest-api`、`dev-latest-worker` 和 `dev-latest-web` 已更新到本次发布摘要。
+- 迁移容器成功完成；PostgreSQL、Redis、API、Worker 和 Web 全部为 healthy。
+- 服务器本地 `8098` 首页和同源 `/api/v1/health` 均返回 HTTP 200。
+- 生产环境继续运行 `v0.1.0-febebb4-*`，`8099` 首页和同源 API 均返回 HTTP 200。
+
+### 镜像摘要
+
+- API：`sha256:cb8b497376d9141477c67975804847d27f6e69c6c86442b52b5dc27bf7198b0d`
+- Worker：`sha256:64987ad155434c1da41e3cbd0991ff1b06fa7e07164b3ad73c3eb913d89721b6`
+- Web：`sha256:f61d6e96a6e922447a8586172d3457a19a9d5c04bd80be8cf7ffb7ec11e0cac4`
+
+### 备份与回滚
+
+- PostgreSQL custom-format 备份：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260817-4089b36-i64.dump`，SHA-256 为 `85bef07b745f6f71c3bedf43d1ae072329d862b2e0f5d3ed25a5b6dd92199aaa`，manifest 包含 344 项。
+- 备份、镜像 ID、容器健康状态和 HTTP 健康地址通过 `verify-release.sh` 独立验证。
+- 上一健康回滚点为 `dev-20260816-df1909f-i63-*`，对应 API、Worker 和 Web 的真实镜像 ID 已写入回滚元数据。
+- 回滚环境文件：`/home/ubuntu/familystar-deploy/releases/4089b36-i64/.env.dev.rollback-i63`。
+- 回滚元数据：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260817-4089b36-i64.rollback.json`。
+
+## 2026-08-17：固化双环境发布与 Docker 清理上下文
+
+- 记录 ID：`FS-OPS-CONTEXT-001`
+- 服务器：`119.29.111.248`
+- 开发环境：Docker Compose，公开端口 `8098`
+- 生产环境：Docker Compose，公开端口 `8099`
+- 镜像仓库：`ccr.ccs.tencentyun.com/familystar/familystar`
+
+### 仓库与发布状态
+
+- `dev` 已推送到 `df1909f4681e2f0fc90db62b0df09e2daad20807`，开发环境运行不可变标签 `dev-20260816-df1909f-i63-*`。
+- `main` 已推送到 `3f5cb6410a5a52b4498a020aabb6e5a64bceb9b2`，生产环境继续运行从 `febebb4df8ee059d8730c3eda64c8b94926c8662` 构建的不可变标签 `v0.1.0-febebb4-*`。
+- `dev-latest-*` 与 `prod-latest-*` 分别指向当前开发和生产镜像；不可变发布标签是部署、验证和回滚的权威引用。
+- 本地预览后台进程和本地 `8098`、`8099` 监听已关闭，远程双环境持续运行。
+
+### 部署与回滚资产
+
+- 开发 Compose：`/home/ubuntu/familystar-deploy/dev/compose.dev.yml`，环境文件：`/home/ubuntu/familystar-deploy/dev/.env.dev`。
+- 生产 Compose：`/home/ubuntu/familystar-deploy/prod/compose.prod.yml`，环境文件：`/home/ubuntu/familystar-deploy/prod/.env.prod`。
+- 开发发布源码：`/home/ubuntu/familystar-deploy/releases/df1909f-i63/source`。
+- 生产发布源码：`/home/ubuntu/familystar-deploy/releases/febebb4-prod/source`。
+- 开发回滚版本：`dev-20260810-da13253-i62-*`；生产回滚版本：`v0.1.0-65ce519-*`。
+- 开发数据库备份：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260816-df1909f-i63.dump`，SHA-256 为 `ca2b72c29366df1524e38b8f35bad5ce728b2ce24674a4a660768b3c0ff7c70c`，manifest 包含 344 项。
+- 开发回滚元数据：`/home/ubuntu/familystar-data/backups/dev/postgres/dev-20260816-df1909f-i63.rollback.json`。
+- 生产数据库备份：`/home/ubuntu/familystar-data/backups/prod/postgres/v0.1.0-febebb4-20260816.dump`。
+- 生产回滚元数据：`/home/ubuntu/familystar-data/backups/prod/postgres/v0.1.0-febebb4-20260816.rollback.json`。
+
+### Docker 清理结果
+
+- 清理范围限定为未被容器引用、且不属于当前版本或上一健康回滚版本的 FamilyStar 历史镜像；同时清理悬空镜像和可回收 BuildKit 缓存。
+- FamilyStar 镜像标签引用从 191 个降至 21 个，Docker 镜像总量从 195 个降至 38 个。
+- 镜像占用从 97GB 降至 44.82GB；BuildKit 缓存从 32.11GB 降至 6.053GB。
+- 根文件系统可用空间从约 26GB 增至 94GB，使用率从 86% 降至 45%。
+- 清理后镜像统计仍显示 30.64GB 可回收空间，主要涉及其他仓库、共享层和服务器上的其他服务，后续清理需重新确认作用域。
+- 剩余一个 57.8MB 的无标签镜像，归属无法确定，已保留以保护服务器上的其他服务。
+- Local Volumes 保持 30 个、16 个 active、占用 2.316GB；数据库数据和备份均未进入清理范围。
+
+### 最终验收
+
+- `8098` 与 `8099` 首页和 `/api/v1/health` 均返回 HTTP 200。
+- 开发与生产的 PostgreSQL、Redis、API、Worker 和 Web 共 10 个常驻容器全部为 healthy。
+- 当前开发、开发回滚、当前生产和生产回滚的 API、Worker、Web 共 12 个不可变标签逐项确认存在。
+- `ops/verify-release.sh` 已分别验证开发和生产的备份、镜像 ID、容器健康状态及 HTTP 健康地址，结果均为 `verification: ok`。
+
+### 后续运维边界
+
+- 每次清理前保留当前健康版本、上一健康回滚版本、对应数据库备份和回滚元数据。
+- FamilyStar 与服务器上的 1Panel、OpenResty、MySQL、WordPress 等服务共享 Docker 主机；镜像、缓存、Volume 和容器操作均需按明确对象执行。
+- BuildKit 缓存是主机级资源，后续清理应先核对其他项目的构建活动和回滚需求。
+
 ## 2026-08-16：发布 df1909f 到 8098 开发环境
 
 - 记录 ID：`FS-DEPLOY-DEV-063`

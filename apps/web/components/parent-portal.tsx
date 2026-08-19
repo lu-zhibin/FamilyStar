@@ -2,7 +2,6 @@
 
 import {
   BadgeCheck,
-  Bell,
   BookOpen,
   Camera,
   Check,
@@ -4852,35 +4851,7 @@ function SettingsPage() {
         <IntegrationSettingsCard type="email" />
         <IntegrationSettingsCard type="cos" />
       </div>
-      <div className="mt-5">
-        <Panel>
-          <SectionTitle>更多能力</SectionTitle>
-          <ComingSoonRow icon={<Bell />} title="通知偏好与免打扰" detail="即将推出" />
-          <ComingSoonRow icon={<ShieldCheck />} title="PWA 与动态模块开关" detail="即将推出" />
-        </Panel>
-      </div>
     </>
-  );
-}
-
-function ComingSoonRow({
-  icon,
-  title,
-  detail,
-}: {
-  icon: ReactNode;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <div className="list-row">
-      <span className="metric-icon">{icon}</span>
-      <div className="flex-1">
-        <strong>{title}</strong>
-        <p className="text-caption font-bold text-brown-light">{detail}</p>
-      </div>
-      <span className="tag">即将推出</span>
-    </div>
   );
 }
 export function Modal({

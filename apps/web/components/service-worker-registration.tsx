@@ -3,10 +3,38 @@
 import { Download, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+export const INSTALL_PROMPT_DISMISSAL_COOKIE = 'familystar_install_prompt_dismissed';
+export const INSTALL_PROMPT_DISMISSAL_SECONDS = 72 * 60 * 60;
+
 export type BeforeInstallPromptEvent = Event & {
   prompt(): Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
+
+export function hasInstallPromptDismissal(cookieHeader: string) {
+  return cookieHeader
+    .split(';')
+    .some((entry) => entry.trim() === `${INSTALL_PROMPT_DISMISSAL_COOKIE}=1`);
+}
+
+export function createInstallPromptDismissalCookie(secureContext: boolean) {
+  const attributes = [
+    `${INSTALL_PROMPT_DISMISSAL_COOKIE}=1`,
+    `Max-Age=${INSTALL_PROMPT_DISMISSAL_SECONDS}`,
+    'Path=/',
+    'SameSite=Lax',
+  ];
+
+  if (secureContext) attributes.push('Secure');
+  return attributes.join('; ');
+}
+
+export function isStandaloneApp(options: {
+  displayModeStandalone: boolean;
+  navigatorStandalone?: boolean | undefined;
+}) {
+  return options.displayModeStandalone || options.navigatorStandalone === true;
+}
 
 export function canRegisterServiceWorker(options: {
   production: boolean;
@@ -113,6 +141,18 @@ export function ServiceWorkerRegistration() {
 
     const handleInstallPrompt = (event: Event) => {
       event.preventDefault();
+      const standalone = isStandaloneApp({
+        displayModeStandalone:
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(display-mode: standalone)').matches,
+        navigatorStandalone: (navigator as Navigator & { standalone?: boolean }).standalone,
+      });
+
+      if (standalone || hasInstallPromptDismissal(document.cookie)) {
+        setInstallEvent(null);
+        return;
+      }
+
       setInstallEvent(event as BeforeInstallPromptEvent);
     };
     const handleInstalled = () => setInstallEvent(null);
@@ -141,7 +181,10 @@ export function ServiceWorkerRegistration() {
   return (
     <InstallAppPrompt
       installing={installing}
-      onDismiss={() => setInstallEvent(null)}
+      onDismiss={() => {
+        document.cookie = createInstallPromptDismissalCookie(window.isSecureContext);
+        setInstallEvent(null);
+      }}
       onInstall={() => void install()}
     />
   );

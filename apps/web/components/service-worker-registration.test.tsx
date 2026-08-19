@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   canRegisterServiceWorker,
+  createInstallPromptDismissalCookie,
+  hasInstallPromptDismissal,
   InstallAppPrompt,
+  INSTALL_PROMPT_DISMISSAL_SECONDS,
+  isStandaloneApp,
   registerFamilyStarServiceWorker,
   requestAppInstall,
   type BeforeInstallPromptEvent,
@@ -90,5 +94,31 @@ describe('service worker registration', () => {
       platform: 'web',
     });
     expect(prompt).toHaveBeenCalledOnce();
+  });
+
+  it('creates a 72-hour install prompt dismissal cookie', () => {
+    expect(INSTALL_PROMPT_DISMISSAL_SECONDS).toBe(259_200);
+    expect(createInstallPromptDismissalCookie(true)).toBe(
+      'familystar_install_prompt_dismissed=1; Max-Age=259200; Path=/; SameSite=Lax; Secure',
+    );
+    expect(createInstallPromptDismissalCookie(false)).toBe(
+      'familystar_install_prompt_dismissed=1; Max-Age=259200; Path=/; SameSite=Lax',
+    );
+  });
+
+  it('recognizes only the active install prompt dismissal cookie', () => {
+    expect(hasInstallPromptDismissal('session=abc; familystar_install_prompt_dismissed=1')).toBe(
+      true,
+    );
+    expect(hasInstallPromptDismissal('familystar_install_prompt_dismissed=0')).toBe(false);
+    expect(hasInstallPromptDismissal('other_familystar_install_prompt_dismissed=1')).toBe(false);
+  });
+
+  it('recognizes standard and iOS standalone launch modes', () => {
+    expect(isStandaloneApp({ displayModeStandalone: true })).toBe(true);
+    expect(isStandaloneApp({ displayModeStandalone: false, navigatorStandalone: true })).toBe(true);
+    expect(isStandaloneApp({ displayModeStandalone: false, navigatorStandalone: false })).toBe(
+      false,
+    );
   });
 });
